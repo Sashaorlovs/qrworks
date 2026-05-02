@@ -1,0 +1,32 @@
+
+/* Жёлтые кнопки (RAL 1003) */
+.btn-warning {
+    background-color: #F7B500 !important;
+    border-color: #D19E00 !important;
+    color: #000 !important;
+}
+.btn-warning:hover {
+    background-color: #E5A800 !important;
+    border-color: #B88A00 !important;
+}
+
+/* Жёлтые ссылки и акценты */
+a, .nav-link.active, .breadcrumb-item.active {
+    color: #F7B500 !important;
+}
+.content-header h1, .card-title {
+    color: #1a1a1a !important;
+}
+
+/* Основная шапка */
+.main-header {
+    background-color: #f8f9fa !important;
+    border-bottom: 2px solid #F7B500 !important;
+}
+
+/* Активные элементы меню */
+.sidebar-dark-primary .nav-sidebar > .nav-item > .nav-link.active,
+.sidebar-light-primary .nav-sidebar > .nav-item > .nav-link.active {
+    background-color: #F7B500 !important;
+    color: #000 !important;
+}

@@ -1,0 +1,193 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Склад{% endblock %}
+{% block content %}
+<h1>Склад</h1>
+
+{% if messages %}
+    {% for msg in messages %}
+        <div class="alert alert-{{ msg.tags|default:'info' }}">{{ msg }}</div>
+    {% endfor %}
+{% endif %}
+
+<ul class="nav nav-tabs mb-3" id="warehouseTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="main-tab" data-bs-toggle="tab" data-bs-target="#main" type="button" role="tab">Основной склад</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="intermediate-tab" data-bs-toggle="tab" data-bs-target="#intermediate" type="button" role="tab">Меж.операционный склад</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="journal-tab" data-bs-toggle="tab" data-bs-target="#journal" type="button" role="tab">Журнал всех движений</button>
+  </li>
+</ul>
+
+<div class="tab-content" id="warehouseTabsContent">
+
+  <!-- Основной склад -->
+  <div class="tab-pane fade show active" id="main" role="tabpanel">
+    <table class="table table-bordered">
+        <thead class="table-dark">
+            <tr>
+                <th>Обозначение</th>
+                <th>Наименование</th>
+                <th>Партия</th>
+                <th>Остаток</th>
+                <th>Действие</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for entry in main_data %}
+            <tr>
+                <td>{{ entry.instance.item.item_number }}</td>
+                <td>{{ entry.instance.item.name }}</td>
+                <td>{{ entry.instance.serial }}</td>
+                <td>{{ entry.balance }} шт.</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#issueModal" 
+                            data-instance-id="{{ entry.instance.id }}"
+                            data-instance-label="{{ entry.instance.item.item_number }} - {{ entry.instance.serial }}"
+                            data-balance="{{ entry.balance }}"
+                            data-assembly="{{ entry.assembly }}">
+                        Выдать
+                    </button>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="5">Нет деталей на основном складе</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+  </div>
+
+  <!-- Меж.операционный склад -->
+  <div class="tab-pane fade" id="intermediate" role="tabpanel">
+    <table class="table table-bordered">
+        <thead class="table-dark">
+            <tr>
+                <th>Обозначение</th>
+                <th>Наименование</th>
+                <th>Партия</th>
+                <th>Остаток</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for entry in intermediate_data %}
+            <tr>
+                <td>{{ entry.instance.item.item_number }}</td>
+                <td>{{ entry.instance.item.name }}</td>
+                <td>{{ entry.instance.serial }}</td>
+                <td>{{ entry.balance }} шт.</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="4">Нет деталей на меж.операционном складе</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+  </div>
+
+  <!-- Журнал всех движений -->
+  <div class="tab-pane fade" id="journal" role="tabpanel">
+    <table class="table table-bordered table-striped">
+        <thead class="table-dark">
+            <tr>
+                <th>Дата</th>
+                <th>Тип</th>
+                <th>Деталь</th>
+                <th>Партия</th>
+                <th>Кол-во</th>
+                <th>Кому</th>
+                <th>Основание</th>
+                <th>Сотрудник</th>
+                <th>Примечание</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for rec in records %}
+            <tr>
+                <td>{{ rec.date|date:"d.m.Y H:i" }}</td>
+                <td>{{ rec.get_movement_type_display }}</td>
+                <td>{{ rec.instance.item.item_number }} – {{ rec.instance.item.name }}</td>
+                <td>{{ rec.instance.serial }}</td>
+                <td>{{ rec.quantity }}</td>
+                <td>
+                    {% if rec.movement_type in 'out_main,out' %}
+                        {{ rec.recipient|default:"—" }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td>{{ rec.basis|default:"—" }}</td>
+                <td>{{ rec.employee|default:"—" }}</td>
+                <td>{{ rec.notes|default:"—" }}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="9">Нет записей</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Модальное окно выдачи -->
+<div class="modal fade" id="issueModal" tabindex="-1" aria-labelledby="issueModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="issueModalLabel">Выдача с основного склада</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="{% url 'warehouse_issue' %}">
+        {% csrf_token %}
+        <div class="modal-body">
+            <input type="hidden" name="instance_id" id="issueInstanceId">
+            <div class="mb-3">
+                <label class="form-label">Партия</label>
+                <input type="text" class="form-control" id="issueInstanceLabel" disabled>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Количество (остаток: <span id="issueBalance"></span>)</label>
+                <input type="number" name="quantity" class="form-control" min="1" max="" id="issueQuantity" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Получатель</label>
+                <select name="recipient" id="issueRecipient" class="form-select" required>
+                    <option value="">-- выберите сотрудника --</option>
+                    {% for emp in employee_list %}
+                        <option value="{{ emp.id }}">{{ emp.last_name }} {{ emp.first_name }} {{ emp.middle_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Основание</label>
+                <input type="text" name="basis" id="issueBasis" class="form-control" placeholder="Сборка" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Примечание (место на складе и др.)</label>
+                <textarea name="notes" class="form-control" rows="2" placeholder="Например: стеллаж 2, полка А"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">Выдать</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+    var issueModal = document.getElementById('issueModal');
+    issueModal.addEventListener('show.bs.modal', function (event) {
+        var button = event.relatedTarget;
+        var balance = button.getAttribute('data-balance');
+        document.getElementById('issueInstanceId').value = button.getAttribute('data-instance-id');
+        document.getElementById('issueInstanceLabel').value = button.getAttribute('data-instance-label');
+        document.getElementById('issueBalance').textContent = balance + ' шт.';
+        var qtyInput = document.getElementById('issueQuantity');
+        qtyInput.max = balance;
+        qtyInput.value = 1;
+        // Автозаполнение основания
+        var assembly = button.getAttribute('data-assembly');
+        document.getElementById('issueBasis').value = assembly || '';
+    });
+</script>
+{% endblock %}

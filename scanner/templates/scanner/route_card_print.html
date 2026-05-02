@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Маршрутная карта</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        @media print { button { display: none; } }
+        img { width: 100px; height: 100px; }
+    </style>
+</head>
+<body>
+    <button onclick="window.print()">Печать</button>
+    <h2>{{ route_card.instance.item.name }}</h2>
+    <p>Партия: {{ route_card.instance.serial }}</p>
+    <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data={{ instance_url|urlencode }}" alt="QR">
+    <table border="1" cellpadding="5" style="border-collapse:collapse; width:100%;">
+        <tr><th>№</th><th>Операция</th><th>Норма</th><th>Статус</th><th>Годных</th><th>Брак</th><th>Исполнитель</th></tr>
+        {% for op in operations %}
+        <tr>
+            <td>{{ op.order }}</td>
+            <td>{{ op.operation_type.name }}</td>
+            <td>{{ op.planned_hours }}</td>
+            <td>{{ op.get_status_display }}</td>
+            <td>{{ op.good_qty }}</td>
+            <td>{{ op.bad_qty }}</td>
+            <td>{{ op.worker.get_full_name|default:"-" }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>

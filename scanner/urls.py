@@ -1,0 +1,18 @@
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('', views.dashboard, name='home'),
+    path('orders/', views.order_list, name='order_list'),
+    path('order/<int:order_id>/', views.order_detail, name='order_detail'),
+    path('order/<int:order_id>/tree/', views.order_tree, name='order_tree'),
+    path('order/<int:order_id>/import/', views.order_import, name='order_import'),
+    path('instance/<str:item_number>/<str:serial>/', views.instance_detail, name='instance_detail'),
+    path('supplement/<int:instance_id>/', views.supplement_instance, name='supplement_instance'),
+    path('route-card/<int:route_card_id>/print/', views.route_card_print, name='route_card_print'),
+    path('route-card/<int:route_card_id>/export/', views.route_card_export, name='route_card_export'),
+    path('route-card/create/<int:instance_id>/', views.route_card_create, name='route_card_create'),
+
+    path('warehouse/', views.warehouse_dashboard, name='warehouse'),
+    path('warehouse/issue/', views.warehouse_issue, name='warehouse_issue'),
+]

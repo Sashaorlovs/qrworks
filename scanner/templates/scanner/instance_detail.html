@@ -1,0 +1,91 @@
+{% extends 'scanner/base.html' %}
+{% block title %}{{ instance }}{% endblock %}
+{% block content %}
+<h2>{{ instance.item.item_number }} – {{ instance.item.name }}</h2>
+<p>Партия: {{ instance.serial }} (план: {{ instance.planned_quantity }})</p>
+
+{% if assembly_status %}
+    <div class="alert alert-{% if assembly_status == 'Ожидает комплектации' %}warning{% elif assembly_status == 'Готово к комплектованию' %}success{% elif assembly_status == 'В работе' %}primary{% else %}secondary{% endif %}">
+        {{ assembly_status }}
+    </div>
+{% endif %}
+
+<!-- общий прогресс -->
+<div class="progress mb-3" style="height: 20px;">
+    <div class="progress-bar bg-info" style="width: {{ instance.completion_percent }}%;">
+        {{ instance.completion_percent }}% ({{ instance.good_produced }}/{{ instance.planned_quantity }})
+    </div>
+</div>
+{% if instance.shortage > 0 %}
+    <a href="{% url 'supplement_instance' instance.id %}" class="btn btn-sm btn-outline-danger mb-3">Дозапустить (нехватка {{ instance.shortage }})</a>
+{% endif %}
+
+<!-- кнопки маршрутной карты -->
+<div class="mb-3">
+    {% if instance.route_card %}
+        <a href="{% url 'route_card_print' instance.route_card.id %}" target="_blank" class="btn btn-sm btn-outline-secondary">🖨️ Печать</a>
+        <a href="{% url 'route_card_export' instance.route_card.id %}" class="btn btn-sm btn-outline-success">📥 Excel</a>
+        <a href="/admin/scanner/routecard/{{ instance.route_card.id }}/change/" class="btn btn-sm btn-outline-primary" target="_blank">✏️ Редактировать</a>
+    {% else %}
+        <a href="{% url 'route_card_create' instance.id %}" class="btn btn-sm btn-outline-warning">➕ Создать маршрутную карту</a>
+    {% endif %}
+</div>
+
+<!-- статус маршрута -->
+{% if instance.route_card %}
+    <div class="alert alert-{% if status_info.code == 'in_progress' %}primary{% elif status_info.code == 'pending' %}warning{% else %}success{% endif %}">
+        {{ status_info.label }}
+    </div>
+
+    <!-- карточки операций -->
+    {% for op in operations %}
+        <div class="card mb-2 border-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">
+            <div class="card-header d-flex justify-content-between">
+                <span>{{ op.order }}. {{ op.operation_type.name }}</span>
+                <span class="badge bg-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">
+                    {{ op.get_status_display }}
+                </span>
+            </div>
+            <div class="card-body">
+                <p>Норма: {{ op.planned_hours }} ч</p>
+                {% if op.worker %}<p>Исполнитель: {{ op.worker.get_full_name }}</p>{% endif %}
+                {% if op.status == 'completed' %}
+                    <p>Годных: {{ op.good_qty }} / Брак: {{ op.bad_qty }}</p>
+                {% endif %}
+            </div>
+            <div class="card-footer">
+                {% if op.status == 'pending' %}
+                    {% if instance.item.item_type == 'Сборочная единица' and not instance.all_components_ready %}
+                        <div class="text-muted">Дождитесь готовности компонентов</div>
+                    {% else %}
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="operation_id" value="{{ op.id }}">
+                            <input type="hidden" name="action" value="start">
+                            <button class="btn btn-primary btn-sm w-100">▶ Начать</button>
+                        </form>
+                    {% endif %}
+                {% elif op.status == 'in_progress' %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="operation_id" value="{{ op.id }}">
+                        <input type="hidden" name="action" value="complete">
+                        <div class="row g-2 mb-2">
+                            <div class="col-6">
+                                <input type="number" name="good_qty" value="0" class="form-control form-control-sm" placeholder="Годных">
+                            </div>
+                            <div class="col-6">
+                                <input type="number" name="bad_qty" value="0" class="form-control form-control-sm" placeholder="Брак">
+                            </div>
+                        </div>
+                        <textarea name="notes" class="form-control form-control-sm mb-2" placeholder="Примечание" rows="1"></textarea>
+                        <button class="btn btn-success btn-sm w-100">✓ Завершить</button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+    {% endfor %}
+{% endif %}
+
+<a href="javascript:history.back()" class="btn btn-outline-secondary mt-3">← Назад</a>
+{% endblock %}

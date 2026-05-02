@@ -1,0 +1,269 @@
+from django.db import models
+from django.contrib.auth.models import User
+from django.utils import timezone
+
+class Material(models.Model):
+    name = models.CharField(max_length=200, unique=True, verbose_name='Марка')
+    code = models.CharField(max_length=50, blank=True, unique=True, verbose_name='Код')
+    profile = models.CharField(max_length=200, blank=True, verbose_name='Профиль/сортамент')
+    standard = models.CharField(max_length=200, blank=True, verbose_name='ГОСТ/ОСТ')
+    unit = models.CharField(max_length=20, default='шт', verbose_name='Ед. изм.')
+    density = models.FloatField(null=True, blank=True, verbose_name='Плотность')
+    notes = models.TextField(blank=True, verbose_name='Примечания')
+
+    class Meta:
+        verbose_name = 'Материал'
+        verbose_name_plural = 'Материалы'
+
+    def __str__(self):
+        return self.name
+
+class Employee(models.Model):
+    last_name = models.CharField(max_length=100, verbose_name='Фамилия')
+    first_name = models.CharField(max_length=100, verbose_name='Имя')
+    middle_name = models.CharField(max_length=100, blank=True, verbose_name='Отчество')
+    position = models.CharField(max_length=150, blank=True, verbose_name='Должность')
+    user = models.OneToOneField(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='employee')
+    is_active = models.BooleanField(default=True)
+    ROLE_CHOICES = [
+        ('admin', 'Администратор'),
+        ('worker', 'Рабочий'),
+        ('technologist', 'Технолог'),
+        ('controller', 'Контролёр'),
+        ('storekeeper', 'Кладовщик'),
+    ]
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='worker', verbose_name='Роль')
+
+    class Meta:
+        verbose_name = 'Сотрудник'
+        verbose_name_plural = 'Сотрудники'
+
+    def __str__(self):
+        return f"{self.last_name} {self.first_name} {self.middle_name or ''}"
+
+class OperationType(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    code = models.CharField(max_length=20, unique=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        verbose_name = 'Тип операции'
+        verbose_name_plural = 'Типы операций'
+
+class Item(models.Model):
+    item_number = models.CharField(max_length=100, unique=True, verbose_name='Обозначение')
+    name = models.CharField(max_length=255, verbose_name='Наименование')
+    item_type = models.CharField(max_length=50, default='Деталь', verbose_name='Тип')
+    material = models.ForeignKey(Material, null=True, blank=True, on_delete=models.SET_NULL, verbose_name='Материал')
+
+    def __str__(self):
+        return f"{self.item_number} - {self.name}"
+
+    class Meta:
+        verbose_name = 'Изделие'
+        verbose_name_plural = 'Изделия'
+
+class Order(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'Черновик'),
+        ('in_progress', 'В работе'),
+        ('paused', 'Приостановлен'),
+        ('completed', 'Завершён'),
+        ('shipped', 'Отгружен'),
+        ('closed', 'Закрыт'),
+    ]
+    order_number = models.CharField(max_length=100, unique=True, verbose_name='Номер договора')
+    full_name = models.CharField(max_length=500, blank=True, verbose_name='Полное наименование')
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft', verbose_name='Статус')
+
+    def __str__(self):
+        return f"Заказ {self.order_number}"
+
+    class Meta:
+        verbose_name = 'Заказ'
+        verbose_name_plural = 'Заказы'
+
+class OrderItem(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items', verbose_name='Заказ')
+    item = models.ForeignKey(Item, on_delete=models.CASCADE, verbose_name='Изделие')
+    quantity = models.PositiveIntegerField(default=1, verbose_name='Количество')
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='children', verbose_name='Родительская позиция')
+
+    def planned_quantity(self):
+        return self.quantity
+
+    def __str__(self):
+        return f"{self.item.item_number} x{self.quantity} (Заказ {self.order.order_number})"
+
+    class Meta:
+        verbose_name = 'Позиция заказа'
+        verbose_name_plural = 'Позиции заказов'
+
+class ItemInstance(models.Model):
+    item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name='instances', verbose_name='Изделие')
+    serial = models.CharField(max_length=200, unique=True, verbose_name='Серийный номер')
+    quantity = models.PositiveIntegerField(default=1, verbose_name='Количество')
+    order_item = models.ForeignKey(OrderItem, null=True, blank=True, on_delete=models.SET_NULL, related_name='instances', verbose_name='Позиция заказа')
+    order = models.ForeignKey(Order, null=True, blank=True, on_delete=models.SET_NULL, related_name='instances', verbose_name='Договор')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def planned_quantity(self):
+        if self.order_item:
+            return self.order_item.planned_quantity()
+        return self.quantity
+
+    def good_produced(self):
+        if hasattr(self, 'route_card') and self.route_card:
+            ops = self.route_card.operations.all()
+            if ops:
+                return min(op.good_qty for op in ops)
+        return 0
+
+    def completion_percent(self):
+        planned = self.planned_quantity()
+        if planned == 0:
+            return 0
+        # Для сборок, если ещё не все компоненты готовы, возвращаем 0 (или процент компонентов)
+        if self.item.item_type == 'Сборочная единица':
+            if not self.all_components_ready():
+                # можно вернуть процент готовых компонентов, но пока 0
+                return 0
+        # для деталей и готовых сборок считаем по операциям
+        return int(self.good_produced() / planned * 100)
+
+    def shortage(self):
+        return max(0, self.planned_quantity() - self.good_produced())
+
+    def all_components_ready(self):
+        """Проверяет, что все дочерние позиции заказа имеют готовые экземпляры"""
+        if not self.order_item:
+            return True
+        children = self.order_item.children.all()
+        if not children:
+            return True
+        for child in children:
+            # для типов 'Деталь', 'Сборочная единица' нужен экземпляр
+            if child.item.item_type in ('Деталь', 'Сборочная единица'):
+                inst = child.instances.first()
+                if not inst or inst.good_produced() < child.planned_quantity():
+                    return False
+            # для стандартных/покупных считаем, что они всегда есть на складе
+        return True
+
+    def assembly_status(self):
+        if self.item.item_type != 'Сборочная единица':
+            return None
+        if not self.all_components_ready():
+            return 'Ожидает комплектации'
+        if not hasattr(self, 'route_card') or self.route_card.operations.count() == 0:
+            return 'Готово к комплектованию'
+        ops = self.route_card.operations.all()
+        if ops.filter(status='in_progress').exists():
+            return 'В работе'
+        if ops.filter(status='pending').exists() and not ops.filter(status='completed').exists():
+            return 'Готово к комплектованию'  # ещё не начинали
+        if self.good_produced() >= self.planned_quantity():
+            return 'Изготовлена'
+        return 'В работе'  # частично завершена
+
+    def current_operation_name(self):
+        if not hasattr(self, 'route_card') or not self.route_card:
+            return '—'
+        ops = self.route_card.operations.order_by('order')
+        in_progress = ops.filter(status='in_progress').first()
+        if in_progress:
+            return f'Выполняется: {in_progress.operation_type.name}'
+        pending = ops.filter(status='pending').first()
+        if pending:
+            return f'Ожидает: {pending.operation_type.name}'
+        if self.good_produced() == 0:
+            return 'Требуется доп.запуск'
+        return 'Изготовлена'
+
+    class Meta:
+        verbose_name = 'Экземпляр'
+        verbose_name_plural = 'Экземпляры'
+
+    def __str__(self):
+        return f"{self.item.item_number} - {self.serial}"
+
+class RouteCard(models.Model):
+    instance = models.OneToOneField(ItemInstance, on_delete=models.CASCADE, related_name='route_card', verbose_name='Экземпляр')
+
+    def get_status(self):
+        ops = self.operations.order_by('order')
+        total = ops.count()
+        if total == 0:
+            return {'code': 'empty', 'label': 'Маршрут не задан', 'progress': 0}
+        for op in ops:
+            if op.status == 'in_progress':
+                return {'code': 'in_progress', 'label': f'Выполняется: {op.operation_type.name}', 'progress': 0}
+        for op in ops:
+            if op.status == 'pending':
+                return {'code': 'pending', 'label': f'Ожидает: {op.operation_type.name}', 'progress': 0}
+        return {'code': 'completed', 'label': 'Изготовлена', 'progress': 100}
+
+    def __str__(self):
+        return f"Маршрутная карта {self.instance.item.item_number} ({self.instance.serial})"
+
+    class Meta:
+        verbose_name = 'Маршрутная карта'
+        verbose_name_plural = 'Маршрутные карты'
+
+class RouteOperation(models.Model):
+    route_card = models.ForeignKey(RouteCard, on_delete=models.CASCADE, related_name='operations', verbose_name='Маршрутная карта')
+    operation_type = models.ForeignKey(OperationType, on_delete=models.CASCADE, verbose_name='Тип операции')
+    order = models.PositiveIntegerField(default=0, verbose_name='Порядок')
+    planned_hours = models.DecimalField(max_digits=6, decimal_places=2, default=0, verbose_name='Норма часов')
+    status = models.CharField(max_length=20, choices=[
+        ('pending', 'Ожидает'),
+        ('in_progress', 'В работе'),
+        ('completed', 'Завершена')
+    ], default='pending', verbose_name='Статус')
+    started_at = models.DateTimeField(null=True, blank=True, verbose_name='Начало')
+    completed_at = models.DateTimeField(null=True, blank=True, verbose_name='Завершение')
+    worker = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, verbose_name='Исполнитель')
+    good_qty = models.PositiveIntegerField(default=0, verbose_name='Годных')
+    bad_qty = models.PositiveIntegerField(default=0, verbose_name='Брак')
+    notes = models.TextField(blank=True, verbose_name='Примечания')
+
+    def save(self, *args, **kwargs):
+        # автоматически устанавливаем порядок, если не задан явно
+        if not self.order and self.route_card_id:
+            last = self.route_card.operations.order_by('-order').first()
+            self.order = (last.order + 1) if last else 1
+        super().save(*args, **kwargs)
+
+    class Meta:
+        ordering = ['route_card', 'order']
+        verbose_name = 'Операция маршрутной карты'
+        verbose_name_plural = 'Операции маршрутных карт'
+
+    def __str__(self):
+        return f"Операция {self.order} ({self.operation_type.name}) для {self.route_card.instance.item.name}"
+
+
+class WarehouseRecord(models.Model):
+    MOVEMENT_TYPES = [
+        ('in', 'Приход'),
+        ('out', 'Расход'),
+    ]
+    instance = models.ForeignKey(ItemInstance, on_delete=models.CASCADE, related_name='warehouse_records', verbose_name='Партия')
+    movement_type = models.CharField(max_length=3, choices=MOVEMENT_TYPES, verbose_name='Тип операции')
+    quantity = models.PositiveIntegerField(verbose_name='Количество')
+    date = models.DateTimeField(default=timezone.now, verbose_name='Дата')
+    employee = models.ForeignKey(Employee, null=True, blank=True, on_delete=models.SET_NULL, verbose_name='Сотрудник')
+    recipient = models.CharField(max_length=200, blank=True, verbose_name='Получатель')
+    basis = models.CharField(max_length=300, blank=True, verbose_name='Основание')
+    notes = models.TextField(blank=True, verbose_name='Примечания')
+
+    class Meta:
+        verbose_name = 'Складская запись'
+        verbose_name_plural = 'Складские записи'
+
+    def __str__(self):
+        return f"{self.get_movement_type_display()} {self.instance.item.item_number} x{self.quantity}"
+

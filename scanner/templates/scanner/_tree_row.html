@@ -1,0 +1,74 @@
+{% with inst=item.instances.first %}
+<tr data-node-id="{{ item.id }}" data-parent="{{ item.parent.id|default:'' }}">
+    <td>
+        <span style="padding-left:{{ level|add:level }}em"></span>
+        {% if item.children.exists %}
+        <a data-bs-toggle="collapse" href="#children-{{ item.id }}" role="button" aria-expanded="false">
+            <i class="bi bi-chevron-right"></i> {{ item.item.item_number }}
+        </a>
+        {% else %}
+            {{ item.item.item_number }}
+        {% endif %}
+    </td>
+    <td>{{ item.item.name }}</td>
+    <td>{{ item.planned_quantity }}</td>
+    <td>
+        {% if inst %}
+            {% if inst.item.item_type == 'Сборочная единица' %}
+                {% with astatus=inst.assembly_status %}
+                    {% if astatus == 'Ожидает комплектации' %}
+                        <div class="progress" style="height: 16px;" title="{{ astatus }}">
+                            <div class="progress-bar bg-warning" style="width: 0%;">0%</div>
+                        </div>
+                        <small class="text-warning">{{ astatus }}</small>
+                    {% elif astatus == 'Готово к комплектованию' %}
+                        <div class="progress" style="height: 16px;" title="{{ astatus }}">
+                            <div class="progress-bar bg-success" style="width: 0%;">0%</div>
+                        </div>
+                        <small class="text-success">{{ astatus }}</small>
+                    {% elif astatus == 'В работе' or astatus == 'Изготовлена' %}
+                        <div class="progress" style="height: 16px;">
+                            <div class="progress-bar bg-{% if inst.completion_percent >= 100 %}success{% else %}primary{% endif %}" 
+                                 style="width: {{ inst.completion_percent }}%;">
+                                {{ inst.completion_percent }}%
+                            </div>
+                        </div>
+                        <small>{{ astatus }}</small>
+                    {% else %}
+                        {{ inst.current_operation_name }}<br>
+                        <div class="progress" style="height: 16px;">
+                            <div class="progress-bar bg-{% if inst.completion_percent >= 100 %}success{% elif inst.completion_percent > 0 %}warning text-dark{% else %}secondary{% endif %}" 
+                                 style="width: {{ inst.completion_percent }}%;">
+                                {{ inst.completion_percent }}%
+                            </div>
+                        </div>
+                    {% endif %}
+                {% endwith %}
+            {% else %}
+                {{ inst.current_operation_name }}<br>
+                <div class="progress" style="height: 16px;">
+                    <div class="progress-bar bg-{% if inst.completion_percent >= 100 %}success{% elif inst.completion_percent > 0 %}warning text-dark{% else %}secondary{% endif %}" 
+                         style="width: {{ inst.completion_percent }}%;">
+                        {{ inst.completion_percent }}%
+                    </div>
+                </div>
+            {% endif %}
+            {% if inst.shortage > 0 %}
+                <small class="text-danger">Нехватка: {{ inst.shortage }}</small>
+            {% endif %}
+        {% else %}
+            <span class="text-muted">Нет экземпляра</span>
+        {% endif %}
+    </td>
+    <td>
+        {% if inst %}
+            <a href="{% url 'instance_detail' item_number=inst.item.item_number serial=inst.serial %}" class="btn btn-sm btn-outline-primary">Открыть</a>
+        {% endif %}
+    </td>
+</tr>
+{% if item.children.exists %}
+    {% for child in item.children.all %}
+        {% include 'scanner/_tree_row.html' with item=child level=level|add:1 %}
+    {% endfor %}
+{% endif %}
+{% endwith %}
