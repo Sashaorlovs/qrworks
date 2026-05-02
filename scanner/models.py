@@ -28,7 +28,8 @@ class Employee(models.Model):
     ROLE_CHOICES = [
         ('admin', 'Администратор'),
         ('worker', 'Рабочий'),
-        ('technologist', 'Технолог'),
+        ('dispatcher', 'Диспетчер'),
+        ('master', 'Мастер'),
         ('controller', 'Контролёр'),
         ('storekeeper', 'Кладовщик'),
     ]
