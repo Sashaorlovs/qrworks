@@ -2,7 +2,8 @@ from django.contrib import admin
 from django.utils.safestring import mark_safe
 from .models import (
     Employee, OperationType, Item, Order, OrderItem,
-    ItemInstance, RouteCard, RouteOperation
+    ItemInstance, RouteCard, RouteOperation,
+    WarehouseRecord
 )
 
 # ------------------ Action для создания учётных записей ------------------
@@ -109,7 +110,8 @@ class RouteCardAdmin(admin.ModelAdmin):
     @admin.display(description='Экземпляр')
     def instance_link(self, obj):
         from django.utils.html import format_html
-        url = f"/admin/scanner/iteminstance/{obj.instance.id}/change/"
+        # Ссылка на редактирование маршрутной карты
+        url = f"/admin/scanner/routecard/{obj.id}/change/"
         return format_html('<a href="{}">{}</a>', url, f"{obj.instance.item.item_number} - {obj.instance.serial}")
 
     @admin.display(description='Операций')
@@ -130,3 +132,17 @@ class RouteOperationAdmin(admin.ModelAdmin):
 
 # Регистрируем Employee вручную (чтобы избежать конфликта с возможным дублированием)
 admin.site.register(Employee, EmployeeAdmin)
+
+@admin.register(WarehouseRecord)
+class WarehouseRecordAdmin(admin.ModelAdmin):
+    list_display = ('date', 'movement_type_verbose', 'instance_info', 'quantity', 'recipient', 'basis', 'employee', 'notes')
+    list_filter = ('movement_type', 'date')
+    search_fields = ('instance__item__item_number', 'instance__serial', 'recipient')
+
+    @admin.display(description='Тип')
+    def movement_type_verbose(self, obj):
+        return obj.get_movement_type_display()
+
+    @admin.display(description='Партия')
+    def instance_info(self, obj):
+        return f"{obj.instance.item.item_number} — {obj.instance.serial}"

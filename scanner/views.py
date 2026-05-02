@@ -347,19 +347,33 @@ def warehouse_issue(request):
     if request.method == 'POST':
         inst_id = request.POST.get('instance_id')
         qty = int(request.POST.get('quantity', 0))
-        recipient = request.POST.get('recipient', '')
+        recipient_val = request.POST.get('recipient', '')
         basis = request.POST.get('basis', '')
+        notes = request.POST.get('notes', '')
         inst = get_object_or_404(ItemInstance, pk=inst_id)
-        total_in = inst.warehouse_records.filter(movement_type='in').aggregate(s=models.Sum('quantity'))['s'] or 0
-        total_out = inst.warehouse_records.filter(movement_type='out_main').aggregate(s=models.Sum('quantity'))['s'] or 0
+        total_in = inst.warehouse_records.filter(
+            movement_type__in=['in_main', 'in']
+        ).aggregate(s=models.Sum('quantity'))['s'] or 0
+        total_out = inst.warehouse_records.filter(
+            movement_type__in=['out_main', 'out']
+        ).aggregate(s=models.Sum('quantity'))['s'] or 0
         balance = total_in - total_out
         if qty <= 0 or qty > balance:
             messages.error(request, f'Можно выдать не более {balance} шт. Вы запросили {qty}.')
         else:
+            recipient_str = ''
+            if recipient_val:
+                try:
+                    emp_id = int(recipient_val)
+                    emp = Employee.objects.get(pk=emp_id)
+                    recipient_str = f"{emp.last_name} {emp.first_name} {emp.middle_name or ''}".strip()
+                except (ValueError, Employee.DoesNotExist):
+                    recipient_str = str(recipient_val).strip()
             WarehouseRecord.objects.create(
                 instance=inst, movement_type='out_main', quantity=qty,
                 employee=request.user.employee if hasattr(request.user, 'employee') else None,
-                recipient=recipient, basis=basis
+                recipient=recipient_str, basis=basis,
+                notes=notes
             )
             messages.success(request, f'Выдано {qty} шт. со склада.')
         return redirect('warehouse')

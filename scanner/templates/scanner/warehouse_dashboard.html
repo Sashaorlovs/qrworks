@@ -91,7 +91,6 @@
         <thead class="table-dark">
             <tr>
                 <th>Дата</th>
-                <th>Тип</th>
                 <th>Деталь</th>
                 <th>Партия</th>
                 <th>Кол-во</th>
@@ -105,7 +104,6 @@
         {% for rec in records %}
             <tr>
                 <td>{{ rec.date|date:"d.m.Y H:i" }}</td>
-                <td>{{ rec.get_movement_type_display }}</td>
                 <td>{{ rec.instance.item.item_number }} – {{ rec.instance.item.name }}</td>
                 <td>{{ rec.instance.serial }}</td>
                 <td>{{ rec.quantity }}</td>
@@ -121,7 +119,7 @@
                 <td>{{ rec.notes|default:"—" }}</td>
             </tr>
         {% empty %}
-            <tr><td colspan="9">Нет записей</td></tr>
+            <tr><td colspan="8">Нет записей</td></tr>
         {% endfor %}
         </tbody>
     </table>
@@ -185,7 +183,6 @@
         var qtyInput = document.getElementById('issueQuantity');
         qtyInput.max = balance;
         qtyInput.value = 1;
-        // Автозаполнение основания
         var assembly = button.getAttribute('data-assembly');
         document.getElementById('issueBasis').value = assembly || '';
     });
