@@ -1,32 +1,32 @@
-
-/* Жёлтые кнопки (RAL 1003) */
-.btn-warning {
-    background-color: #F7B500 !important;
-    border-color: #D19E00 !important;
-    color: #000 !important;
+/* Верхняя навигационная панель */
+.navbar-dark {
+    background-color: #00557A !important;  /* RAL 5010 */
 }
-.btn-warning:hover {
-    background-color: #E5A800 !important;
-    border-color: #B88A00 !important;
+.navbar-dark .navbar-brand,
+.navbar-dark .navbar-nav .nav-link {
+    color: #000000 !important;            /* Чёрный текст */
+    font-weight: bold;
 }
 
-/* Жёлтые ссылки и акценты */
-a, .nav-link.active, .breadcrumb-item.active {
-    color: #F7B500 !important;
+/* Кнопки основного действия */
+.btn-primary {
+    background-color: #00557A !important;
+    border-color: #004466 !important;
+    color: #FFFFFF !important;
 }
-.content-header h1, .card-title {
-    color: #1a1a1a !important;
-}
-
-/* Основная шапка */
-.main-header {
-    background-color: #f8f9fa !important;
-    border-bottom: 2px solid #F7B500 !important;
+.btn-primary:hover {
+    background-color: #003d5c !important;
+    border-color: #002e44 !important;
 }
 
-/* Активные элементы меню */
+/* Активные элементы бокового меню */
 .sidebar-dark-primary .nav-sidebar > .nav-item > .nav-link.active,
 .sidebar-light-primary .nav-sidebar > .nav-item > .nav-link.active {
-    background-color: #F7B500 !important;
-    color: #000 !important;
+    background-color: #00557A !important;
+    color: #FFFFFF !important;
+}
+
+/* Ссылки */
+.content-wrapper a {
+    color: #00557A !important;
 }

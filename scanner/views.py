@@ -1,4 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
+from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.contrib import messages
@@ -280,6 +281,8 @@ def order_import(request, order_id):
         order.items.all().delete()
         for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
             designation, name, item_type, qty, parent_desig, material_name, profile = row[:7] if len(row) >= 7 else (row[0], row[1], row[2], row[3], row[4], None, None)
+            if item_type:
+                item_type = item_type.strip().capitalize()  # приводим к виду "Сборочная единица", "Деталь" и т.п.
             if not designation:
                 continue
             item, _ = Item.objects.get_or_create(
@@ -297,6 +300,16 @@ def order_import(request, order_id):
                     parent = parent_candidates.first()
             oi = OrderItem.objects.create(order=order, item=item, quantity=int(qty) if qty else 1, parent=parent)
             if item_type in ('Сборочная единица', 'Деталь'):
+                serial = f"{order.order_number}-{item.item_number}-{idx}"
+                while ItemInstance.objects.filter(serial=serial).exists():
+                    serial += f"-{timezone.now().strftime('%H%M%S')}"
+                inst = ItemInstance.objects.create(item=item, serial=serial, quantity=int(qty) if qty else 1, order=order, order_item=oi)
+                RouteCard.objects.create(instance=inst)
+                serial = f"{order.order_number}-{item.item_number}-{idx}"
+                while ItemInstance.objects.filter(serial=serial).exists():
+                    serial += f"-{timezone.now().strftime('%H%M%S')}"
+                inst = ItemInstance.objects.create(item=item, serial=serial, quantity=int(qty) if qty else 1, order=order, order_item=oi)
+                RouteCard.objects.create(instance=inst)
                 serial = f"{order.order_number}-{item.item_number}-{idx}"
                 while ItemInstance.objects.filter(serial=serial).exists():
                     serial += f"-{timezone.now().strftime('%H%M%S')}"
@@ -378,3 +391,81 @@ def warehouse_issue(request):
             messages.success(request, f'Выдано {qty} шт. со склада.')
         return redirect('warehouse')
     return redirect('warehouse')
+
+
+# --- Статистика ---
+@login_required
+def statistics(request):
+    from django.db.models import Sum, Count, Q
+    from datetime import datetime, timedelta
+
+    # Параметры фильтрации
+    start_date = request.GET.get('start')
+    end_date = request.GET.get('end')
+
+    # Базовые запросы
+    ops = RouteOperation.objects.select_related('operation_type', 'worker')
+    wh = WarehouseRecord.objects.select_related('instance__item', 'employee')
+
+    if start_date:
+        ops = ops.filter(completed_at__gte=start_date)
+        wh = wh.filter(date__gte=start_date)
+    if end_date:
+        # end_date включительно до конца дня
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+        ops = ops.filter(completed_at__lt=end_dt)
+        wh = wh.filter(date__lt=end_dt)
+
+    # Суммарные показатели
+    total_ops = ops.filter(status='completed').count()
+    total_good = ops.filter(status='completed').aggregate(s=Sum('good_qty'))['s'] or 0
+    total_bad = ops.filter(status='completed').aggregate(s=Sum('bad_qty'))['s'] or 0
+
+    # По типам операций
+    op_types = OperationType.objects.all()
+    op_stats = []
+    for ot in op_types:
+        qs = ops.filter(operation_type=ot, status='completed')
+        cnt = qs.count()
+        good = qs.aggregate(s=Sum('good_qty'))['s'] or 0
+        bad = qs.aggregate(s=Sum('bad_qty'))['s'] or 0
+        if cnt > 0:
+            op_stats.append({
+                'name': ot.name,
+                'count': cnt,
+                'good': good,
+                'bad': bad,
+            })
+
+    # Складские движения
+    in_main = wh.filter(movement_type='in_main').aggregate(s=Sum('quantity'))['s'] or 0
+    in_inter = wh.filter(movement_type='in_intermediate').aggregate(s=Sum('quantity'))['s'] or 0
+    out_main = wh.filter(movement_type='out_main').aggregate(s=Sum('quantity'))['s'] or 0
+
+    # Для графика выпуска по дням (последние 30 дней)
+    from_date = datetime.now() - timedelta(days=30)
+    daily_ops = RouteOperation.objects.filter(
+        status='completed', completed_at__gte=from_date
+    ).extra(select={'day': 'date(completed_at)'}).values('day').annotate(
+        good=Sum('good_qty'), bad=Sum('bad_qty'), count=Count('id')
+    ).order_by('day')
+
+    context = {
+        'start_date': start_date,
+        'end_date': end_date,
+        'total_ops': total_ops,
+        'total_good': total_good,
+        'total_bad': total_bad,
+        'op_stats': op_stats,
+        'in_main': in_main,
+        'in_inter': in_inter,
+        'out_main': out_main,
+        'daily_ops': list(daily_ops),
+        'op_types_json': [{'name': s['name'], 'count': s['count']} for s in op_stats],
+    }
+    return render(request, 'scanner/statistics.html', context)
+
+
+def logout_view(request):
+    logout(request)
+    return redirect('/accounts/login/')

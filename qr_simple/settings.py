@@ -121,11 +121,12 @@ LOGIN_REDIRECT_URL = '/'
 LOGIN_URL = '/accounts/login/'
 
 JAZZMIN_SETTINGS = {
+    "custom_css": "admin/css/custom_admin.css",
     "site_title": "QR Производство",
     "site_header": "Управление производством",
     "site_brand": "QR Factory",
     "welcome_sign": "Добро пожаловать в систему управления производством",
-    "copyright": "ООО «Производство»",
+    "copyright": "Учет производства",
     "search_model": ["scanner.Order", "scanner.Item", "scanner.Employee"],
     "topmenu_links": [
         {"name": "Главная", "url": "home", "permissions": ["auth.view_user"]},
@@ -174,4 +175,4 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 USE_L10N = True
 
-JAZZMIN_SETTINGS["custom_css"] = "admin/css/custom_admin.css"
+

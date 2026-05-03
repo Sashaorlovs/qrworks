@@ -1,0 +1,148 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Статистика{% endblock %}
+{% block content %}
+<h1>Статистика производства</h1>
+
+<!-- Форма фильтрации -->
+<form method="get" class="row g-3 mb-4">
+    <div class="col-auto">
+        <label class="form-label">С даты</label>
+        <input type="date" name="start" class="form-control" value="{{ start_date }}">
+    </div>
+    <div class="col-auto">
+        <label class="form-label">По дату</label>
+        <input type="date" name="end" class="form-control" value="{{ end_date }}">
+    </div>
+    <div class="col-auto align-self-end">
+        <button type="submit" class="btn btn-primary">Показать</button>
+    </div>
+</form>
+
+<!-- Основные показатели -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <h5 class="card-title">{{ total_ops }}</h5>
+                <p class="card-text">Выполнено операций</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <h5 class="card-title">{{ total_good }}</h5>
+                <p class="card-text">Годных деталей</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-danger">
+            <div class="card-body">
+                <h5 class="card-title">{{ total_bad }}</h5>
+                <p class="card-text">Брак</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-info">
+            <div class="card-body">
+                <h5 class="card-title">{{ in_main|add:in_inter }}</h5>
+                <p class="card-text">Принято на склад</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Диаграммы в два ряда -->
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">Выпуск по дням (последние 30 дней)</div>
+            <div class="card-body">
+                <canvas id="dailyChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">Распределение операций по типам</div>
+            <div class="card-body">
+                <canvas id="opsPieChart" width="400" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Детальная таблица -->
+<div class="card mb-4">
+    <div class="card-header">По типам операций</div>
+    <div class="card-body">
+        <table class="table table-bordered">
+            <thead>
+                <tr><th>Тип операции</th><th>Кол-во</th><th>Годных</th><th>Брак</th></tr>
+            </thead>
+            <tbody>
+            {% for op in op_stats %}
+                <tr>
+                    <td>{{ op.name }}</td>
+                    <td>{{ op.count }}</td>
+                    <td>{{ op.good }}</td>
+                    <td>{{ op.bad }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="4">Нет данных</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    // График выпуска по дням
+    var dailyCtx = document.getElementById('dailyChart').getContext('2d');
+    var dailyData = {{ daily_ops|safe }};
+    var labels = dailyData.map(function(item) { return item.day; });
+    var goodData = dailyData.map(function(item) { return item.good || 0; });
+    var badData = dailyData.map(function(item) { return item.bad || 0; });
+
+    new Chart(dailyCtx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Годных', data: goodData, backgroundColor: '#28a745' },
+                { label: 'Брак', data: badData, backgroundColor: '#dc3545' }
+            ]
+        },
+        options: {
+            responsive: true,
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+
+    // Круговая диаграмма операций
+    var pieCtx = document.getElementById('opsPieChart').getContext('2d');
+    var opLabels = [];
+    var opCounts = [];
+    {% for op in op_stats %}
+        opLabels.push('{{ op.name|escapejs }}');
+        opCounts.push({{ op.count }});
+    {% endfor %}
+
+    if (opLabels.length > 0) {
+        new Chart(pieCtx, {
+            type: 'pie',
+            data: {
+                labels: opLabels,
+                datasets: [{ data: opCounts, backgroundColor: [
+                    '#007bff','#28a745','#ffc107','#dc3545','#17a2b8',
+                    '#6f42c1','#fd7e14','#20c997','#e83e8c','#6c757d'
+                ]}]
+            },
+            options: { responsive: true }
+        });
+    }
+</script>
+{% endblock %}
