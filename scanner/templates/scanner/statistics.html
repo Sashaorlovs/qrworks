@@ -14,7 +14,7 @@
         <input type="date" name="end" class="form-control" value="{{ end_date }}">
     </div>
     <div class="col-auto align-self-end">
-        <button type="submit" class="btn btn-primary">Показать</button>
+        <button type="submit" class="btn btn-primary me-2">Показать</button><a href="{% url 'stats_export' %}?start={{ start_date }}&end={{ end_date }}" class="btn btn-success">📥 Экспорт в Excel</a><a href="{% url 'stats_compare' %}" class="btn btn-info ms-2">📊 Сравнение</a>
     </div>
 </form>
 
@@ -85,7 +85,7 @@
             <tbody>
             {% for op in op_stats %}
                 <tr>
-                    <td>{{ op.name }}</td>
+                    <td><a href="{% url 'stats_operations' op.name %}{% if start_date and start_date != 'None' %}?start={{ start_date }}{% endif %}{% if end_date and end_date != 'None' %}{% if start_date and start_date != 'None' %}&{% endif %}end={{ end_date }}{% endif %}">{{ op.name }}</a></td>
                     <td>{{ op.count }}</td>
                     <td>{{ op.good }}</td>
                     <td>{{ op.bad }}</td>

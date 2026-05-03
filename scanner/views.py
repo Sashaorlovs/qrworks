@@ -469,3 +469,327 @@ def statistics(request):
 def logout_view(request):
     logout(request)
     return redirect('/accounts/login/')
+
+
+@login_required
+def statistics_operations(request, type_name):
+    from django.db.models import Sum
+    from datetime import datetime, timedelta
+
+    start_date = request.GET.get('start')
+    end_date = request.GET.get('end')
+
+    ops = RouteOperation.objects.select_related('operation_type', 'worker', 'route_card__instance__item', 'route_card__instance__order').filter(
+        operation_type__name=type_name,
+        status='completed'
+    )
+
+    if start_date and start_date != 'None':
+        ops = ops.filter(completed_at__gte=start_date)
+    if end_date and end_date != 'None':
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+        ops = ops.filter(completed_at__lt=end_dt)
+
+    total_count = ops.count()
+    total_good = ops.aggregate(s=Sum('good_qty'))['s'] or 0
+    total_bad = ops.aggregate(s=Sum('bad_qty'))['s'] or 0
+
+    context = {
+        'type_name': type_name,
+        'start_date': start_date,
+        'end_date': end_date,
+        'total_count': total_count,
+        'total_good': total_good,
+        'total_bad': total_bad,
+        'operations': ops.order_by('-completed_at')[:200],  # последние 200 записей
+    }
+    return render(request, 'scanner/statistics_operations.html', context)
+
+
+@login_required
+def statistics_operations_export(request, type_name):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Border, Side, PatternFill
+    from datetime import datetime, timedelta
+    from django.db.models import Sum
+
+    start_date = request.GET.get('start')
+    end_date = request.GET.get('end')
+
+    ops = RouteOperation.objects.select_related(
+        'operation_type', 'worker', 'route_card__instance__item', 'route_card__instance__order'
+    ).filter(
+        operation_type__name=type_name,
+        status='completed'
+    )
+
+    if start_date and start_date != 'None':
+        ops = ops.filter(completed_at__gte=start_date)
+    if end_date and end_date != 'None':
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+        ops = ops.filter(completed_at__lt=end_dt)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f'{type_name}'
+
+    # Заголовки
+    headers = ['Дата завершения', 'Исполнитель', 'Деталь', 'Заказ', 'Годных', 'Брак', 'Примечание']
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='00557A', end_color='00557A', fill_type='solid')
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_num, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = thin_border
+
+    for row_num, op in enumerate(ops.order_by('-completed_at'), 2):
+        ws.cell(row=row_num, column=1, value=op.completed_at.strftime('%d.%m.%Y %H:%M') if op.completed_at else '—').border = thin_border
+        ws.cell(row=row_num, column=2, value=op.worker.get_full_name() if op.worker else '—').border = thin_border
+        ws.cell(row=row_num, column=3, value=f"{op.route_card.instance.item.item_number} – {op.route_card.instance.item.name}").border = thin_border
+        ws.cell(row=row_num, column=4, value=op.route_card.instance.order.order_number if op.route_card.instance.order else '—').border = thin_border
+        ws.cell(row=row_num, column=5, value=op.good_qty).border = thin_border
+        ws.cell(row=row_num, column=6, value=op.bad_qty).border = thin_border
+        ws.cell(row=row_num, column=7, value=op.notes or '—').border = thin_border
+
+    # Итоговая строка
+    total_row = ops.count() + 2
+    total_good = ops.aggregate(s=Sum('good_qty'))['s'] or 0
+    total_bad = ops.aggregate(s=Sum('bad_qty'))['s'] or 0
+    ws.cell(row=total_row, column=1, value='ИТОГО').font = Font(bold=True)
+    ws.cell(row=total_row, column=5, value=total_good).font = Font(bold=True)
+    ws.cell(row=total_row, column=6, value=total_bad).font = Font(bold=True)
+
+    # Автоширина (пропускаем объединённые ячейки)
+    import openpyxl
+    for col_cells in ws.columns:
+        max_length = 0
+        column_letter = None
+        # Получаем букву столбца из первой не-объединённой ячейки
+        for cell in col_cells:
+            if not isinstance(cell, openpyxl.cell.cell.MergedCell):
+                try:
+                    column_letter = cell.column_letter
+                    break
+                except AttributeError:
+                    continue
+        if not column_letter:
+            continue
+        for cell in col_cells:
+            if not isinstance(cell, openpyxl.cell.cell.MergedCell):
+                try:
+                    if cell.value and len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+        if max_length > 0:
+            adjusted_width = (max_length + 2) * 1.2
+            ws.column_dimensions[column_letter].width = adjusted_width
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    filename = f'{type_name}_{start_date or "все"}_{end_date or "все"}.xlsx'
+    response['Content-Disposition'] = f'attachment; filename="{quote(filename)}"'
+    wb.save(response)
+    return response
+
+
+@login_required
+def statistics_export(request):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Border, Side, PatternFill, Alignment
+    from datetime import datetime, timedelta
+    from django.db.models import Sum
+
+    start_date = request.GET.get('start')
+    end_date = request.GET.get('end')
+
+    # Фильтруем операции и склад
+    ops = RouteOperation.objects.select_related('operation_type', 'worker')
+    wh = WarehouseRecord.objects.all()
+
+    if start_date and start_date != 'None':
+        ops = ops.filter(completed_at__gte=start_date)
+        wh = wh.filter(date__gte=start_date)
+    if end_date and end_date != 'None':
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+        ops = ops.filter(completed_at__lt=end_dt)
+        wh = wh.filter(date__lt=end_dt)
+
+    total_ops = ops.filter(status='completed').count()
+    total_good = ops.filter(status='completed').aggregate(s=Sum('good_qty'))['s'] or 0
+    total_bad = ops.filter(status='completed').aggregate(s=Sum('bad_qty'))['s'] or 0
+    in_main = wh.filter(movement_type='in_main').aggregate(s=Sum('quantity'))['s'] or 0
+    in_inter = wh.filter(movement_type='in_intermediate').aggregate(s=Sum('quantity'))['s'] or 0
+    out_main = wh.filter(movement_type='out_main').aggregate(s=Sum('quantity'))['s'] or 0
+
+    # По типам операций
+    op_types = OperationType.objects.all()
+    op_stats = []
+    for ot in op_types:
+        qs = ops.filter(operation_type=ot, status='completed')
+        cnt = qs.count()
+        good = qs.aggregate(s=Sum('good_qty'))['s'] or 0
+        bad = qs.aggregate(s=Sum('bad_qty'))['s'] or 0
+        if cnt > 0:
+            op_stats.append({'name': ot.name, 'count': cnt, 'good': good, 'bad': bad})
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Сводный отчёт'
+
+    # Стили
+    title_font = Font(bold=True, size=14)
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='00557A', end_color='00557A', fill_type='solid')
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+
+    # Заголовок
+    ws.merge_cells('A1:D1')
+    ws['A1'] = 'Сводный отчёт за период: ' + (f'{start_date} – {end_date}' if start_date and start_date != 'None' else 'всё время')
+    ws['A1'].font = title_font
+
+    # Общие показатели
+    ws['A3'] = 'Общие показатели'
+    ws['A3'].font = Font(bold=True)
+    indicators = [
+        ('Выполнено операций', total_ops),
+        ('Годных деталей', total_good),
+        ('Брак', total_bad),
+        ('Принято на основной склад', in_main),
+        ('Принято на меж.операционный', in_inter),
+        ('Выдано со склада', out_main),
+    ]
+    for i, (label, value) in enumerate(indicators, 4):
+        ws.cell(row=i, column=1, value=label).font = Font(bold=True)
+        ws.cell(row=i, column=2, value=value)
+        ws.cell(row=i, column=1).border = thin_border
+        ws.cell(row=i, column=2).border = thin_border
+
+    # Таблица по типам операций
+    table_start = len(indicators) + 5
+    ws.cell(row=table_start, column=1, value='По типам операций').font = Font(bold=True)
+    headers = ['Тип операции', 'Количество', 'Годных', 'Брак']
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=table_start+1, column=col_num, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = thin_border
+        cell.alignment = Alignment(horizontal='center')
+
+    for i, stat in enumerate(op_stats, table_start+2):
+        ws.cell(row=i, column=1, value=stat['name']).border = thin_border
+        ws.cell(row=i, column=2, value=stat['count']).border = thin_border
+        ws.cell(row=i, column=3, value=stat['good']).border = thin_border
+        ws.cell(row=i, column=4, value=stat['bad']).border = thin_border
+
+    # Автоширина (пропускаем объединённые ячейки)
+    import openpyxl
+    for col_cells in ws.columns:
+        max_length = 0
+        column_letter = None
+        # Получаем букву столбца из первой не-объединённой ячейки
+        for cell in col_cells:
+            if not isinstance(cell, openpyxl.cell.cell.MergedCell):
+                try:
+                    column_letter = cell.column_letter
+                    break
+                except AttributeError:
+                    continue
+        if not column_letter:
+            continue
+        for cell in col_cells:
+            if not isinstance(cell, openpyxl.cell.cell.MergedCell):
+                try:
+                    if cell.value and len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+        if max_length > 0:
+            adjusted_width = (max_length + 2) * 1.2
+            ws.column_dimensions[column_letter].width = adjusted_width
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    start_f = start_date if start_date and start_date != 'None' else 'все'
+    end_f = end_date if end_date and end_date != 'None' else 'все'
+    filename = f'Сводный_отчёт_{start_f}_{end_f}.xlsx'
+    response['Content-Disposition'] = f'attachment; filename="{quote(filename)}"'
+    wb.save(response)
+    return response
+
+
+@login_required
+def statistics_compare(request):
+    from django.db.models import Sum
+    from datetime import datetime, timedelta
+
+    start_a = request.GET.get('start_a')
+    end_a = request.GET.get('end_a')
+    start_b = request.GET.get('start_b')
+    end_b = request.GET.get('end_b')
+
+    def get_stats(start, end):
+        ops = RouteOperation.objects.filter(status='completed')
+        wh = WarehouseRecord.objects.all()
+        if start and start != 'None':
+            ops = ops.filter(completed_at__gte=start)
+            wh = wh.filter(date__gte=start)
+        if end and end != 'None':
+            end_dt = datetime.strptime(end, '%Y-%m-%d') + timedelta(days=1)
+            ops = ops.filter(completed_at__lt=end_dt)
+            wh = wh.filter(date__lt=end_dt)
+        return {
+            'total_ops': ops.count(),
+            'total_good': ops.aggregate(s=Sum('good_qty'))['s'] or 0,
+            'total_bad': ops.aggregate(s=Sum('bad_qty'))['s'] or 0,
+            'in_main': wh.filter(movement_type='in_main').aggregate(s=Sum('quantity'))['s'] or 0,
+            'out_main': wh.filter(movement_type='out_main').aggregate(s=Sum('quantity'))['s'] or 0,
+        }
+
+    stats_a = get_stats(start_a, end_a)
+    stats_b = get_stats(start_b, end_b)
+
+    # Собираем таблицу сравнения
+    rows = []
+    labels = [
+        ('total_ops', 'Выполнено операций'),
+        ('total_good', 'Годных деталей'),
+        ('total_bad', 'Брак'),
+        ('in_main', 'Принято на склад'),
+        ('out_main', 'Выдано со склада'),
+    ]
+    for key, label in labels:
+        val_a = stats_a[key]
+        val_b = stats_b[key]
+        diff = val_b - val_a
+        if val_a != 0:
+            percent = round(diff / val_a * 100, 1)
+        else:
+            percent = 0 if val_b == 0 else 100  # если с нуля, считаем +100%
+        rows.append({
+            'label': label,
+            'val_a': val_a,
+            'val_b': val_b,
+            'diff': diff,
+            'percent': percent,
+        })
+
+    context = {
+        'start_a': start_a,
+        'end_a': end_a,
+        'start_b': start_b,
+        'end_b': end_b,
+        'rows': rows,
+    }
+    return render(request, 'scanner/statistics_compare.html', context)

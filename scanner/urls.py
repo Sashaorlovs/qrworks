@@ -2,6 +2,10 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('stats/compare/', views.statistics_compare, name='stats_compare'),
+    path('stats/export/', views.statistics_export, name='stats_export'),
+    path('stats/operations/<str:type_name>/export/', views.statistics_operations_export, name='stats_operations_export'),
+    path('stats/operations/<str:type_name>/', views.statistics_operations, name='stats_operations'),
     path('stats/', views.statistics, name='stats'),
     path('', views.dashboard, name='home'),
     path('orders/', views.order_list, name='order_list'),

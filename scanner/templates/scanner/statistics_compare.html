@@ -1,0 +1,65 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Сравнение периодов{% endblock %}
+{% block content %}
+<h1>Сравнение периодов</h1>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h4>Период А</h4>
+        <form method="get" id="compareForm">
+            <div class="row g-2">
+                <div class="col">
+                    <input type="date" name="start_a" class="form-control" value="{{ start_a }}">
+                </div>
+                <div class="col">
+                    <input type="date" name="end_a" class="form-control" value="{{ end_a }}">
+                </div>
+            </div>
+    </div>
+    <div class="col-md-6">
+        <h4>Период Б</h4>
+            <div class="row g-2">
+                <div class="col">
+                    <input type="date" name="start_b" class="form-control" value="{{ start_b }}">
+                </div>
+                <div class="col">
+                    <input type="date" name="end_b" class="form-control" value="{{ end_b }}">
+                </div>
+            </div>
+    </div>
+</div>
+<div class="mb-3">
+    <button type="submit" class="btn btn-primary">Сравнить</button>
+    <a href="{% url 'stats' %}" class="btn btn-outline-secondary">← К статистике</a>
+</div>
+</form>
+
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>Показатель</th>
+            <th>Период А</th>
+            <th>Период Б</th>
+            <th>А → Б</th>
+            <th>%</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for row in rows %}
+        <tr>
+            <td>{{ row.label }}</td>
+            <td>{{ row.val_a }}</td>
+            <td>{{ row.val_b }}</td>
+            <td class="{% if row.diff > 0 %}text-success{% elif row.diff < 0 %}text-danger{% endif %}">
+                {{ row.diff }}
+            </td>
+            <td class="{% if row.percent > 0 %}text-success{% elif row.percent < 0 %}text-danger{% endif %}">
+                {{ row.percent }}%
+            </td>
+        </tr>
+    {% empty %}
+        <tr><td colspan="5">Укажите даты для сравнения</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

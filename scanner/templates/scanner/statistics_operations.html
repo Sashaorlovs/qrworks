@@ -1,0 +1,70 @@
+{% extends 'scanner/base.html' %}
+{% block title %}{{ type_name }} – детализация{% endblock %}
+{% block content %}
+<h1>{{ type_name }} – детализация</h1>
+
+<div class="mb-3">
+    <a href="{% url 'stats' %}?start={{ start_date }}&end={{ end_date }}" class="btn btn-outline-secondary">← Назад к статистике</a>
+    <a href="{% url 'stats_operations_export' type_name %}?start={{ start_date }}&end={{ end_date }}" class="btn btn-success ms-2">📥 Экспорт в Excel</a>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <h5 class="card-title">{{ total_count }}</h5>
+                <p class="card-text">Всего операций</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <h5 class="card-title">{{ total_good }}</h5>
+                <p class="card-text">Годных</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-white bg-danger">
+            <div class="card-body">
+                <h5 class="card-title">{{ total_bad }}</h5>
+                <p class="card-text">Брак</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr>
+            <th>Дата завершения</th>
+            <th>Исполнитель</th>
+            <th>Деталь</th>
+            <th>Заказ</th>
+            <th>Годных</th>
+            <th>Брак</th>
+            <th>Примечание</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for op in operations %}
+        <tr>
+            <td>{{ op.completed_at|date:"d.m.Y H:i" }}</td>
+            <td>{{ op.worker.get_full_name|default:"—" }}</td>
+            <td>
+                <a href="{% url 'instance_detail' item_number=op.route_card.instance.item.item_number serial=op.route_card.instance.serial %}">
+                    {{ op.route_card.instance.item.item_number }} – {{ op.route_card.instance.item.name }}
+                </a>
+            </td>
+            <td>{{ op.route_card.instance.order.order_number|default:"—" }}</td>
+            <td>{{ op.good_qty }}</td>
+            <td>{{ op.bad_qty }}</td>
+            <td>{{ op.notes|default:"—" }}</td>
+        </tr>
+    {% empty %}
+        <tr><td colspan="7">Нет завершённых операций за выбранный период</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
