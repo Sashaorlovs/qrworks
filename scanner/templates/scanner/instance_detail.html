@@ -16,6 +16,18 @@
         {{ instance.completion_percent }}% ({{ instance.good_produced }}/{{ instance.planned_quantity }})
     </div>
 </div>
+{% if instance.item.material %}
+<div class="mb-2">
+    <strong>Материал:</strong> {{ instance.item.material.name }}
+    {% if instance.item.material.profile %}({{ instance.item.material.profile }}){% endif %}
+</div>
+{% endif %}
+{% if instance.item.blank_size %}
+<div class="mb-2">
+    <strong>Размер заготовки:</strong> {{ instance.item.blank_size }}
+    {% if instance.item.blanks_per_item > 1 %}(Кол-во заготовок: {{ instance.item.blanks_per_item }}){% endif %}
+</div>
+{% endif %}
 {% if instance.shortage > 0 %}
     <a href="{% url 'supplement_instance' instance.id %}" class="btn btn-sm btn-outline-danger mb-3">Дозапустить (нехватка {{ instance.shortage }})</a>
 {% endif %}

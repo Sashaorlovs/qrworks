@@ -58,6 +58,8 @@ class Item(models.Model):
     name = models.CharField(max_length=255, verbose_name='Наименование')
     item_type = models.CharField(max_length=50, default='Деталь', verbose_name='Тип')
     material = models.ForeignKey(Material, null=True, blank=True, on_delete=models.SET_NULL, verbose_name='Материал')
+    blank_size = models.CharField(max_length=200, blank=True, verbose_name='Размер заготовки')
+    blanks_per_item = models.PositiveIntegerField(default=1, verbose_name='Кол-во заготовок')
 
     def __str__(self):
         return f"{self.item_number} - {self.name}"

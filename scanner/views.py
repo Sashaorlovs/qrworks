@@ -111,6 +111,8 @@ def supplement_instance(request, instance_id):
 
 @login_required
 def route_card_print(request, route_card_id):
+    from openpyxl.styles import PatternFill
+
     rc = get_object_or_404(RouteCard, pk=route_card_id)
     ops = rc.operations.select_related('operation_type', 'worker').order_by('order')
     instance = rc.instance
@@ -118,11 +120,7 @@ def route_card_print(request, route_card_id):
     wb = openpyxl.load_workbook(template_path)
     ws = wb.active
 
-    ws.page_setup.orientation = 'portrait'
-    ws.page_setup.paperSize = 9
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0
-
+    # --- Определяем главную сборку и родительскую подсборку ---
     order_item = instance.order_item
     root_item = None
     parent_item = None
@@ -133,6 +131,7 @@ def route_card_print(request, route_card_id):
         root_item = current
         parent_item = order_item.parent
 
+    # --- Заполняем основные поля ---
     if root_item:
         ws['B2'] = f"{root_item.item.item_number} – {root_item.item.name}"
     else:
@@ -148,9 +147,95 @@ def route_card_print(request, route_card_id):
     ws['A5'] = 'Количество деталей:'
     ws['B5'] = instance.planned_quantity()
 
+    # --- Стили ---
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    header_font = Font(bold=True)
+    white_fill = PatternFill(start_color='FFFFFF', end_color='FFFFFF', fill_type='solid')
+
+    # --- Материал и заготовка (строки 6 и 7) ---
+    # Очистим
+    for col in range(1, 9):
+        c6 = ws.cell(row=6, column=col)
+        c6.value = ''
+        c6.fill = white_fill
+        c6.border = Border()
+        c7 = ws.cell(row=7, column=col)
+        c7.value = ''
+        c7.fill = white_fill
+        c7.border = Border()
+
+    if instance.item.material:
+        ws['A6'] = 'Материал:'
+        if instance.item.material.profile:
+            ws['B6'] = f"{instance.item.material.name} ({instance.item.material.profile})"
+        else:
+            ws['B6'] = instance.item.material.name
+        ws['A6'].fill = white_fill
+        ws['B6'].fill = white_fill
+        ws['A6'].border = thin_border
+        ws['B6'].border = thin_border
+
+    if instance.item.blank_size:
+        ws['A7'] = 'Размер заготовки:'
+        ws['B7'] = instance.item.blank_size
+        ws['A7'].fill = white_fill
+        ws['B7'].fill = white_fill
+        ws['A7'].border = thin_border
+        ws['B7'].border = thin_border
+        if instance.item.blanks_per_item:
+            ws['C7'] = f'Кол-во заготовок: {instance.item.blanks_per_item}'
+            ws['C7'].fill = white_fill
+            ws['C7'].border = thin_border
+        else:
+            ws['C7'].border = thin_border
+
+    # --- Разделительная строка (строка 8) ---
+    for col in range(1, 9):
+        c = ws.cell(row=8, column=col)
+        c.value = ''
+        c.border = Border(bottom=Side(style='thin'))
+        c.fill = white_fill
+
+    # --- Заголовки таблицы (строка 9) ---
+    for col in range(1, 9):
+        ws.cell(row=9, column=col, value='')
+        ws.cell(row=9, column=col).fill = white_fill
+    # Столбец A — пустой, без границы
+    ws['A9'].border = Border()
+    headers = ['Наименование операции', 'Норма времени, ч', 'Оборудование', 'Исполнитель', 'Статус', 'Годных/Брак', 'Примечание']
+    for col_idx, title in enumerate(headers, start=2):
+        cell = ws.cell(row=9, column=col_idx, value=title)
+        cell.font = header_font
+        cell.border = thin_border
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+
+    # --- Данные операций (строка 10+) ---
+    for i, op in enumerate(ops):
+        row = 10 + i
+        # Столбец A — пустой, без границы
+        ws.cell(row=row, column=1, value='').border = Border()
+        ws.cell(row=row, column=2, value=op.operation_type.name).border = thin_border
+        ws.cell(row=row, column=3, value=float(op.planned_hours)).border = thin_border
+        ws.cell(row=row, column=4, value='').border = thin_border
+        ws.cell(row=row, column=5, value=op.worker.get_full_name() if op.worker else '').border = thin_border
+        ws.cell(row=row, column=6, value=op.get_status_display()).border = thin_border
+        ws.cell(row=row, column=7, value=f"{op.good_qty}/{op.bad_qty}").border = thin_border
+        ws.cell(row=row, column=8, value=op.notes or '').border = thin_border
+
+    # --- Установим ширину столбца A минимальной ---
+    ws.column_dimensions['A'].width = 3
+
+    # --- QR-код ---
     try:
-        qr_url = request.build_absolute_uri(reverse('instance_detail', kwargs={
-            'item_number': instance.item.item_number, 'serial': instance.serial}))
+        qr_url = request.build_absolute_uri(
+            reverse('instance_detail', kwargs={
+                'item_number': instance.item.item_number,
+                'serial': instance.serial
+            })
+        )
         img = qrcode.make(qr_url)
         buf = BytesIO()
         img.save(buf, format='PNG')
@@ -162,63 +247,31 @@ def route_card_print(request, route_card_id):
     except Exception:
         pass
 
-    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
-                         top=Side(style='thin'), bottom=Side(style='thin'))
-    header_font = Font(bold=True)
-
-    headers = ['Наименование операции', 'Норма времени, ч', 'Оборудование', 'Исполнитель', 'Статус', 'Годных/Брак', 'Примечание']
-    for col_idx, title in enumerate(headers, start=2):
-        cell = ws.cell(row=7, column=col_idx, value=title)
-        cell.font = header_font
-        cell.border = thin_border
-        cell.alignment = Alignment(horizontal='center', vertical='center')
-
-    for i, op in enumerate(ops):
-        row = 8 + i
-        ws.cell(row=row, column=1, value='').border = Border()
-        ws.cell(row=row, column=2, value=op.operation_type.name).border = thin_border
-        ws.cell(row=row, column=3, value=float(op.planned_hours)).border = thin_border
-        ws.cell(row=row, column=4, value='').border = thin_border
-        ws.cell(row=row, column=5, value=op.worker.get_full_name() if op.worker else '').border = thin_border
-        ws.cell(row=row, column=6, value=op.get_status_display()).border = thin_border
-        ws.cell(row=row, column=7, value=f"{op.good_qty}/{op.bad_qty}").border = thin_border
-        ws.cell(row=row, column=8, value=op.notes or '').border = thin_border
-
-    ws.column_dimensions['A'].width = 18
-    for col in ['B', 'C', 'D', 'E', 'F', 'G', 'H']:
-        max_width = 10
-        for row in range(7, 8 + len(ops)):
-            cell = ws[f'{col}{row}']
-            if cell.value:
-                width = len(str(cell.value)) * 1.2 + 2
-                if width > max_width:
-                    max_width = width
-        ws.column_dimensions[col].width = min(max_width, 40)
-
-    signature_row = 8 + len(ops) + 2
+    # --- Подпись ---
+    signature_row = 10 + len(ops) + 1
     who = ''
-    if hasattr(request.user, 'employee'):
+    if hasattr(request.user, 'employee') and request.user.employee:
         emp = request.user.employee
-        who = f"{emp.position}, {emp.last_name} {emp.first_name} {emp.middle_name or ''}".replace('  ', ' ').strip()
-    else:
+        who = f"{emp.last_name} {emp.first_name} {emp.middle_name or ''}".replace('  ', ' ').strip()
+    if not who:
         who = request.user.get_full_name() or request.user.username
-
     ws.merge_cells(f'A{signature_row}:H{signature_row}')
-    cell = ws[f'A{signature_row}']
-    cell.value = f'Документ сформировал: {who}'
-    cell.font = Font(italic=True)
-    cell.alignment = Alignment(horizontal='left')
+    ws[f'A{signature_row}'] = f'Документ сформировал: {who}'
+    ws[f'A{signature_row}'].font = Font(italic=True)
+    ws[f'A{signature_row}'].alignment = Alignment(horizontal='left')
 
+    # --- Сохраняем файл ---
     output = BytesIO()
     wb.save(output)
     output.seek(0)
-    response = HttpResponse(output.read(),
-                            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response = HttpResponse(
+        output.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
     safe_name = f"{instance.item.item_number}_{instance.item.name}_{instance.serial}.xlsx"
     safe_name = quote(safe_name.replace(' ', '_').replace('/', '_'))
     response['Content-Disposition'] = f'attachment; filename="{safe_name}"'
     return response
-
 @login_required
 def route_card_export(request, route_card_id):
     rc = get_object_or_404(RouteCard, pk=route_card_id)
@@ -290,9 +343,36 @@ def order_import(request, order_id):
                 defaults={'name': name.strip() if name else designation, 'item_type': item_type.strip() if item_type else 'Деталь'}
             )
             if material_name and material_name.strip():
-                mat, _ = Material.objects.get_or_create(name=material_name.strip(), defaults={'profile': profile.strip() if profile else ''})
+                mat_name = material_name.strip()
+                # Генерируем уникальный код, если материал новый
+                base_code = ''.join(w[0].upper() for w in mat_name.split())[:6]
+                code = base_code
+                counter = 1
+                while Material.objects.filter(code=code).exists():
+                    code = f"{base_code}_{counter}"
+                    counter += 1
+                mat, _ = Material.objects.get_or_create(
+                    name=mat_name,
+                    defaults={
+                        'code': code,
+                        'profile': profile.strip() if profile else ''
+                    }
+                )
                 item.material = mat
                 item.save()
+            # Сохраняем размер заготовки и количество, если есть в спецификации (столбцы 8 и 9, т.е. после profile)
+            # Размер заготовки (столбец H, индекс 7) и кол-во заготовок (столбец I, индекс 8)
+            raw_blank = row[7] if len(row) > 7 else ''
+            raw_qty = row[8] if len(row) > 8 else 0
+            # Преобразуем к строкам/числам аккуратно
+            if raw_blank is not None and str(raw_blank).strip():
+                item.blank_size = str(raw_blank).strip()
+            if raw_qty is not None:
+                try:
+                    item.blanks_per_item = int(raw_qty)
+                except (ValueError, TypeError):
+                    pass
+            item.save()
             parent = None
             if parent_desig and parent_desig.strip():
                 parent_candidates = OrderItem.objects.filter(order=order, item__item_number=parent_desig.strip()).order_by('-id')

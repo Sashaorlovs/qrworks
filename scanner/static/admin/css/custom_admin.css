@@ -1,14 +1,22 @@
-/* Верхняя навигационная панель */
-.navbar-dark {
-    background-color: #00557A !important;  /* RAL 5010 */
-}
-.navbar-dark .navbar-brand,
-.navbar-dark .navbar-nav .nav-link {
-    color: #000000 !important;            /* Чёрный текст */
-    font-weight: bold;
+/* ----- ВЕРХНЯЯ ПАНЕЛЬ ----- */
+body.sidebar-collapse .main-header.navbar.navbar-dark,
+body:not(.sidebar-collapse) .main-header.navbar.navbar-dark,
+.main-header.navbar.navbar-dark {
+    background-color: #dee2e6 !important;
 }
 
-/* Кнопки основного действия */
+.main-header.navbar.navbar-dark .navbar-brand,
+.main-header.navbar.navbar-dark .navbar-nav .nav-link,
+.main-header.navbar.navbar-dark .nav-link {
+    color: #212529 !important;
+}
+
+/* Убираем возможное белое наслоение от Jazzmin */
+.navbar-white {
+    background-color: #dee2e6 !important;
+}
+
+/* Кнопки */
 .btn-primary {
     background-color: #00557A !important;
     border-color: #004466 !important;

@@ -1,0 +1,12 @@
+/* Верхняя панель — серый фон, тёмный текст */
+.main-header.navbar-dark {
+    background-color: #dee2e6 !important;
+}
+.main-header.navbar-dark .navbar-brand,
+.main-header.navbar-dark .navbar-nav .nav-link {
+    color: #212529 !important;
+}
+/* Кнопки */
+.btn-primary { background-color: #00557A !important; border-color: #004466 !important; color: #fff !important; }
+/* Ссылки */
+a { color: #00557A !important; }
