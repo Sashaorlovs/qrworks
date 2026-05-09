@@ -175,7 +175,7 @@ def route_card_print(request, route_card_id):
     center_align = XlAlignment(horizontal='center', vertical='center', wrap_text=True)
     left_align = XlAlignment(horizontal='left', vertical='center', wrap_text=True)
 
-    # Удаляем старые изображения (QR)
+    # Удаляем старые изображения
     for img in ws._images[:]:
         ws._images.remove(img)
 
@@ -198,65 +198,57 @@ def route_card_print(request, route_card_id):
     except Exception:
         pass
 
-    # Заголовки таблицы (строка 10)
-    for col in range(1, 8):
-        cell = ws.cell(row=10, column=col)
-        cell.font = header_font
-        cell.border = thin_border
-        cell.alignment = center_align
+    # Заголовки таблицы (строка 10) – только нужные столбцы
+    headers = ['Наименование операции', 'Норма времени, ч', 'Оборудование', 'Исполнитель', 'Годных/Брак']
+    for col_idx, title in enumerate(headers, start=1):
+        cell = ws.cell(row=10, column=col_idx, value=title)
+        cell.font = header_font; cell.border = thin_border; cell.alignment = center_align
 
     # Данные операций (строка 11+)
     for i, op in enumerate(ops):
         row = 11 + i
         c = ws.cell(row=row, column=1, value=op.operation_type.name)
-        c.font = data_font
-        c.border = thin_border
-        c.alignment = left_align
+        c.font = data_font; c.border = thin_border; c.alignment = left_align
         c = ws.cell(row=row, column=2, value=float(op.planned_hours))
-        c.font = data_font
-        c.border = thin_border
-        c.alignment = center_align
+        c.font = data_font; c.border = thin_border; c.alignment = center_align
         c = ws.cell(row=row, column=3, value='')
-        c.font = data_font
-        c.border = thin_border
-        c.alignment = center_align
+        c.font = data_font; c.border = thin_border; c.alignment = center_align
         c = ws.cell(row=row, column=4, value=op.worker.get_full_name() if op.worker else '')
-        c.font = data_font
-        c.border = thin_border
-        c.alignment = left_align
-        c = ws.cell(row=row, column=5, value=op.get_status_display())
-        c.font = data_font
-        c.border = thin_border
-        c.alignment = center_align
-        c = ws.cell(row=row, column=6, value=f"{op.good_qty}/{op.bad_qty}")
-        c.font = data_font
-        c.border = thin_border
-        c.alignment = center_align
-        c = ws.cell(row=row, column=7, value=op.notes or '')
-        c.font = data_font
-        c.border = thin_border
-        c.alignment = left_align
+        c.font = data_font; c.border = thin_border; c.alignment = left_align
+        c = ws.cell(row=row, column=5, value=f"{op.good_qty}/{op.bad_qty}")
+        c.font = data_font; c.border = thin_border; c.alignment = center_align
 
-    # Подпись (после таблицы)
-    signature_row = 11 + len(ops) + 1
-    # Очистим все возможные старые подписи в строках 12 и далее (на случай, если шаблон содержал текст)
-    for r in range(12, signature_row + 2):
+    # Подготовка строки подписи: снимаем возможное объединение в строках 12-13
+    for r in range(12, 14):
+        try:
+            ws.unmerge_cells(f'A{r}:G{r}')
+        except:
+            pass  # если не было объединения
+
+    # Очищаем старые статические надписи (если были)
+    for r in range(12, 14):
         for col in range(1, 8):
-            ws.cell(row=r, column=col).value = ''
+            cell = ws.cell(row=r, column=col)
+            if not isinstance(cell, openpyxl.cell.cell.MergedCell):
+                cell.value = None
+
+    # Формируем и записываем новую подпись
+    signature_row = 11 + len(ops) + 1
     who = ''
     if hasattr(request.user, 'employee') and request.user.employee:
         emp = request.user.employee
         who = f"{emp.last_name} {emp.first_name} {emp.middle_name or ''}".replace('  ', ' ').strip()
     if not who:
         who = request.user.get_full_name() or request.user.username
+
     ws.merge_cells(f'A{signature_row}:G{signature_row}')
     c = ws[f'A{signature_row}']
     c.value = f'Документ сформировал: {who}'
     c.font = XlFont(italic=True, size=10)
     c.alignment = XlAlignment(horizontal='left', vertical='center')
 
-    # Автоподбор ширины
-    col_widths = {1: 25, 2: 10, 3: 12, 4: 15, 5: 10, 6: 10, 7: 15}
+    # Автоподбор ширины столбцов
+    col_widths = {1: 25, 2: 10, 3: 12, 4: 15, 5: 10}
     for col_idx, w in col_widths.items():
         col_letter = get_column_letter(col_idx)
         max_len = 0
@@ -268,12 +260,10 @@ def route_card_print(request, route_card_id):
                     max_len = cur
         ws.column_dimensions[col_letter].width = min(max(max_len, w), 30)
 
-    # Автоподбор высоты
     for row in range(10, 11 + len(ops)):
         ws.row_dimensions[row].height = None
     ws.row_dimensions[signature_row].height = None
 
-    # Сохранение
     output = BytesIO()
     wb.save(output)
     output.seek(0)

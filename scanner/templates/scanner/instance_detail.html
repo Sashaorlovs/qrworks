@@ -12,10 +12,28 @@
 
 <!-- общий прогресс -->
 <div class="progress mb-3" style="height: 20px;">
-    <div class="progress-bar bg-info" style="width: {{ instance.completion_percent }}%;">
-        {{ instance.completion_percent }}% ({{ instance.good_produced }}/{{ instance.planned_quantity }})
-    </div>
+    {% if instance.item.item_type == 'Сборочная единица' %}
+        {% if assembly_status == 'Ожидает комплектации' or assembly_status == 'Готово к комплектованию' %}
+            <div class="progress-bar bg-warning" style="width: {{ instance.components_completion_percent }}%;">
+                {{ instance.components_completion_percent }}% компонентов готово
+            </div>
+        {% else %}
+            <div class="progress-bar bg-info" style="width: {{ instance.completion_percent }}%;">
+                {{ instance.completion_percent }}% ({{ instance.good_produced }}/{{ instance.planned_quantity }})
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="progress-bar bg-info" style="width: {{ instance.completion_percent }}%;">
+            {{ instance.completion_percent }}% ({{ instance.good_produced }}/{{ instance.planned_quantity }})
+        </div>
+    {% endif %}
 </div>
+
+{% if instance.shortage > 0 %}
+    <a href="{% url 'supplement_instance' instance.id %}" class="btn btn-sm btn-outline-danger mb-3">Дозапустить (нехватка {{ instance.shortage }})</a>
+{% endif %}
+
+<!-- Информация о материале и заготовке -->
 {% if instance.item.material %}
 <div class="mb-2">
     <strong>Материал:</strong> {{ instance.item.material.name }}
@@ -25,11 +43,8 @@
 {% if instance.item.blank_size %}
 <div class="mb-2">
     <strong>Размер заготовки:</strong> {{ instance.item.blank_size }}
-    {% if instance.item.blanks_per_item > 1 %}(Кол-во заготовок: {{ instance.item.blanks_per_item }}){% endif %}
+    {% if instance.item.blanks_per_item %}(Кол-во заготовок: {{ instance.item.blanks_per_item }}){% endif %}
 </div>
-{% endif %}
-{% if instance.shortage > 0 %}
-    <a href="{% url 'supplement_instance' instance.id %}" class="btn btn-sm btn-outline-danger mb-3">Дозапустить (нехватка {{ instance.shortage }})</a>
 {% endif %}
 
 <!-- кнопки маршрутной карты -->
@@ -45,7 +60,7 @@
 
 <!-- статус маршрута -->
 {% if instance.route_card %}
-    <div class="alert alert-{% if status_info.code == 'in_progress' %}primary{% elif status_info.code == 'pending' %}warning{% else %}success{% endif %}">
+    <div class="alert alert-{% if status_info.code == 'in_progress' %}primary{% elif status_info.code == 'pending' %}warning{% else %}success{% endif %} mb-3">
         {{ status_info.label }}
     </div>
 
@@ -53,7 +68,7 @@
     {% for op in operations %}
         <div class="card mb-2 border-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">
             <div class="card-header d-flex justify-content-between">
-                <span>{{ op.order }}. {{ op.operation_type.name }}</span>
+                <span>{{ forloop.counter }}. {{ op.operation_type.name }}</span>
                 <span class="badge bg-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">
                     {{ op.get_status_display }}
                 </span>
@@ -84,10 +99,12 @@
                         <input type="hidden" name="action" value="complete">
                         <div class="row g-2 mb-2">
                             <div class="col-6">
-                                <input type="number" name="good_qty" value="0" class="form-control form-control-sm" placeholder="Годных">
+                                <label class="form-label small">Годных</label>
+                                <input type="number" name="good_qty" value="0" class="form-control form-control-sm" placeholder="0">
                             </div>
                             <div class="col-6">
-                                <input type="number" name="bad_qty" value="0" class="form-control form-control-sm" placeholder="Брак">
+                                <label class="form-label small">Брак</label>
+                                <input type="number" name="bad_qty" value="0" class="form-control form-control-sm" placeholder="0">
                             </div>
                         </div>
                         <textarea name="notes" class="form-control form-control-sm mb-2" placeholder="Примечание" rows="1"></textarea>
