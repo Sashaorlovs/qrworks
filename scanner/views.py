@@ -111,7 +111,8 @@ def supplement_instance(request, instance_id):
 
 @login_required
 def route_card_print(request, route_card_id):
-    from openpyxl.styles import PatternFill
+    from openpyxl.styles import PatternFill, Alignment as XlAlignment, Font as XlFont
+    from openpyxl.utils import get_column_letter
 
     rc = get_object_or_404(RouteCard, pk=route_card_id)
     ops = rc.operations.select_related('operation_type', 'worker').order_by('order')
@@ -120,14 +121,13 @@ def route_card_print(request, route_card_id):
     wb = openpyxl.load_workbook(template_path)
     ws = wb.active
 
-    # --- Параметры страницы: А4 вертикально ---
+    # Параметры страницы
     ws.page_setup.orientation = 'portrait'
-    ws.page_setup.paperSize = 9  # A4
+    ws.page_setup.paperSize = 9
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
-    # Автоматически подгонять под одну страницу по ширине
 
-    # --- Определяем главную сборку и родительскую подсборку ---
+    # Определяем главную сборку и родительскую подсборку
     order_item = instance.order_item
     root_item = None
     parent_item = None
@@ -138,12 +138,14 @@ def route_card_print(request, route_card_id):
         root_item = current
         parent_item = order_item.parent
 
-    # --- Заполняем основные поля (используем адреса из нового шаблона) ---
+    # Заполняем поля
+    ws.merge_cells('B2:C2')
     if root_item:
         ws['B2'] = f"{root_item.item.item_number} – {root_item.item.name}"
     else:
         ws['B2'] = instance.item.name
 
+    ws.merge_cells('B3:C3')
     detail_str = f"{instance.item.item_number} – {instance.item.name}"
     if parent_item and parent_item != root_item:
         detail_str += f" (входит в {parent_item.item.item_number} – {parent_item.item.name})"
@@ -152,7 +154,6 @@ def route_card_print(request, route_card_id):
     ws['B4'] = instance.created_at.strftime('%d.%m.%Y') if instance.created_at else ''
     ws['B5'] = instance.planned_quantity()
 
-    # Материал
     if instance.item.material:
         mat_str = instance.item.material.name
         if instance.item.material.profile:
@@ -161,72 +162,118 @@ def route_card_print(request, route_card_id):
         mat_str = 'не указан'
     ws['B6'] = mat_str
 
-    # Размер заготовки
     ws['B7'] = instance.item.blank_size or 'не указан'
-    # Кол-во заготовок
     ws['B8'] = instance.item.blanks_per_item if instance.item.blanks_per_item else ''
 
-    # --- Удаляем лишний QR-код из шаблона (если он там был как изображение) ---
-    # Мы не будем вставлять QR программно, чтобы не дублировать.
-    # Если в шаблоне уже есть QR, он останется. Если нет – не страшно.
-    # Удалим все изображения, чтобы избежать дублирования (осторожно!)
-    # Но лучше оставить, если пользователь сам вставил QR. Поэтому не трогаем.
-
-    # --- Стили для таблицы ---
+    # Стили
     thin_border = Border(
         left=Side(style='thin'), right=Side(style='thin'),
         top=Side(style='thin'), bottom=Side(style='thin')
     )
-    header_font = Font(bold=True)
+    header_font = XlFont(bold=True, size=10)
+    data_font = XlFont(size=10)
+    center_align = XlAlignment(horizontal='center', vertical='center', wrap_text=True)
+    left_align = XlAlignment(horizontal='left', vertical='center', wrap_text=True)
 
-    # --- Заголовки таблицы (строка 10) ---
-    for col in range(1, 8):   # A-G
+    # Удаляем старые изображения (QR)
+    for img in ws._images[:]:
+        ws._images.remove(img)
+
+    # QR-код в D1
+    try:
+        qr_url = request.build_absolute_uri(
+            reverse('instance_detail', kwargs={
+                'item_number': instance.item.item_number,
+                'serial': instance.serial
+            })
+        )
+        img = qrcode.make(qr_url)
+        buf = BytesIO()
+        img.save(buf, format='PNG')
+        buf.seek(0)
+        xl_img = XLImage(buf)
+        xl_img.width = 80
+        xl_img.height = 80
+        ws.add_image(xl_img, 'D1')
+    except Exception:
+        pass
+
+    # Заголовки таблицы (строка 10)
+    for col in range(1, 8):
         cell = ws.cell(row=10, column=col)
-        if cell.value:
-            cell.font = header_font
-            cell.border = thin_border
-            cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.font = header_font
+        cell.border = thin_border
+        cell.alignment = center_align
 
-    # --- Данные операций начиная с 11 строки ---
+    # Данные операций (строка 11+)
     for i, op in enumerate(ops):
         row = 11 + i
-        ws.cell(row=row, column=1, value=op.operation_type.name).border = thin_border
-        ws.cell(row=row, column=2, value=float(op.planned_hours)).border = thin_border
-        ws.cell(row=row, column=3, value='').border = thin_border  # Оборудование
-        ws.cell(row=row, column=4, value=op.worker.get_full_name() if op.worker else '').border = thin_border
-        ws.cell(row=row, column=5, value=op.get_status_display()).border = thin_border
-        ws.cell(row=row, column=6, value=f"{op.good_qty}/{op.bad_qty}").border = thin_border
-        ws.cell(row=row, column=7, value=op.notes or '').border = thin_border
+        c = ws.cell(row=row, column=1, value=op.operation_type.name)
+        c.font = data_font
+        c.border = thin_border
+        c.alignment = left_align
+        c = ws.cell(row=row, column=2, value=float(op.planned_hours))
+        c.font = data_font
+        c.border = thin_border
+        c.alignment = center_align
+        c = ws.cell(row=row, column=3, value='')
+        c.font = data_font
+        c.border = thin_border
+        c.alignment = center_align
+        c = ws.cell(row=row, column=4, value=op.worker.get_full_name() if op.worker else '')
+        c.font = data_font
+        c.border = thin_border
+        c.alignment = left_align
+        c = ws.cell(row=row, column=5, value=op.get_status_display())
+        c.font = data_font
+        c.border = thin_border
+        c.alignment = center_align
+        c = ws.cell(row=row, column=6, value=f"{op.good_qty}/{op.bad_qty}")
+        c.font = data_font
+        c.border = thin_border
+        c.alignment = center_align
+        c = ws.cell(row=row, column=7, value=op.notes or '')
+        c.font = data_font
+        c.border = thin_border
+        c.alignment = left_align
 
-    # --- Подпись (после таблицы) ---
+    # Подпись (после таблицы)
     signature_row = 11 + len(ops) + 1
+    # Очистим все возможные старые подписи в строках 12 и далее (на случай, если шаблон содержал текст)
+    for r in range(12, signature_row + 2):
+        for col in range(1, 8):
+            ws.cell(row=r, column=col).value = ''
     who = ''
     if hasattr(request.user, 'employee') and request.user.employee:
         emp = request.user.employee
         who = f"{emp.last_name} {emp.first_name} {emp.middle_name or ''}".replace('  ', ' ').strip()
     if not who:
         who = request.user.get_full_name() or request.user.username
-    # Сотрём старую подпись в A12, если она там была
-    ws['A12'] = ''
     ws.merge_cells(f'A{signature_row}:G{signature_row}')
-    ws[f'A{signature_row}'] = f'Документ сформировал: {who}'
-    ws[f'A{signature_row}'].font = Font(italic=True)
-    ws[f'A{signature_row}'].alignment = Alignment(horizontal='left')
+    c = ws[f'A{signature_row}']
+    c.value = f'Документ сформировал: {who}'
+    c.font = XlFont(italic=True, size=10)
+    c.alignment = XlAlignment(horizontal='left', vertical='center')
 
-    # --- Автоширина столбцов ---
-    # Задаём минимальную ширину для всех столбцов A-G
-    for col_letter in ['A', 'B', 'C', 'D', 'E', 'F', 'G']:
-        max_width = 10
+    # Автоподбор ширины
+    col_widths = {1: 25, 2: 10, 3: 12, 4: 15, 5: 10, 6: 10, 7: 15}
+    for col_idx, w in col_widths.items():
+        col_letter = get_column_letter(col_idx)
+        max_len = 0
         for row in range(10, 11 + len(ops)):
             cell = ws[f'{col_letter}{row}']
             if cell.value:
-                # Приблизительный расчёт: 1.2 * длина строки (но лучше через openpyxl.utils.get_column_letter и т.д.)
-                width = len(str(cell.value)) * 1.2 + 2
-                if width > max_width:
-                    max_width = width
-        ws.column_dimensions[col_letter].width = max(min(max_width, 40), 8)
+                cur = len(str(cell.value)) * 1.1 + 1
+                if cur > max_len:
+                    max_len = cur
+        ws.column_dimensions[col_letter].width = min(max(max_len, w), 30)
 
-    # --- Сохраняем файл ---
+    # Автоподбор высоты
+    for row in range(10, 11 + len(ops)):
+        ws.row_dimensions[row].height = None
+    ws.row_dimensions[signature_row].height = None
+
+    # Сохранение
     output = BytesIO()
     wb.save(output)
     output.seek(0)
