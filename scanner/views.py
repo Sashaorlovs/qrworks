@@ -121,13 +121,24 @@ def route_card_print(request, route_card_id):
     wb = openpyxl.load_workbook(template_path)
     ws = wb.active
 
-    # Параметры страницы
+    # ---- Параметры страницы ----
     ws.page_setup.orientation = 'portrait'
     ws.page_setup.paperSize = 9
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
 
-    # Определяем главную сборку и родительскую подсборку
+    # ---- Снимаем ВСЕ объединения в диапазоне, который будем трогать ----
+    for merge_range in list(ws.merged_cells.ranges):
+        # Если диапазон пересекается со строками 2..(12+len(ops)), снимаем
+        # Для простоты снимем все в диапазоне A1:G{конец}
+        end_row = 12 + len(ops) + 2
+        if merge_range.min_row <= end_row:
+            try:
+                ws.unmerge_cells(str(merge_range))
+            except:
+                pass
+
+    # ---- Определяем главную сборку и родительскую подсборку ----
     order_item = instance.order_item
     root_item = None
     parent_item = None
@@ -138,7 +149,8 @@ def route_card_print(request, route_card_id):
         root_item = current
         parent_item = order_item.parent
 
-    # Заполняем поля
+    # ---- Заполняем основные поля ----
+    # B2:C2 объединим заново и запишем
     ws.merge_cells('B2:C2')
     if root_item:
         ws['B2'] = f"{root_item.item.item_number} – {root_item.item.name}"
@@ -165,7 +177,7 @@ def route_card_print(request, route_card_id):
     ws['B7'] = instance.item.blank_size or 'не указан'
     ws['B8'] = instance.item.blanks_per_item if instance.item.blanks_per_item else ''
 
-    # Стили
+    # ---- Стили ----
     thin_border = Border(
         left=Side(style='thin'), right=Side(style='thin'),
         top=Side(style='thin'), bottom=Side(style='thin')
@@ -198,13 +210,13 @@ def route_card_print(request, route_card_id):
     except Exception:
         pass
 
-    # Заголовки таблицы (строка 10) – только нужные столбцы
+    # ---- Заголовки таблицы (строка 10) ----
     headers = ['Наименование операции', 'Норма времени, ч', 'Оборудование', 'Исполнитель', 'Годных/Брак']
     for col_idx, title in enumerate(headers, start=1):
         cell = ws.cell(row=10, column=col_idx, value=title)
         cell.font = header_font; cell.border = thin_border; cell.alignment = center_align
 
-    # Данные операций (строка 11+)
+    # ---- Данные операций (строка 11+) ----
     for i, op in enumerate(ops):
         row = 11 + i
         c = ws.cell(row=row, column=1, value=op.operation_type.name)
@@ -218,21 +230,7 @@ def route_card_print(request, route_card_id):
         c = ws.cell(row=row, column=5, value=f"{op.good_qty}/{op.bad_qty}")
         c.font = data_font; c.border = thin_border; c.alignment = center_align
 
-    # Подготовка строки подписи: снимаем возможное объединение в строках 12-13
-    for r in range(12, 14):
-        try:
-            ws.unmerge_cells(f'A{r}:G{r}')
-        except:
-            pass  # если не было объединения
-
-    # Очищаем старые статические надписи (если были)
-    for r in range(12, 14):
-        for col in range(1, 8):
-            cell = ws.cell(row=r, column=col)
-            if not isinstance(cell, openpyxl.cell.cell.MergedCell):
-                cell.value = None
-
-    # Формируем и записываем новую подпись
+    # ---- Подпись (после таблицы) ----
     signature_row = 11 + len(ops) + 1
     who = ''
     if hasattr(request.user, 'employee') and request.user.employee:
@@ -240,14 +238,14 @@ def route_card_print(request, route_card_id):
         who = f"{emp.last_name} {emp.first_name} {emp.middle_name or ''}".replace('  ', ' ').strip()
     if not who:
         who = request.user.get_full_name() or request.user.username
-
+    # Объединяем и записываем подпись
     ws.merge_cells(f'A{signature_row}:G{signature_row}')
     c = ws[f'A{signature_row}']
     c.value = f'Документ сформировал: {who}'
     c.font = XlFont(italic=True, size=10)
     c.alignment = XlAlignment(horizontal='left', vertical='center')
 
-    # Автоподбор ширины столбцов
+    # ---- Автоподбор ширины столбцов ----
     col_widths = {1: 25, 2: 10, 3: 12, 4: 15, 5: 10}
     for col_idx, w in col_widths.items():
         col_letter = get_column_letter(col_idx)
@@ -264,6 +262,7 @@ def route_card_print(request, route_card_id):
         ws.row_dimensions[row].height = None
     ws.row_dimensions[signature_row].height = None
 
+    # ---- Сохраняем ----
     output = BytesIO()
     wb.save(output)
     output.seek(0)
@@ -329,25 +328,54 @@ def route_card_create(request, instance_id):
 @login_required
 def order_import(request, order_id):
     order = get_object_or_404(Order, pk=order_id)
+
     if request.method == 'POST' and request.FILES.get('file'):
         import openpyxl
         file = request.FILES['file']
         wb = openpyxl.load_workbook(file)
         ws = wb.active
+
+        # ----- 1. ПОЛНАЯ ОЧИСТКА ЗАКАЗА -----
+        # Сначала удаляем все экземпляры и их маршрутные карты (каскадно)
+        ItemInstance.objects.filter(order=order).delete()
+        # Потом удаляем старые позиции заказа (OrderItem)
         order.items.all().delete()
+
+        # ----- 2. ОБРАБОТКА СТРОК EXCEL -----
         for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-            designation, name, item_type, qty, parent_desig, material_name, profile = row[:7] if len(row) >= 7 else (row[0], row[1], row[2], row[3], row[4], None, None)
-            if item_type:
-                item_type = item_type.strip().capitalize()  # приводим к виду "Сборочная единица", "Деталь" и т.п.
+            # Читаем первые 10 столбцов (с запасом)
+            designation = row[0] if len(row) > 0 else None
+            name = row[1] if len(row) > 1 else None
+            item_type = row[2] if len(row) > 2 else None
+            qty = row[3] if len(row) > 3 else 1
+            parent_desig = row[4] if len(row) > 4 else None
+            material_name = row[5] if len(row) > 5 else None
+            profile = row[6] if len(row) > 6 else None
+            blank_size = row[7] if len(row) > 7 else None
+            blanks_qty = row[8] if len(row) > 8 else None
+
             if not designation:
                 continue
+
+            # ----- Обработка типа изделия (приводим к стандартному виду) -----
+            if item_type:
+                item_type = item_type.strip().capitalize()
+            else:
+                item_type = 'Деталь'
+
+            # ----- Создаём или находим Item -----
             item, _ = Item.objects.get_or_create(
-                item_number=designation.strip(),
-                defaults={'name': name.strip() if name else designation, 'item_type': item_type.strip() if item_type else 'Деталь'}
+                item_number=str(designation).strip(),
+                defaults={
+                    'name': str(name).strip() if name else designation,
+                    'item_type': item_type
+                }
             )
-            if material_name and material_name.strip():
-                mat_name = material_name.strip()
-                # Генерируем уникальный код, если материал новый
+
+            # ----- Сохраняем материал и заготовку -----
+            if material_name and str(material_name).strip():
+                mat_name = str(material_name).strip()
+                # Генерируем уникальный код
                 base_code = ''.join(w[0].upper() for w in mat_name.split())[:6]
                 code = base_code
                 counter = 1
@@ -358,46 +386,63 @@ def order_import(request, order_id):
                     name=mat_name,
                     defaults={
                         'code': code,
-                        'profile': profile.strip() if profile else ''
+                        'profile': str(profile).strip() if profile else ''
                     }
                 )
                 item.material = mat
                 item.save()
-            # Сохраняем размер заготовки и количество, если есть в спецификации (столбцы 8 и 9, т.е. после profile)
-            # Размер заготовки (столбец H, индекс 7) и кол-во заготовок (столбец I, индекс 8)
-            raw_blank = row[7] if len(row) > 7 else ''
-            raw_qty = row[8] if len(row) > 8 else 0
-            # Преобразуем к строкам/числам аккуратно
-            if raw_blank is not None and str(raw_blank).strip():
-                item.blank_size = str(raw_blank).strip()
-            if raw_qty is not None:
+
+            if blank_size and str(blank_size).strip():
+                item.blank_size = str(blank_size).strip()
+            if blanks_qty and str(blanks_qty).strip():
                 try:
-                    item.blanks_per_item = int(raw_qty)
+                    item.blanks_per_item = int(blanks_qty)
                 except (ValueError, TypeError):
                     pass
             item.save()
+
+            # ----- Определяем родительскую позицию -----
             parent = None
-            if parent_desig and parent_desig.strip():
-                parent_candidates = OrderItem.objects.filter(order=order, item__item_number=parent_desig.strip()).order_by('-id')
-                if parent_candidates.exists():
-                    parent = parent_candidates.first()
-            oi = OrderItem.objects.create(order=order, item=item, quantity=int(qty) if qty else 1, parent=parent)
+            if parent_desig and str(parent_desig).strip():
+                # Ищем родительский OrderItem среди уже созданных (он должен быть выше по строкам)
+                candidates = OrderItem.objects.filter(
+                    order=order,
+                    item__item_number=str(parent_desig).strip()
+                ).order_by('-id')
+                if candidates.exists():
+                    parent = candidates.first()
+
+            # ----- Создаём позицию заказа (OrderItem) -----
+            oi = OrderItem.objects.create(
+                order=order,
+                item=item,
+                quantity=int(qty) if qty else 1,
+                parent=parent
+            )
+
+            # ----- Создаём экземпляр и маршрутную карту для производимых типов -----
             if item_type in ('Сборочная единица', 'Деталь'):
-                serial = f"{order.order_number}-{item.item_number}-{idx}"
+                # Формируем серийный номер
+                serial = f"{order.order_number}-{item.item_number}-{oi.id}"
+                # Проверяем уникальность (на случай, если такой номер уже есть)
+                counter = 1
+                base_serial = serial
                 while ItemInstance.objects.filter(serial=serial).exists():
-                    serial += f"-{timezone.now().strftime('%H%M%S')}"
-                inst = ItemInstance.objects.create(item=item, serial=serial, quantity=int(qty) if qty else 1, order=order, order_item=oi)
+                    serial = f"{base_serial}-{counter}"
+                    counter += 1
+                # Создаём экземпляр
+                inst = ItemInstance.objects.create(
+                    item=item,
+                    serial=serial,
+                    quantity=oi.quantity,
+                    order=order,
+                    order_item=oi
+                )
+                # Создаём пустую маршрутную карту
                 RouteCard.objects.create(instance=inst)
-                serial = f"{order.order_number}-{item.item_number}-{idx}"
-                while ItemInstance.objects.filter(serial=serial).exists():
-                    serial += f"-{timezone.now().strftime('%H%M%S')}"
-                inst = ItemInstance.objects.create(item=item, serial=serial, quantity=int(qty) if qty else 1, order=order, order_item=oi)
-                RouteCard.objects.create(instance=inst)
-                serial = f"{order.order_number}-{item.item_number}-{idx}"
-                while ItemInstance.objects.filter(serial=serial).exists():
-                    serial += f"-{timezone.now().strftime('%H%M%S')}"
-                inst = ItemInstance.objects.create(item=item, serial=serial, quantity=int(qty) if qty else 1, order=order, order_item=oi)
-                RouteCard.objects.create(instance=inst)
+
+        messages.success(request, f'Спецификация загружена. Создано позиций: {order.items.count()}.')
+
     return redirect('order_tree', order_id=order.id)
 
 @login_required
