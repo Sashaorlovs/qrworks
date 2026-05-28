@@ -11,21 +11,9 @@
 {% endif %}
 
 <div class="progress mb-3" style="height: 20px;">
-    {% if instance.item.item_type == 'Сборочная единица' %}
-        {% if assembly_status == 'Ожидает комплектации' or assembly_status == 'Готово к комплектованию' %}
-            <div class="progress-bar bg-warning" style="width: {{ instance.components_completion_percent }}%;">
-                {{ instance.components_completion_percent }}% компонентов готово
-            </div>
-        {% else %}
-            <div class="progress-bar bg-info" style="width: {{ instance.completion_percent }}%;">
-                {{ instance.completion_percent }}% ({{ instance.good_produced }}/{{ instance.planned_quantity }})
-            </div>
-        {% endif %}
-    {% else %}
-        <div class="progress-bar bg-info" style="width: {{ instance.route_card.operation_progress }}%;">
-            {{ instance.route_card.operation_progress }}% операций выполнено
-        </div>
-    {% endif %}
+    <div class="progress-bar bg-info" style="width: {{ instance.route_card.operation_progress }}%;">
+        {{ instance.route_card.operation_progress }}% операций выполнено
+    </div>
 </div>
 
 {% if instance.shortage > 0 %}
