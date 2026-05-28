@@ -31,10 +31,22 @@ def order_detail(request, order_id):
 @login_required
 def order_tree(request, order_id):
     order = get_object_or_404(Order, pk=order_id)
-    root_items = order.items.filter(parent__isnull=True)
+    root_items = order.items.filter(parent__isnull=True).prefetch_related(
+        'instances__route_card__operations__operation_type'
+    )
+    # ID экземпляров, у которых есть приоритетные операции
+    priority_ids = set()
+    for item in order.items.all():
+        for inst in item.instances.all():
+            if hasattr(inst, 'route_card') and inst.route_card:
+                if inst.route_card.operations.filter(
+                    operation_type__name__in=['Гальваника', 'Расточная']
+                ).exists():
+                    priority_ids.add(inst.id)
     return render(request, 'scanner/order_tree.html', {
         'order': order,
         'root_items': root_items,
+        'priority_ids': priority_ids,
     })
 
 @login_required
@@ -75,7 +87,8 @@ def instance_detail(request, item_number, serial):
                     movement_type=movement,
                     quantity=op.good_qty,
                     employee=request.user.employee if hasattr(request.user, 'employee') else None,
-                    basis=f'Завершение операции «{op.operation_type.name}»'
+                    basis=f'Завершение операции «{op.operation_type.name}»',
+                    notes=op.notes or ''
                 )
             next_op = route_card.operations.filter(order=op.order + 1).first()
             if next_op and next_op.status == 'pending':
@@ -84,6 +97,9 @@ def instance_detail(request, item_number, serial):
 
     status_info = route_card.get_status()
     operations = route_card.operations.select_related('operation_type').order_by('order')
+    # Помечаем складские операции как требующие указания места хранения
+    for op in operations:
+        op.requires_location = op.operation_type.name in ('Прием на склад', 'Прием на меж.операционный склад')
     assembly_status = instance.assembly_status() if instance.item.item_type == 'Сборочная единица' else None
     context = {
         'instance': instance,
@@ -471,10 +487,34 @@ def warehouse_dashboard(request):
             while current.parent:
                 current = current.parent
             root_name = f"{current.item.item_number} – {current.item.name}"
+        # Место хранения (из последней записи прихода с непустым примечанием)
+        location_main = ''
+        for rec in inst.warehouse_records.filter(movement_type='in_main').order_by('-date'):
+            if rec.notes:
+                location_main = rec.notes
+                break
+        # Для меж.операционного аналогично
+        location_inter = ''
+        for rec in inst.warehouse_records.filter(movement_type='in_intermediate').order_by('-date'):
+            if rec.notes:
+                location_inter = rec.notes
+                break
+
         if balance_main > 0:
-            main_data.append({'instance': inst, 'balance': balance_main, 'assembly': root_name})
+            main_data.append({
+                'instance': inst,
+                'balance': balance_main,
+                'assembly': root_name,
+                'location': location_main,
+            })
         if balance_inter > 0:
-            intermediate_data.append({'instance': inst, 'balance': balance_inter, 'assembly': root_name})
+            intermediate_data.append({
+                'instance': inst,
+                'balance': balance_inter,
+                'assembly': root_name,
+                'location': location_inter,
+            })
+
     records = WarehouseRecord.objects.select_related('instance__item', 'employee').order_by('-date')[:200]
     context = {
         'main_data': main_data,
@@ -483,6 +523,7 @@ def warehouse_dashboard(request):
         'employee_list': employee_list,
     }
     return render(request, 'scanner/warehouse_dashboard.html', context)
+
 
 def warehouse_issue(request):
     if request.method == 'POST':

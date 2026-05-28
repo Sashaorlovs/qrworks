@@ -1,5 +1,6 @@
-{% with instances=item.instances.all %}
-<tr data-node-id="{{ item.id }}" data-parent="{{ item.parent.id|default:'' }}">
+{% with inst=item.instances.first %}
+<tr data-node-id="{{ item.id }}" data-parent="{{ item.parent.id|default:'' }}"
+    {% if inst.id in priority_ids %}class="table-info"{% endif %}>
     <td>
         <span style="padding-left:{{ level|add:level }}em"></span>
         {% if item.children.exists %}
@@ -13,67 +14,59 @@
     <td>{{ item.item.name }}</td>
     <td>{{ item.planned_quantity }}</td>
     <td>
-        {% if instances.exists %}
-            {% for inst in instances %}
-                <div class="small">
-                    <strong>{{ inst.serial }}</strong><br>
-                    {% if inst.item.item_type == 'Сборочная единица' %}
-                        {% with astatus=inst.assembly_status %}
-                            {% if astatus == 'Ожидает комплектации' %}
-                                <div class="progress" style="height: 12px;" title="{{ astatus }} ({{ inst.components_completion_percent }}% компонентов)">
-                                    <div class="progress-bar bg-warning" style="width: {{ inst.components_completion_percent }}%;"></div>
-                                </div>
-                                <small class="text-warning">{{ astatus }}</small>
-                            {% elif astatus == 'Готово к комплектованию' %}
-                                <div class="progress" style="height: 12px;">
-                                    <div class="progress-bar bg-success" style="width: 0%;">0%</div>
-                                </div>
-                                <small class="text-success">{{ astatus }}</small>
-                            {% elif astatus == 'В работе' or astatus == 'Изготовлена' %}
-                                <div class="progress" style="height: 12px;">
-                                    <div class="progress-bar bg-{% if inst.completion_percent >= 100 %}success{% else %}primary{% endif %}" 
-                                         style="width: {{ inst.completion_percent }}%;">
-                                        {{ inst.completion_percent }}%
-                                    </div>
-                                </div>
-                                <small>{{ astatus }}</small>
-                            {% else %}
-                                {{ inst.current_operation_name }}<br>
-                                <div class="progress" style="height: 12px;">
-                                    <div class="progress-bar bg-{% if inst.completion_percent >= 100 %}success{% elif inst.completion_percent > 0 %}warning text-dark{% else %}secondary{% endif %}" 
-                                         style="width: {{ inst.completion_percent }}%;">
-                                        {{ inst.completion_percent }}%
-                                    </div>
-                                </div>
-                            {% endif %}
-                        {% endwith %}
+        {% if inst %}
+            {% if inst.item.item_type == 'Сборочная единица' %}
+                {% with astatus=inst.assembly_status %}
+                    {% if astatus == 'Ожидает комплектации' %}
+                        <div class="progress" style="height: 16px;" title="{{ astatus }} ({{ inst.components_completion_percent }}% компонентов готово)">
+                            <div class="progress-bar bg-warning" style="width: {{ inst.components_completion_percent }}%;">
+                                {{ inst.components_completion_percent }}%
+                            </div>
+                        </div>
+                        <small class="text-warning">{{ astatus }}</small>
+                    {% elif astatus == 'Готово к комплектованию' %}
+                        <div class="progress" style="height: 16px;" title="{{ astatus }}">
+                            <div class="progress-bar bg-success" style="width: 0%;">0%</div>
+                        </div>
+                        <small class="text-success">{{ astatus }}</small>
+                    {% elif astatus == 'В работе' or astatus == 'Изготовлена' %}
+                        <div class="progress" style="height: 16px;">
+                            <div class="progress-bar bg-{% if inst.completion_percent >= 100 %}success{% else %}primary{% endif %}" 
+                                 style="width: {{ inst.completion_percent }}%;">
+                                {{ inst.completion_percent }}%
+                            </div>
+                        </div>
+                        <small>{{ astatus }}</small>
                     {% else %}
                         {{ inst.current_operation_name }}<br>
-                        <div class="progress" style="height: 12px;">
+                        <div class="progress" style="height: 16px;">
                             <div class="progress-bar bg-{% if inst.completion_percent >= 100 %}success{% elif inst.completion_percent > 0 %}warning text-dark{% else %}secondary{% endif %}" 
                                  style="width: {{ inst.completion_percent }}%;">
                                 {{ inst.completion_percent }}%
                             </div>
                         </div>
                     {% endif %}
-                    {% if inst.shortage > 0 %}
-                        <small class="text-danger">Нехватка: {{ inst.shortage }}</small>
-                    {% endif %}
+                {% endwith %}
+            {% else %}
+                {{ inst.current_operation_name }}<br>
+                <div class="progress" style="height: 16px;">
+                    <div class="progress-bar bg-{% if inst.route_card.operation_progress >= 100 %}success{% elif inst.route_card.operation_progress > 0 %}primary{% else %}secondary{% endif %}" 
+                         style="width: {{ inst.route_card.operation_progress }}%;">
+                        {{ inst.route_card.operation_progress }}%
+                    </div>
                 </div>
-                {% if not forloop.last %}<hr class="my-1">{% endif %}
-            {% endfor %}
+            {% endif %}
+            {% if inst.shortage > 0 %}
+                <small class="text-danger">Нехватка: {{ inst.shortage }}</small>
+            {% endif %}
         {% else %}
             <span class="text-muted">Нет экземпляра</span>
         {% endif %}
     </td>
     <td>
-        {% for inst in instances %}
-            {% if inst and inst.serial %}
-                <a href="{% url 'instance_detail' item_number=inst.item.item_number serial=inst.serial %}" class="btn btn-sm btn-outline-primary mb-1">Открыть</a>
-            {% endif %}
-        {% empty %}
-            <span class="text-muted">Нет экземпляра</span>
-        {% endfor %}
+        {% if inst %}
+            <a href="{% url 'instance_detail' item_number=inst.item.item_number serial=inst.serial %}" class="btn btn-sm btn-outline-primary">Открыть</a>
+        {% endif %}
     </td>
 </tr>
 {% if item.children.exists %}

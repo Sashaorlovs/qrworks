@@ -196,6 +196,14 @@ class ItemInstance(models.Model):
 class RouteCard(models.Model):
     instance = models.OneToOneField(ItemInstance, on_delete=models.CASCADE, related_name='route_card', verbose_name='Экземпляр')
 
+    
+    def operation_progress(self):
+        total = self.operations.count()
+        if total == 0:
+            return 0
+        completed = self.operations.filter(status='completed').count()
+        return int(completed / total * 100)
+    
     def get_status(self):
         ops = self.operations.order_by('order')
         total = ops.count()

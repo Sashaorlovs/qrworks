@@ -10,7 +10,6 @@
     </div>
 {% endif %}
 
-<!-- общий прогресс -->
 <div class="progress mb-3" style="height: 20px;">
     {% if instance.item.item_type == 'Сборочная единица' %}
         {% if assembly_status == 'Ожидает комплектации' or assembly_status == 'Готово к комплектованию' %}
@@ -23,8 +22,8 @@
             </div>
         {% endif %}
     {% else %}
-        <div class="progress-bar bg-info" style="width: {{ instance.completion_percent }}%;">
-            {{ instance.completion_percent }}% ({{ instance.good_produced }}/{{ instance.planned_quantity }})
+        <div class="progress-bar bg-info" style="width: {{ instance.route_card.operation_progress }}%;">
+            {{ instance.route_card.operation_progress }}% операций выполнено
         </div>
     {% endif %}
 </div>
@@ -33,21 +32,13 @@
     <a href="{% url 'supplement_instance' instance.id %}" class="btn btn-sm btn-outline-danger mb-3">Дозапустить (нехватка {{ instance.shortage }})</a>
 {% endif %}
 
-<!-- Информация о материале и заготовке -->
 {% if instance.item.material %}
-<div class="mb-2">
-    <strong>Материал:</strong> {{ instance.item.material.name }}
-    {% if instance.item.material.profile %}({{ instance.item.material.profile }}){% endif %}
-</div>
+<div class="mb-2"><strong>Материал:</strong> {{ instance.item.material.name }}{% if instance.item.material.profile %} ({{ instance.item.material.profile }}){% endif %}</div>
 {% endif %}
 {% if instance.item.blank_size %}
-<div class="mb-2">
-    <strong>Размер заготовки:</strong> {{ instance.item.blank_size }}
-    {% if instance.item.blanks_per_item %}(Кол-во заготовок: {{ instance.item.blanks_per_item }}){% endif %}
-</div>
+<div class="mb-2"><strong>Размер заготовки:</strong> {{ instance.item.blank_size }}{% if instance.item.blanks_per_item %} (Кол-во заготовок: {{ instance.item.blanks_per_item }}){% endif %}</div>
 {% endif %}
 
-<!-- кнопки маршрутной карты -->
 <div class="mb-3">
     {% if instance.route_card %}
         <a href="{% url 'route_card_print' instance.route_card.id %}" target="_blank" class="btn btn-sm btn-outline-secondary">🖨️ Печать</a>
@@ -58,20 +49,16 @@
     {% endif %}
 </div>
 
-<!-- статус маршрута -->
 {% if instance.route_card %}
     <div class="alert alert-{% if status_info.code == 'in_progress' %}primary{% elif status_info.code == 'pending' %}warning{% else %}success{% endif %} mb-3">
         {{ status_info.label }}
     </div>
 
-    <!-- карточки операций -->
     {% for op in operations %}
         <div class="card mb-2 border-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">
             <div class="card-header d-flex justify-content-between">
                 <span>{{ forloop.counter }}. {{ op.operation_type.name }}</span>
-                <span class="badge bg-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">
-                    {{ op.get_status_display }}
-                </span>
+                <span class="badge bg-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">{{ op.get_status_display }}</span>
             </div>
             <div class="card-body">
                 <p>Норма: {{ op.planned_hours }} ч</p>
@@ -107,7 +94,15 @@
                                 <input type="number" name="bad_qty" value="0" class="form-control form-control-sm" placeholder="0">
                             </div>
                         </div>
-                        <textarea name="notes" class="form-control form-control-sm mb-2" placeholder="Примечание" rows="1"></textarea>
+                        <div class="mb-2">
+                            {% if op.requires_location %}
+                                <label class="form-label small">Место хранения (обязательно)</label>
+                                <textarea name="notes" class="form-control form-control-sm" placeholder="Укажите место хранения" rows="1" required>{{ op.notes }}</textarea>
+                            {% else %}
+                                <label class="form-label small">Примечание</label>
+                                <textarea name="notes" class="form-control form-control-sm" placeholder="Примечание" rows="1">{{ op.notes }}</textarea>
+                            {% endif %}
+                        </div>
                         <button class="btn btn-success btn-sm w-100">✓ Завершить</button>
                     </form>
                 {% endif %}

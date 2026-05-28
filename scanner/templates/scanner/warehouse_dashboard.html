@@ -32,6 +32,7 @@
                 <th>Наименование</th>
                 <th>Партия</th>
                 <th>Остаток</th>
+                <th>Место</th>
                 <th>Действие</th>
             </tr>
         </thead>
@@ -42,18 +43,20 @@
                 <td>{{ entry.instance.item.name }}</td>
                 <td>{{ entry.instance.serial }}</td>
                 <td>{{ entry.balance }} шт.</td>
+                <td>{{ entry.location|default:"—" }}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#issueModal" 
                             data-instance-id="{{ entry.instance.id }}"
                             data-instance-label="{{ entry.instance.item.item_number }} - {{ entry.instance.serial }}"
                             data-balance="{{ entry.balance }}"
-                            data-assembly="{{ entry.assembly }}">
+                            data-assembly="{{ entry.assembly }}"
+                            data-location="{{ entry.location }}">
                         Выдать
                     </button>
                 </td>
             </tr>
         {% empty %}
-            <tr><td colspan="5">Нет деталей на основном складе</td></tr>
+            <tr><td colspan="6">Нет деталей на основном складе</td></tr>
         {% endfor %}
         </tbody>
     </table>
@@ -68,6 +71,7 @@
                 <th>Наименование</th>
                 <th>Партия</th>
                 <th>Остаток</th>
+                <th>Место</th>
             </tr>
         </thead>
         <tbody>
@@ -77,9 +81,10 @@
                 <td>{{ entry.instance.item.name }}</td>
                 <td>{{ entry.instance.serial }}</td>
                 <td>{{ entry.balance }} шт.</td>
+                <td>{{ entry.location|default:"—" }}</td>
             </tr>
         {% empty %}
-            <tr><td colspan="4">Нет деталей на меж.операционном складе</td></tr>
+            <tr><td colspan="5">Нет деталей на меж.операционном складе</td></tr>
         {% endfor %}
         </tbody>
     </table>
@@ -107,13 +112,7 @@
                 <td>{{ rec.instance.item.item_number }} – {{ rec.instance.item.name }}</td>
                 <td>{{ rec.instance.serial }}</td>
                 <td>{{ rec.quantity }}</td>
-                <td>
-                    {% if rec.movement_type in 'out_main,out' %}
-                        {{ rec.recipient|default:"—" }}
-                    {% else %}
-                        —
-                    {% endif %}
-                </td>
+                <td>{% if rec.movement_type in 'out_main,out' %}{{ rec.recipient|default:"—" }}{% else %}—{% endif %}</td>
                 <td>{{ rec.basis|default:"—" }}</td>
                 <td>{{ rec.employee|default:"—" }}</td>
                 <td>{{ rec.notes|default:"—" }}</td>
@@ -145,6 +144,10 @@
             <div class="mb-3">
                 <label class="form-label">Количество (остаток: <span id="issueBalance"></span>)</label>
                 <input type="number" name="quantity" class="form-control" min="1" max="" id="issueQuantity" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Место хранения</label>
+                <input type="text" id="issueLocation" class="form-control" disabled>
             </div>
             <div class="mb-3">
                 <label class="form-label">Получатель</label>
@@ -183,8 +186,12 @@
         var qtyInput = document.getElementById('issueQuantity');
         qtyInput.max = balance;
         qtyInput.value = 1;
+        // Основание
         var assembly = button.getAttribute('data-assembly');
         document.getElementById('issueBasis').value = assembly || '';
+        // Место хранения
+        var location = button.getAttribute('data-location') || '';
+        document.getElementById('issueLocation').value = location;
     });
 </script>
 {% endblock %}
