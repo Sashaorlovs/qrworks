@@ -3,10 +3,14 @@
 {% block content %}
 <h1>Контроль заказов</h1>
 
-<table class="table table-bordered">
+<div class="mb-3">
+    <input type="text" id="controlSearch" class="form-control" placeholder="Поиск по номеру договора или наименованию...">
+</div>
+
+<table class="table table-bordered searchable">
     <thead class="table-dark">
         <tr>
-            <th>Заказ</th>
+            <th>Номер договора</th>
             <th>Наименование</th>
             <th>Создан</th>
             <th>Отгрузка</th>
@@ -50,4 +54,14 @@
     {% endfor %}
     </tbody>
 </table>
+
+<script>
+    document.getElementById('controlSearch').addEventListener('input', function(e) {
+        var term = e.target.value.toLowerCase();
+        document.querySelectorAll('.searchable tbody tr').forEach(function(row) {
+            var text = row.textContent.toLowerCase();
+            row.style.display = text.includes(term) ? '' : 'none';
+        });
+    });
+</script>
 {% endblock %}

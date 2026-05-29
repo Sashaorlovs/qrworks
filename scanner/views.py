@@ -567,7 +567,7 @@ def warehouse_issue(request):
 # --- Статистика ---
 @login_required
 def statistics(request):
-    from django.db.models import Sum, Count, Q, Q, Q
+    from django.db.models import Sum, Count, Q, Q, Q, Q
     from datetime import datetime, timedelta
 
     # Параметры фильтрации
@@ -1079,3 +1079,5 @@ def orders_control(request):
         'orders_data': orders_data,
         'today': today,
     })
+
+

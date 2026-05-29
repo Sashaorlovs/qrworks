@@ -27,6 +27,7 @@
                 {% endif %}
                 {% if user.is_staff %}
                     <a class="nav-link" href="/admin/">Админка</a>
+                    <a class="nav-link" href="{% url 'restore_backup' %}">Восстановление БД</a>
                 {% endif %}
                 <a class="nav-link" href="{% url 'logout' %}">Выйти ({{ user.username }})</a>
             {% endif %}
