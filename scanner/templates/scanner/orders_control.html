@@ -1,0 +1,53 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Контроль заказов{% endblock %}
+{% block content %}
+<h1>Контроль заказов</h1>
+
+<table class="table table-bordered">
+    <thead class="table-dark">
+        <tr>
+            <th>Заказ</th>
+            <th>Наименование</th>
+            <th>Создан</th>
+            <th>Отгрузка</th>
+            <th>Осталось дней</th>
+            <th>Статус</th>
+            <th>Прогресс</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for entry in orders_data %}
+        {% with order=entry.order days=entry.days_left %}
+        <tr class="{% if days is not None %}
+                {% if days <= 7 %}table-danger
+                {% elif days <= 14 %}table-warning
+                {% else %}table-success
+                {% endif %}
+            {% endif %}">
+            <td><a href="{% url 'order_tree' order.id %}">{{ order.order_number }}</a></td>
+            <td>{{ order.full_name }}</td>
+            <td>{{ order.created_at|date:"d.m.Y" }}</td>
+            <td>{{ order.due_date|date:"d.m.Y"|default:"—" }}</td>
+            <td>
+                {% if days is not None %}
+                    {{ days }} дн.
+                {% else %}
+                    —
+                {% endif %}
+            </td>
+            <td>{{ order.get_status_display }}</td>
+            <td>
+                <div class="progress" style="height: 16px;">
+                    <div class="progress-bar bg-info" style="width: {{ entry.progress }}%;">
+                        {{ entry.progress }}%
+                    </div>
+                </div>
+            </td>
+        </tr>
+        {% endwith %}
+    {% empty %}
+        <tr><td colspan="7">Нет заказов</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

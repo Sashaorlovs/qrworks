@@ -6,12 +6,14 @@
 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createOrderModal">+ Новый заказ</button>
 
 <table class="table">
-    <thead><tr><th>Номер</th><th>Наименование</th><th>Статус</th><th></th></tr></thead>
+    <thead><tr><th>Номер</th><th>Наименование</th><th>Создан</th><th>Отгрузка</th><th>Статус</th><th></th></tr></thead>
     <tbody>
     {% for order in orders %}
     <tr>
         <td>{{ order.order_number }}</td>
         <td>{{ order.full_name }}</td>
+        <td>{{ order.created_at|date:"d.m.Y" }}</td>
+        <td>{{ order.due_date|date:"d.m.Y"|default:"—" }}</td>
         <td>{{ order.get_status_display }}</td>
         <td>
             <a href="{% url 'order_detail' order.id %}" class="btn btn-sm btn-outline-primary">Загрузить</a>
@@ -34,12 +36,16 @@
         {% csrf_token %}
         <div class="modal-body">
             <div class="mb-3">
-                <label class="form-label">Номер заказа</label>
+                <label class="form-label">Номер договора</label>
                 <input type="text" name="order_number" class="form-control" required>
             </div>
             <div class="mb-3">
                 <label class="form-label">Наименование</label>
                 <input type="text" name="full_name" class="form-control">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Дата отгрузки</label>
+                <input type="date" name="due_date" class="form-control">
             </div>
         </div>
         <div class="modal-footer">

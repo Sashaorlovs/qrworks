@@ -78,9 +78,10 @@ class Order(models.Model):
         ('shipped', 'Отгружен'),
         ('closed', 'Закрыт'),
     ]
-    order_number = models.CharField(max_length=100, unique=True, verbose_name='Номер договора')
-    full_name = models.CharField(max_length=500, blank=True, verbose_name='Полное наименование')
-    created_at = models.DateTimeField(auto_now_add=True)
+    order_number = models.CharField(max_length=100, verbose_name='Номер договора')
+    full_name = models.CharField(max_length=500, unique=True, null=True, blank=True, verbose_name='Полное наименование')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата создания')
+    due_date = models.DateField(null=True, blank=True, verbose_name='Дата отгрузки')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft', verbose_name='Статус')
 
     def __str__(self):
@@ -112,7 +113,8 @@ class ItemInstance(models.Model):
     quantity = models.PositiveIntegerField(default=1, verbose_name='Количество')
     order_item = models.ForeignKey(OrderItem, null=True, blank=True, on_delete=models.SET_NULL, related_name='instances', verbose_name='Позиция заказа')
     order = models.ForeignKey(Order, null=True, blank=True, on_delete=models.SET_NULL, related_name='instances', verbose_name='Договор')
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата создания')
+    due_date = models.DateField(null=True, blank=True, verbose_name='Дата отгрузки')
 
     def planned_quantity(self):
         if self.order_item:

@@ -18,7 +18,7 @@ from urllib.parse import quote
 
 @login_required
 def dashboard(request):
-    orders = Order.objects.all()
+    orders = Order.objects.all().order_by('order_number')
     return render(request, 'scanner/dashboard.html', {'orders': orders})
 
 @login_required
@@ -970,8 +970,13 @@ def order_create(request):
     if request.method == 'POST':
         number = request.POST.get('order_number', '').strip()
         name = request.POST.get('full_name', '').strip()
+        due_date = request.POST.get('due_date', '') or None
         if number:
-            Order.objects.create(order_number=number, full_name=name)
+            # Проверяем уникальность наименования, если оно указано
+            if name and Order.objects.filter(full_name=name).exists():
+                messages.error(request, f'Заказ с наименованием "{name}" уже существует.')
+                return redirect('home')
+            Order.objects.create(order_number=number, full_name=name or None, due_date=due_date)
     return redirect('home')
 
 import os
@@ -1037,4 +1042,40 @@ def search(request):
     return render(request, 'scanner/search_results.html', {
         'query': query,
         'results': results,
+    })
+@login_required
+def orders_control(request):
+    if not request.user.is_staff:
+        messages.error(request, 'Недостаточно прав.')
+        return redirect('home')
+    
+    from datetime import date
+    orders = Order.objects.all().order_by('order_number').order_by('-created_at')
+    today = date.today()
+    
+    orders_data = []
+    for order in orders:
+        days_left = None
+        if order.due_date:
+            delta = order.due_date - today
+            days_left = delta.days
+        
+        # Считаем прогресс выполнения заказа (средний процент по всем операциям)
+        total_ops = 0
+        completed_ops = 0
+        for inst in ItemInstance.objects.filter(order=order, route_card__isnull=False):
+            rc = inst.route_card
+            total_ops += rc.operations.count()
+            completed_ops += rc.operations.filter(status='completed').count()
+        progress = int(completed_ops / total_ops * 100) if total_ops > 0 else 0
+        
+        orders_data.append({
+            'order': order,
+            'days_left': days_left,
+            'progress': progress,
+        })
+    
+    return render(request, 'scanner/orders_control.html', {
+        'orders_data': orders_data,
+        'today': today,
     })
