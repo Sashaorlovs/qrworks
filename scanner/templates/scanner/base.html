@@ -10,7 +10,7 @@
 <body>
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-3">
     <div class="container">
-        <a class="navbar-brand" href="{% url 'home' %}">Учет производства</a>
+        <a class="navbar-brand" href="{% url 'home' %}">Учет деталей</a>
         <div class="navbar-nav">
             <a class="nav-link" href="{% url 'order_list' %}">Заказы</a>
             {% if user.is_authenticated %}
@@ -19,13 +19,13 @@
                         {% if role == 'admin' or role == 'dispatcher' %}
                             <a class="nav-link" href="{% url 'stats' %}">Статистика</a>
                         {% endif %}
-                        {% if role == 'admin' or role == 'storekeeper' %}
-                            <a class="nav-link" href="{% url 'warehouse' %}">Склад</a>
-                        {% endif %}
-                        {% if role == 'admin' or role == 'dispatcher' %}
-                            <a class="nav-link" href="/admin/">Админка</a>
-                        {% endif %}
+                        <a class="nav-link" href="{% url 'warehouse' %}">Склад</a>
                     {% endwith %}
+                {% else %}
+                    <a class="nav-link" href="{% url 'warehouse' %}">Склад</a>
+                {% endif %}
+                {% if user.is_staff %}
+                    <a class="nav-link" href="/admin/">Админка</a>
                 {% endif %}
                 <a class="nav-link" href="{% url 'logout' %}">Выйти ({{ user.username }})</a>
             {% endif %}

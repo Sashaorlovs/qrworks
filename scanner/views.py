@@ -184,8 +184,8 @@ def route_card_print(request, route_card_id):
 
     if instance.item.material:
         mat_str = instance.item.material.name
-        if instance.item.material.profile:
-            mat_str += f" ({instance.item.material.profile})"
+        if instance.item.profile:
+            mat_str += f" ({instance.item.profile})"
     else:
         mat_str = 'не указан'
     ws['B6'] = mat_str
@@ -348,7 +348,7 @@ def order_import(request, order_id):
     if request.method == 'POST' and request.FILES.get('file'):
         import openpyxl
         file = request.FILES['file']
-        wb = openpyxl.load_workbook(file)
+        wb = openpyxl.load_workbook(file, data_only=True)  # читаем вычисленные значения формул
         ws = wb.active
 
         # ----- 1. ПОЛНАЯ ОЧИСТКА ЗАКАЗА -----
@@ -400,13 +400,13 @@ def order_import(request, order_id):
                     counter += 1
                 mat, _ = Material.objects.get_or_create(
                     name=mat_name,
-                    defaults={
-                        'code': code,
-                        'profile': str(profile).strip() if profile else ''
-                    }
+                    defaults={'code': code}
                 )
                 item.material = mat
-                item.save()
+            # Сохраняем профиль в Item, если он передан
+            if str(profile).strip():
+                item.profile = str(profile).strip()
+            item.save()
 
             if blank_size and str(blank_size).strip():
                 item.blank_size = str(blank_size).strip()
@@ -962,3 +962,12 @@ def statistics_compare(request):
         'rows': rows,
     }
     return render(request, 'scanner/statistics_compare.html', context)
+
+@login_required
+def order_create(request):
+    if request.method == 'POST':
+        number = request.POST.get('order_number', '').strip()
+        name = request.POST.get('full_name', '').strip()
+        if number:
+            Order.objects.create(order_number=number, full_name=name)
+    return redirect('home')

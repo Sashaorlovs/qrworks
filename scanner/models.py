@@ -58,6 +58,7 @@ class Item(models.Model):
     name = models.CharField(max_length=255, verbose_name='Наименование')
     item_type = models.CharField(max_length=50, default='Деталь', verbose_name='Тип')
     material = models.ForeignKey(Material, null=True, blank=True, on_delete=models.SET_NULL, verbose_name='Материал')
+    profile = models.CharField(max_length=200, blank=True, verbose_name='Профиль/сортамент')
     blank_size = models.CharField(max_length=200, blank=True, verbose_name='Размер заготовки')
     blanks_per_item = models.PositiveIntegerField(default=1, verbose_name='Кол-во заготовок')
 
@@ -278,3 +279,12 @@ class WarehouseRecord(models.Model):
     def __str__(self):
         return f"{self.get_movement_type_display()} {self.instance.item.item_number} x{self.quantity}"
 
+
+
+from django.db.models.signals import pre_delete
+from django.dispatch import receiver
+
+@receiver(pre_delete, sender=Order)
+def delete_order_instances(sender, instance, **kwargs):
+    # Удаляем все экземпляры, связанные с этим заказом
+    ItemInstance.objects.filter(order=instance).delete()

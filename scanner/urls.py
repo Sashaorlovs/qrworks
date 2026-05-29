@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('order/create/', views.order_create, name='order_create'),
     path('stats/compare/', views.statistics_compare, name='stats_compare'),
     path('stats/export/', views.statistics_export, name='stats_export'),
     path('stats/operations/<str:type_name>/export/', views.statistics_operations_export, name='stats_operations_export'),

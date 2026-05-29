@@ -2,6 +2,9 @@
 {% block title %}Заказы{% endblock %}
 {% block content %}
 <h1>Список заказов</h1>
+
+<button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createOrderModal">+ Новый заказ</button>
+
 <table class="table">
     <thead><tr><th>Номер</th><th>Наименование</th><th>Статус</th><th></th></tr></thead>
     <tbody>
@@ -18,4 +21,32 @@
     {% endfor %}
     </tbody>
 </table>
+
+<!-- Модальное окно создания заказа -->
+<div class="modal fade" id="createOrderModal" tabindex="-1" aria-labelledby="createOrderModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="createOrderModalLabel">Новый заказ</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="{% url 'order_create' %}">
+        {% csrf_token %}
+        <div class="modal-body">
+            <div class="mb-3">
+                <label class="form-label">Номер заказа</label>
+                <input type="text" name="order_number" class="form-control" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Наименование</label>
+                <input type="text" name="full_name" class="form-control">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">Создать</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 {% endblock %}
