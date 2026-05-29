@@ -69,32 +69,6 @@ def instance_detail(request, item_number, serial):
                 op.started_at = timezone.now()
                 op.worker = request.user
                 op.save()
-        elif action == 'complete' and op.status == 'in_progress':
-            op.status = 'completed'
-            op.completed_at = timezone.now()
-            op.good_qty = int(request.POST.get('good_qty', 0) or 0)
-            op.bad_qty = int(request.POST.get('bad_qty', 0) or 0)
-            op.notes = request.POST.get('notes', '')
-            op.save()
-            # Авто-приход на склад
-            if op.operation_type.name == 'Прием на склад':
-                movement = 'in_main'
-            elif op.operation_type.name == 'Прием на меж.операционный склад':
-                movement = 'in_intermediate'
-            else:
-                movement = None
-            if movement:
-                WarehouseRecord.objects.create(
-                    instance=instance,
-                    movement_type=movement,
-                    quantity=op.good_qty,
-                    employee=request.user.employee if hasattr(request.user, 'employee') else None,
-                    basis=f'Завершение операции «{op.operation_type.name}»',
-                    notes=op.notes or ''
-                )
-            next_op = route_card.operations.filter(order=op.order + 1).first()
-            if next_op and next_op.status == 'pending':
-                pass
         return redirect('instance_detail', item_number=item_number, serial=serial)
 
     status_info = route_card.get_status()

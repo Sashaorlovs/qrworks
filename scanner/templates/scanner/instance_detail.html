@@ -51,8 +51,17 @@
             <div class="card-body">
                 <p>Норма: {{ op.planned_hours }} ч</p>
                 {% if op.worker %}<p>Исполнитель: {{ op.worker.get_full_name }}</p>{% endif %}
-                {% if op.status == 'completed' %}
-                    <p>Годных: {{ op.good_qty }} / Брак: {{ op.bad_qty }}</p>
+                {% if op.status == 'completed' or op.good_qty or op.bad_qty %}
+                    <p>Годных: {{ op.good_qty|default:0 }} / Брак: {{ op.bad_qty|default:0 }}</p>
+                    {% if op.status == 'in_progress' %}
+                        {% with remaining=instance.planned_quantity|add:"-0"|add:op.good_qty %}
+                            {% if remaining > 0 %}
+                                <small class="text-danger">Осталось сделать: {{ remaining }}</small>
+                            {% else %}
+                                <small class="text-success">✅ План выполнен</small>
+                            {% endif %}
+                        {% endwith %}
+                    {% endif %}
                 {% endif %}
             </div>
             <div class="card-footer">
@@ -90,6 +99,10 @@
                                 <label class="form-label small">Примечание</label>
                                 <textarea name="notes" class="form-control form-control-sm" placeholder="Примечание" rows="1">{{ op.notes }}</textarea>
                             {% endif %}
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" name="final_complete" id="final_{{ op.id }}">
+                            <label class="form-check-label" for="final_{{ op.id }}">Окончательное завершение</label>
                         </div>
                         <button class="btn btn-success btn-sm w-100">✓ Завершить</button>
                     </form>
