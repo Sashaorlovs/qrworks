@@ -193,6 +193,7 @@ class ItemInstance(models.Model):
         verbose_name = 'Экземпляр'
         verbose_name_plural = 'Экземпляры'
 
+    
     def __str__(self):
         return f"{self.item.item_number} - {self.serial}"
 

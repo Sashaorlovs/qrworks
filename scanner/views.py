@@ -51,6 +51,7 @@ def order_tree(request, order_id):
         'priority_ids': priority_ids,
     })
 
+
 @login_required
 def instance_detail(request, item_number, serial):
     instance = get_object_or_404(ItemInstance, item__item_number=item_number, serial=serial)
@@ -69,14 +70,58 @@ def instance_detail(request, item_number, serial):
                 op.started_at = timezone.now()
                 op.worker = request.user
                 op.save()
+
+        elif action == 'complete' and op.status == 'in_progress':
+            new_good = int(request.POST.get('good_qty', 0) or 0)
+            new_bad = int(request.POST.get('bad_qty', 0) or 0)
+
+            # накапливаем годные и брак
+            op.good_qty = (op.good_qty or 0) + new_good
+            op.bad_qty = (op.bad_qty or 0) + new_bad
+            notes = request.POST.get('notes', '')
+            if notes:
+                op.notes = notes
+
+            # Проверяем, выполнена ли норма
+            planned = instance.planned_quantity()
+            if op.good_qty >= planned:
+                op.status = 'completed'
+                op.completed_at = timezone.now()
+                op.save()
+
+                # складской приход только при окончательном завершении
+                if op.operation_type.name in ('Прием на меж.операционный склад', 'Прием на склад'):
+                    movement = 'in_main' if op.operation_type.name == 'Прием на склад' else 'in_intermediate'
+                    WarehouseRecord.objects.create(
+                        instance=instance,
+                        movement_type=movement,
+                        quantity=op.good_qty,
+                        employee=request.user.employee if hasattr(request.user, 'employee') else None,
+                        basis=f'Завершение операции «{op.operation_type.name}»',
+                        notes=op.notes or ''
+                    )
+                # активируем следующую операцию
+                next_op = route_card.operations.filter(order=op.order + 1).first()
+                if next_op and next_op.status == 'pending':
+                    pass
+            else:
+                # операция остаётся в работе
+                op.save()
+
         return redirect('instance_detail', item_number=item_number, serial=serial)
 
     status_info = route_card.get_status()
-    operations = route_card.operations.select_related('operation_type').order_by('order')
-    # Помечаем складские операции как требующие указания места хранения
+    operations = route_card.operations.select_related('operation_type', 'worker').order_by('order')
+    planned = instance.planned_quantity()
+    for op in operations:
+        op.remaining = planned - (op.good_qty or 0)
+        op.requires_location = op.operation_type.name in ('Прием на склад', 'Прием на меж.операционный склад')
+    # помечаем складские операции как требующие место
     for op in operations:
         op.requires_location = op.operation_type.name in ('Прием на склад', 'Прием на меж.операционный склад')
+
     assembly_status = instance.assembly_status() if instance.item.item_type == 'Сборочная единица' else None
+
     context = {
         'instance': instance,
         'route_card': route_card,
@@ -90,7 +135,13 @@ def instance_detail(request, item_number, serial):
 def supplement_instance(request, instance_id):
     old = get_object_or_404(ItemInstance, pk=instance_id)
     if old.shortage() > 0:
-        new_serial = f"{old.serial}-дозапуск-{timezone.now().strftime('%Y%m%d%H%M')}"
+        base_serial = f"{old.serial}-дозапуск-{timezone.now().strftime('%Y%m%d%H%M')}"
+        new_serial = base_serial
+        counter = 1
+        # Гарантируем уникальность серийного номера
+        while ItemInstance.objects.filter(serial=new_serial).exists():
+            new_serial = f"{base_serial}-{counter}"
+            counter += 1
         new_inst = ItemInstance.objects.create(
             item=old.item,
             serial=new_serial,
