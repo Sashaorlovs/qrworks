@@ -1,0 +1,31 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Восстановление базы данных{% endblock %}
+{% block content %}
+<h1>Восстановление базы данных из бэкапа</h1>
+
+{% if messages %}
+    {% for msg in messages %}
+        <div class="alert alert-{{ msg.tags|default:'info' }}">{{ msg }}</div>
+    {% endfor %}
+{% endif %}
+
+<p>Выберите файл бэкапа для восстановления. <strong>Текущая база будет заменена, сервер перезапустится.</strong></p>
+
+{% if backups %}
+<form method="post">
+    {% csrf_token %}
+    <div class="mb-3">
+        <select name="backup_file" class="form-select" required>
+            <option value="">-- выберите бэкап --</option>
+            {% for b in backups %}
+                <option value="{{ b }}">{{ b }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-danger">Восстановить</button>
+    <a href="{% url 'home' %}" class="btn btn-outline-secondary">Отмена</a>
+</form>
+{% else %}
+<div class="alert alert-warning">Бэкапы не найдены. Убедитесь, что cron-задача выполняется.</div>
+{% endif %}
+{% endblock %}

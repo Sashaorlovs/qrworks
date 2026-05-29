@@ -1,3 +1,5 @@
+from django.db.models import Q
+from django.conf import settings
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
@@ -565,7 +567,7 @@ def warehouse_issue(request):
 # --- Статистика ---
 @login_required
 def statistics(request):
-    from django.db.models import Sum, Count, Q
+    from django.db.models import Sum, Count, Q, Q, Q
     from datetime import datetime, timedelta
 
     # Параметры фильтрации
@@ -971,3 +973,68 @@ def order_create(request):
         if number:
             Order.objects.create(order_number=number, full_name=name)
     return redirect('home')
+
+import os
+import glob
+from django.contrib import messages
+
+@login_required
+def restore_backup(request):
+    # Доступ только для администраторов (is_staff)
+    if not request.user.is_staff:
+        messages.error(request, 'Недостаточно прав.')
+        return redirect('home')
+    
+    backup_dir = os.path.join(settings.BASE_DIR, 'backups')
+    backups = sorted(glob.glob(os.path.join(backup_dir, 'db_*.sqlite3')), reverse=True)
+    backup_files = [os.path.basename(f) for f in backups]
+    
+    if request.method == 'POST':
+        selected = request.POST.get('backup_file')
+        if selected and selected in backup_files:
+            src = os.path.join(backup_dir, selected)
+            dst = os.path.join(settings.BASE_DIR, 'db.sqlite3')
+            import shutil
+            shutil.copy2(src, dst)
+            messages.success(request, 'База данных восстановлена. Сервер будет перезагружен.')
+            # Перезапускаем gunicorn для применения новой базы
+            import subprocess
+            subprocess.run(['sudo', 'systemctl', 'restart', 'gunicorn-simple'])
+        else:
+            messages.error(request, 'Выберите файл из списка.')
+        return redirect('restore_backup')
+    
+    return render(request, 'scanner/restore_backup.html', {
+        'backups': backup_files,
+    })
+
+
+
+@login_required
+def search(request):
+    query = request.GET.get('q', '').strip()
+    results = {
+        'items': [],
+        'orders': [],
+        'instances': [],
+        'operations': [],
+    }
+    if query:
+        results['items'] = Item.objects.filter(
+            Q(item_number__icontains=query) | Q(name__icontains=query)
+        )[:20]
+        results['orders'] = Order.objects.filter(
+            Q(order_number__icontains=query) | Q(full_name__icontains=query)
+        )[:10]
+        results['instances'] = ItemInstance.objects.filter(
+            Q(serial__icontains=query)
+        ).select_related('item')[:20]
+        results['operations'] = RouteOperation.objects.filter(
+            Q(operation_type__name__icontains=query) |
+            Q(route_card__instance__item__name__icontains=query) |
+            Q(worker__username__icontains=query)
+        ).select_related('operation_type', 'route_card__instance__item')[:30]
+    return render(request, 'scanner/search_results.html', {
+        'query': query,
+        'results': results,
+    })

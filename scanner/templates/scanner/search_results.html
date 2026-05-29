@@ -1,0 +1,65 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Поиск: {{ query }}{% endblock %}
+{% block content %}
+<h1>Результаты поиска: «{{ query }}»</h1>
+
+{% if query %}
+
+    {% if results.items %}
+    <h3>Изделия ({{ results.items|length }})</h3>
+    <ul>
+    {% for item in results.items %}
+        <li>
+            {{ item.item_number }} – {{ item.name }}
+            {% with inst=item.instances.first %}
+                {% if inst %}
+                    <a href="{% url 'instance_detail' item_number=item.item_number serial=inst.serial %}">Открыть</a>
+                {% else %}
+                    <span class="text-muted">(нет экземпляра)</span>
+                {% endif %}
+            {% endwith %}
+        </li>
+    {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if results.orders %}
+    <h3>Заказы ({{ results.orders|length }})</h3>
+    <ul>
+    {% for order in results.orders %}
+        <li><a href="{% url 'order_detail' order.id %}">{{ order.order_number }} – {{ order.full_name }}</a></li>
+    {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if results.instances %}
+    <h3>Экземпляры ({{ results.instances|length }})</h3>
+    <ul>
+    {% for inst in results.instances %}
+        <li><a href="{% url 'instance_detail' item_number=inst.item.item_number serial=inst.serial %}">{{ inst.serial }} ({{ inst.item.item_number }})</a></li>
+    {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if results.operations %}
+    <h3>Операции ({{ results.operations|length }})</h3>
+    <table class="table table-sm">
+    {% for op in results.operations %}
+        <tr>
+            <td>{{ op.route_card.instance.item.item_number }}</td>
+            <td>{{ op.operation_type.name }}</td>
+            <td>{{ op.get_status_display }}</td>
+            <td><a href="{% url 'instance_detail' item_number=op.route_card.instance.item.item_number serial=op.route_card.instance.serial %}">Открыть</a></td>
+        </tr>
+    {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if not results.items and not results.orders and not results.instances and not results.operations %}
+        <p>Ничего не найдено.</p>
+    {% endif %}
+
+{% else %}
+    <p>Введите поисковый запрос в строку поиска вверху страницы.</p>
+{% endif %}
+{% endblock %}
