@@ -37,7 +37,6 @@
                                 {{ inst.route_card.operation_progress }}%
                             </div>
                         </div>
-                        <small>{{ astatus|default:inst.current_operation_name }}</small>
                     {% endif %}
                 {% endwith %}
             {% else %}
@@ -48,6 +47,15 @@
                         {{ inst.route_card.operation_progress }}%
                     </div>
                 </div>
+                {% if inst.route_card %}
+                <div class="small text-muted">
+                    {% for op in inst.route_card.operations.all %}
+                        {% if op.status == 'in_progress' or op.status == 'completed' %}
+                            {{ op.operation_type.name }}: {{ op.good_qty|default:0 }}/{{ inst.planned_quantity }}<br>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+                {% endif %}
             {% endif %}
             {% if inst.shortage > 0 %}
                 <small class="text-danger">Нехватка: {{ inst.shortage }}</small>
