@@ -50,6 +50,9 @@
             <div class="card-body">
                 <p>Норма: {{ op.planned_hours }} ч</p>
                 {% if op.worker %}<p>Исполнитель: {{ op.worker.get_full_name }}</p>{% endif %}
+                {% if op.started_at %}<p>Начало: {{ op.started_at|date:"d.m.Y H:i" }}</p>{% endif %}
+                {% if op.completed_at %}<p>Завершено: {{ op.completed_at|date:"d.m.Y H:i" }}</p>{% endif %}
+                {% if op.duration %}<p>Длительность: {{ op.duration }}</p>{% endif %}
                 {% if op.status == 'completed' or op.good_qty or op.bad_qty %}
                     <p>Годных: {{ op.good_qty|default:0 }} / Брак: {{ op.bad_qty|default:0 }}</p>
                     {% if op.status == 'in_progress' %}

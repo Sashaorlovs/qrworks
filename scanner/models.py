@@ -252,6 +252,15 @@ class RouteOperation(models.Model):
             self.order = (last.order + 1) if last else 1
         super().save(*args, **kwargs)
 
+    
+    def duration(self):
+        if self.started_at and self.completed_at:
+            delta = self.completed_at - self.started_at
+            hours, remainder = divmod(delta.seconds, 3600)
+            minutes = remainder // 60
+            return f'{hours} ч {minutes} мин'
+        return None
+    
     class Meta:
         ordering = ['route_card', 'order']
         verbose_name = 'Операция маршрутной карты'
