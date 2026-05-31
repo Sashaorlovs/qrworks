@@ -3,7 +3,21 @@
 {% block content %}
 <h1>Заказ {{ order.order_number }}</h1>
 <p>{{ order.full_name }}</p>
-<p>Статус: {{ order.get_status_display }}</p>
+
+<div class="mb-3">
+    <strong>Текущий статус:</strong> {{ order.get_status_display }}
+</div>
+
+{% if user.is_staff %}
+<div class="mb-3">
+    <strong>Изменить статус:</strong>
+    {% for key, label in order.STATUS_CHOICES %}
+        {% if key != order.status %}
+            <a href="{% url 'change_order_status' order.id key %}" class="btn btn-sm btn-outline-secondary ms-1">{{ label }}</a>
+        {% endif %}
+    {% endfor %}
+</div>
+{% endif %}
 
 <h3>Загрузить спецификацию</h3>
 <form method="post" enctype="multipart/form-data" action="{% url 'order_import' order.id %}">

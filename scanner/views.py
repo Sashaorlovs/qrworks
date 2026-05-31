@@ -1245,3 +1245,19 @@ def orders_control(request):
     })
 
 
+
+@login_required
+def change_order_status(request, order_id, new_status):
+    order = get_object_or_404(Order, pk=order_id)
+    # Проверяем, что у пользователя есть права (is_staff)
+    if not request.user.is_staff:
+        messages.error(request, 'Недостаточно прав для изменения статуса заказа.')
+        return redirect('order_detail', order_id=order.id)
+    # Проверяем, что новый статус допустим
+    if new_status not in dict(Order.STATUS_CHOICES):
+        messages.error(request, 'Недопустимый статус.')
+        return redirect('order_detail', order_id=order.id)
+    order.status = new_status
+    order.save()
+    messages.success(request, f'Статус заказа изменён на {order.get_status_display()}.')
+    return redirect('order_detail', order_id=order.id)
