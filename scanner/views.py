@@ -606,11 +606,24 @@ def warehouse_issue(request):
         basis = request.POST.get('basis', '')
         notes = request.POST.get('notes', '')
         inst = get_object_or_404(ItemInstance, pk=inst_id)
+        warehouse_type = request.POST.get('warehouse_type', 'main')
+        if warehouse_type == 'intermediate':
+            in_filter = ['in_intermediate', 'in']
+            out_filter = ['out_intermediate', 'out']
+            movement_out = 'out_intermediate'
+            if not request.POST.get('notes', '').strip():
+                messages.error(request, 'Необходимо указать примечание (куда направлена деталь).')
+                return redirect('warehouse')
+        else:
+            in_filter = ['in_main', 'in']
+            out_filter = ['out_main', 'out']
+            movement_out = 'out_main'
+
         total_in = inst.warehouse_records.filter(
-            movement_type__in=['in_main', 'in']
+            movement_type__in=in_filter
         ).aggregate(s=models.Sum('quantity'))['s'] or 0
         total_out = inst.warehouse_records.filter(
-            movement_type__in=['out_main', 'out']
+            movement_type__in=out_filter
         ).aggregate(s=models.Sum('quantity'))['s'] or 0
         balance = total_in - total_out
         if qty <= 0 or qty > balance:
@@ -625,7 +638,7 @@ def warehouse_issue(request):
                 except (ValueError, Employee.DoesNotExist):
                     recipient_str = str(recipient_val).strip()
             WarehouseRecord.objects.create(
-                instance=inst, movement_type='out_main', quantity=qty,
+                instance=inst, movement_type=movement_out, quantity=qty,
                 employee=request.user.employee if hasattr(request.user, 'employee') else None,
                 recipient=recipient_str, basis=basis,
                 notes=notes

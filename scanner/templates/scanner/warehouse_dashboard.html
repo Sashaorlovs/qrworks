@@ -9,7 +9,6 @@
     {% endfor %}
 {% endif %}
 
-<!-- Поле поиска -->
 <div class="mb-3">
     <input type="text" id="warehouseSearch" class="form-control" placeholder="Поиск по всем вкладкам...">
 </div>
@@ -35,7 +34,8 @@
             <tr>
                 <th>Обозначение</th>
                 <th>Наименование</th>
-                <th>Партия</th>
+                <th>Договор</th>
+                <th>Сб. единица</th>
                 <th>Остаток</th>
                 <th>Место</th>
                 <th>Действие</th>
@@ -46,22 +46,23 @@
             <tr>
                 <td>{{ entry.instance.item.item_number }}</td>
                 <td>{{ entry.instance.item.name }}</td>
-                <td>{{ entry.instance.serial }}</td>
+                <td>{{ entry.order_number }}</td>
+                <td>{{ entry.assembly }}</td>
                 <td>{{ entry.balance }} шт.</td>
                 <td>{{ entry.location|default:"—" }}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#issueModal" 
+                    <button class="btn btn-sm btn-outline-primary btn-issue-main"
                             data-instance-id="{{ entry.instance.id }}"
-                            data-instance-label="{{ entry.instance.item.item_number }} - {{ entry.instance.serial }}"
+                            data-label="{{ entry.assembly }}"
                             data-balance="{{ entry.balance }}"
-                            data-assembly="{{ entry.assembly }}"
-                            data-location="{{ entry.location }}">
+                            data-location="{{ entry.location }}"
+                            data-assembly="{{ entry.assembly }}">
                         Выдать
                     </button>
                 </td>
             </tr>
         {% empty %}
-            <tr><td colspan="6">Нет деталей на основном складе</td></tr>
+            <tr><td colspan="7">Нет деталей на основном складе</td></tr>
         {% endfor %}
         </tbody>
     </table>
@@ -74,9 +75,11 @@
             <tr>
                 <th>Обозначение</th>
                 <th>Наименование</th>
-                <th>Партия</th>
+                <th>Договор</th>
+                <th>Сб. единица</th>
                 <th>Остаток</th>
                 <th>Место</th>
+                <th>Действие</th>
             </tr>
         </thead>
         <tbody>
@@ -84,12 +87,23 @@
             <tr>
                 <td>{{ entry.instance.item.item_number }}</td>
                 <td>{{ entry.instance.item.name }}</td>
-                <td>{{ entry.instance.serial }}</td>
+                <td>{{ entry.order_number }}</td>
+                <td>{{ entry.assembly }}</td>
                 <td>{{ entry.balance }} шт.</td>
                 <td>{{ entry.location|default:"—" }}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary btn-issue-intermediate"
+                            data-instance-id="{{ entry.instance.id }}"
+                            data-label="{{ entry.assembly }}"
+                            data-balance="{{ entry.balance }}"
+                            data-location="{{ entry.location }}"
+                            data-assembly="{{ entry.assembly }}">
+                        Выдать
+                    </button>
+                </td>
             </tr>
         {% empty %}
-            <tr><td colspan="5">Нет деталей на меж.операционном складе</td></tr>
+            <tr><td colspan="7">Нет деталей на меж.операционном складе</td></tr>
         {% endfor %}
         </tbody>
     </table>
@@ -115,9 +129,9 @@
             <tr>
                 <td>{{ rec.date|date:"d.m.Y H:i" }}</td>
                 <td>{{ rec.instance.item.item_number }} – {{ rec.instance.item.name }}</td>
-                <td>{{ rec.instance.serial }}</td>
+                <td>{{ rec.instance.display_serial }}</td>
                 <td>{{ rec.quantity }}</td>
-                <td>{% if rec.movement_type in 'out_main,out' %}{{ rec.recipient|default:"—" }}{% else %}—{% endif %}</td>
+                <td>{% if rec.movement_type in 'out_main,out_intermediate,out' %}{{ rec.recipient|default:"—" }}{% else %}—{% endif %}</td>
                 <td>{{ rec.basis|default:"—" }}</td>
                 <td>{{ rec.employee|default:"—" }}</td>
                 <td>{{ rec.notes|default:"—" }}</td>
@@ -130,79 +144,100 @@
   </div>
 </div>
 
-<!-- Модальное окно выдачи -->
-<div class="modal fade" id="issueModal" tabindex="-1" aria-labelledby="issueModalLabel" aria-hidden="true">
+<!-- Модальное окно: Основной склад -->
+<div class="modal fade" id="issueMainModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="issueModalLabel">Выдача с основного склада</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
+      <div class="modal-header"><h5 class="modal-title">Выдача с основного склада</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <form method="post" action="{% url 'warehouse_issue' %}">
         {% csrf_token %}
         <div class="modal-body">
-            <input type="hidden" name="instance_id" id="issueInstanceId">
-            <div class="mb-3">
-                <label class="form-label">Партия</label>
-                <input type="text" class="form-control" id="issueInstanceLabel" disabled>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Количество (остаток: <span id="issueBalance"></span>)</label>
-                <input type="number" name="quantity" class="form-control" min="1" max="" id="issueQuantity" required>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Место хранения</label>
-                <input type="text" id="issueLocation" class="form-control" disabled>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Получатель</label>
-                <select name="recipient" id="issueRecipient" class="form-select" required>
-                    <option value="">-- выберите сотрудника --</option>
-                    {% for emp in employee_list %}
-                        <option value="{{ emp.id }}">{{ emp.last_name }} {{ emp.first_name }} {{ emp.middle_name }}</option>
-                    {% endfor %}
+            <input type="hidden" name="instance_id" id="mainInstanceId">
+            <div class="mb-3"><label class="form-label">Сб. единица</label><input type="text" class="form-control" id="mainLabel" disabled></div>
+            <div class="mb-3"><label class="form-label">Количество (остаток: <span id="mainBalance"></span>)</label><input type="number" name="quantity" class="form-control" min="1" id="mainQty" required></div>
+            <div class="mb-3"><label class="form-label">Место хранения</label><input type="text" class="form-control" id="mainLocation" disabled></div>
+            <div class="mb-3"><label class="form-label">Получатель</label>
+                <select name="recipient" class="form-select" required>
+                    <option value="">-- выберите --</option>
+                    {% for emp in employee_list %}<option value="{{ emp.id }}">{{ emp.last_name }} {{ emp.first_name }} {{ emp.middle_name }}</option>{% endfor %}
                 </select>
             </div>
-            <div class="mb-3">
-                <label class="form-label">Основание</label>
-                <input type="text" name="basis" id="issueBasis" class="form-control" placeholder="Сборка" required>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Примечание (место на складе и др.)</label>
-                <textarea name="notes" class="form-control" rows="2" placeholder="Например: стеллаж 2, полка А"></textarea>
-            </div>
+            <div class="mb-3"><label class="form-label">Основание</label><input type="text" name="basis" class="form-control" id="mainBasis" required></div>
+            <div class="mb-3"><label class="form-label">Примечание</label><textarea name="notes" class="form-control" rows="2"></textarea></div>
         </div>
-        <div class="modal-footer">
-            <button type="submit" class="btn btn-primary">Выдать</button>
+        <div class="modal-footer"><button type="submit" class="btn btn-primary">Выдать</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Модальное окно: Меж.операционный склад -->
+<div class="modal fade" id="issueIntermediateModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Выдача с меж.операционного склада</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <form method="post" action="{% url 'warehouse_issue' %}">
+        {% csrf_token %}
+        <input type="hidden" name="warehouse_type" value="intermediate">
+        <div class="modal-body">
+            <input type="hidden" name="instance_id" id="intermediateInstanceId">
+            <div class="mb-3"><label class="form-label">Сб. единица</label><input type="text" class="form-control" id="intermediateLabel" disabled></div>
+            <div class="mb-3"><label class="form-label">Количество (остаток: <span id="intermediateBalance"></span>)</label><input type="number" name="quantity" class="form-control" min="1" id="intermediateQty" required></div>
+            <div class="mb-3"><label class="form-label">Место хранения</label><input type="text" class="form-control" id="intermediateLocation" disabled></div>
+            <div class="mb-3"><label class="form-label">Получатель</label>
+                <select name="recipient" class="form-select" required>
+                    <option value="">-- выберите --</option>
+                    {% for emp in employee_list %}<option value="{{ emp.id }}">{{ emp.last_name }} {{ emp.first_name }} {{ emp.middle_name }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="mb-3"><label class="form-label">Основание</label><input type="text" name="basis" class="form-control" id="intermediateBasis" required></div>
+            <div class="mb-3"><label class="form-label">Примечание (обязательно)</label><textarea name="notes" class="form-control" rows="2" required placeholder="Куда направлена деталь"></textarea></div>
         </div>
+        <div class="modal-footer"><button type="submit" class="btn btn-primary">Выдать</button></div>
       </form>
     </div>
   </div>
 </div>
 
 <script>
-    // Поиск по всем таблицам
-    document.getElementById('warehouseSearch').addEventListener('input', function(e) {
-        var term = e.target.value.toLowerCase();
-        document.querySelectorAll('.searchable tbody tr').forEach(function(row) {
-            var text = row.textContent.toLowerCase();
-            row.style.display = text.includes(term) ? '' : 'none';
+document.addEventListener('DOMContentLoaded', function() {
+    // Основной склад
+    document.querySelectorAll('.btn-issue-main').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var mainModal = new bootstrap.Modal(document.getElementById('issueMainModal'));
+            document.getElementById('mainInstanceId').value = this.dataset.instanceId;
+            document.getElementById('mainLabel').value = this.dataset.label;
+            document.getElementById('mainBalance').textContent = this.dataset.balance + ' шт.';
+            document.getElementById('mainQty').max = this.dataset.balance;
+            document.getElementById('mainQty').value = 1;
+            document.getElementById('mainLocation').value = this.dataset.location || '';
+            document.getElementById('mainBasis').value = this.dataset.assembly || '';
+            mainModal.show();
         });
     });
 
-    // Модальное окно выдачи
-    var issueModal = document.getElementById('issueModal');
-    issueModal.addEventListener('show.bs.modal', function (event) {
-        var button = event.relatedTarget;
-        var balance = button.getAttribute('data-balance');
-        document.getElementById('issueInstanceId').value = button.getAttribute('data-instance-id');
-        document.getElementById('issueInstanceLabel').value = button.getAttribute('data-instance-label');
-        document.getElementById('issueBalance').textContent = balance + ' шт.';
-        var qtyInput = document.getElementById('issueQuantity');
-        qtyInput.max = balance;
-        qtyInput.value = 1;
-        document.getElementById('issueBasis').value = button.getAttribute('data-assembly') || '';
-        document.getElementById('issueLocation').value = button.getAttribute('data-location') || '';
+    // Меж.операционный склад
+    document.querySelectorAll('.btn-issue-intermediate').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var intermediateModal = new bootstrap.Modal(document.getElementById('issueIntermediateModal'));
+            document.getElementById('intermediateInstanceId').value = this.dataset.instanceId;
+            document.getElementById('intermediateLabel').value = this.dataset.label;
+            document.getElementById('intermediateBalance').textContent = this.dataset.balance + ' шт.';
+            document.getElementById('intermediateQty').max = this.dataset.balance;
+            document.getElementById('intermediateQty').value = 1;
+            document.getElementById('intermediateLocation').value = this.dataset.location || '';
+            document.getElementById('intermediateBasis').value = this.dataset.assembly || '';
+            intermediateModal.show();
+        });
     });
+
+    // Поиск по складу
+    document.getElementById('warehouseSearch').addEventListener('input', function(e) {
+        var term = e.target.value.toLowerCase();
+        document.querySelectorAll('.searchable tbody tr').forEach(function(row) {
+            row.style.display = row.textContent.toLowerCase().includes(term) ? '' : 'none';
+        });
+    });
+});
 </script>
 {% endblock %}
