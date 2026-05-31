@@ -3,7 +3,7 @@
 {% block content %}
 <h1>Заказ {{ order.order_number }}</h1>
 <a href="{% url 'order_detail' order.id %}" class="btn btn-outline-primary mb-3">Загрузить спецификацию</a>
-<table class="table table-bordered" id="tree-table">
+<div class="table-responsive"><table class="table table-bordered" id="tree-table">
     <thead class="table-dark">
         <tr><th>Обозначение</th><th>Наименование</th><th>Кол-во</th><th>Готовность</th><th>Действия</th></tr>
     </thead>
@@ -12,5 +12,5 @@
         {% include 'scanner/_tree_row.html' with item=item level=0 %}
     {% endfor %}
     </tbody>
-</table>
+</table></div>
 {% endblock %}

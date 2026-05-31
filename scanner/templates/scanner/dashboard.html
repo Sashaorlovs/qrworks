@@ -5,11 +5,8 @@
 
 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createOrderModal">+ Новый заказ</button>
 
-<div class="mb-3">
-    <input type="text" id="dashboardSearch" class="form-control" placeholder="Поиск по номеру договора или наименованию...">
-</div>
-
-<table class="table searchable">
+<div class="table-responsive">
+<table class="table">
     <thead><tr><th>Номер договора</th><th>Наименование</th><th>Создан</th><th>Отгрузка</th><th>Статус</th><th></th></tr></thead>
     <tbody>
     {% for order in orders %}
@@ -27,6 +24,7 @@
     {% endfor %}
     </tbody>
 </table>
+</div>
 
 <!-- Модальное окно создания заказа (без изменений) -->
 <div class="modal fade" id="createOrderModal" tabindex="-1" aria-labelledby="createOrderModalLabel" aria-hidden="true">
@@ -59,14 +57,4 @@
     </div>
   </div>
 </div>
-
-<script>
-    document.getElementById('dashboardSearch').addEventListener('input', function(e) {
-        var term = e.target.value.toLowerCase();
-        document.querySelectorAll('.searchable tbody tr').forEach(function(row) {
-            var text = row.textContent.toLowerCase();
-            row.style.display = text.includes(term) ? '' : 'none';
-        });
-    });
-</script>
 {% endblock %}
