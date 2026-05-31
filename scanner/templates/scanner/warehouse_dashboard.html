@@ -37,7 +37,6 @@
                 <th>Договор</th>
                 <th>Сб. единица</th>
                 <th>Остаток</th>
-                <th>Дата приёма</th>
                 <th>Место</th>
                 <th>Действие</th>
             </tr>
@@ -50,7 +49,6 @@
                 <td>{{ entry.order_number }}</td>
                 <td>{{ entry.assembly }}</td>
                 <td>{{ entry.balance }} шт.</td>
-                <td>{{ entry.receipt_date|default:"—" }}</td>
                 <td>{{ entry.location|default:"—" }}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary btn-issue-main"
@@ -80,7 +78,6 @@
                 <th>Договор</th>
                 <th>Сб. единица</th>
                 <th>Остаток</th>
-                <th>Дата приёма</th>
                 <th>Место</th>
                 <th>Действие</th>
             </tr>
@@ -93,7 +90,6 @@
                 <td>{{ entry.order_number }}</td>
                 <td>{{ entry.assembly }}</td>
                 <td>{{ entry.balance }} шт.</td>
-                <td>{{ entry.receipt_date|default:"—" }}</td>
                 <td>{{ entry.location|default:"—" }}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary btn-issue-intermediate"

@@ -601,8 +601,8 @@ def warehouse_dashboard(request):
                 'assembly': root_name,
                 'order_number': order_number,
                 'location': location_main,
-                'receipt_date': receipt_date_main,
-                'receipt_date': receipt_date_main,
+                
+                
             })
         if balance_inter > 0:
             intermediate_data.append({
@@ -611,8 +611,8 @@ def warehouse_dashboard(request):
                 'assembly': root_name,
                 'order_number': order_number,
                 'location': location_inter,
-                'receipt_date': receipt_date_inter,
-                'receipt_date': receipt_date_inter,
+                
+                
             })
 
     records = WarehouseRecord.objects.select_related('instance__item', 'employee').order_by('-date')[:200]

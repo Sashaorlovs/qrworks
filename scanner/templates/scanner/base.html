@@ -22,7 +22,7 @@
         <div class="collapse navbar-collapse" id="mainNav">
             <ul class="navbar-nav me-auto">
                 <li class="nav-item"><a class="nav-link" href="{% url 'order_list' %}">Заказы</a></li>
-                {% if user.is_authenticated %}
+                {% if user.is_authenticated and user.employee %}
                     {% with user.employee.role as role %}
                         {% if role in 'admin,dispatcher,master,technologist,supervisor' %}
                             <li class="nav-item"><a class="nav-link" href="{% url 'stats' %}">Статистика</a></li>
@@ -31,7 +31,7 @@
                         {% if role in 'admin,dispatcher,master,technologist,supervisor' %}
                             <li class="nav-item"><a class="nav-link" href="{% url 'orders_control' %}">Контроль заказов</a></li>
                         {% endif %}
-                        {% if role in 'admin,dispatcher,master,technologist' %}
+                        {% if role in 'admin,dispatcher,technologist' %}
                             <li class="nav-item"><a class="nav-link" href="/admin/">Админка</a></li>
                         {% endif %}
                         {% if role == 'admin' %}
@@ -39,6 +39,8 @@
                         {% endif %}
                         <li class="nav-item"><a class="nav-link" href="{% url 'logout' %}">Выйти ({{ user.username }})</a></li>
                     {% endwith %}
+                {% elif user.is_authenticated %}
+                    <li class="nav-item"><a class="nav-link" href="{% url 'logout' %}">Выйти ({{ user.username }})</a></li>
                 {% endif %}
             </ul>
             <form class="d-flex mt-2 mt-lg-0" method="get" action="{% url 'search' %}">
