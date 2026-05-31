@@ -1,37 +1,44 @@
-{% with inst=item.instances.first %}
-<tr data-node-id="{{ item.id }}" data-parent="{{ item.parent.id|default:'' }}"
-    {% if inst.id in priority_ids %}class="table-info"{% endif %}>
-    <td>
-        <span style="padding-left:{{ level|add:level }}em"></span>
-        {% if item.children.exists %}
-        <a data-bs-toggle="collapse" href="#children-{{ item.id }}" role="button" aria-expanded="false">
-            <i class="bi bi-chevron-right"></i> {{ item.item.item_number }}
-        </a>
-        {% else %}
-            {{ item.item.item_number }}
-        {% endif %}
-    </td>
-    <td>{{ item.item.name }}</td>
-    <td>{{ item.planned_quantity }}</td>
-    <td>
-        {% if inst %}
+{% with instances=item.instances.all %}
+{% if instances.exists %}
+    {% for inst in instances %}
+    <tr data-node-id="{{ item.id }}" data-parent="{{ item.parent.id|default:'' }}"
+        {% if inst.id in priority_ids %}class="table-info"{% endif %}>
+        <td>
+            <span style="padding-left:{{ level|add:level }}em"></span>
+            {% if forloop.first and item.children.exists %}
+            <a data-bs-toggle="collapse" href="#children-{{ item.id }}" role="button" aria-expanded="false">
+                <i class="bi bi-chevron-right"></i> {{ item.item.item_number }}
+            </a>
+            {% elif forloop.first %}
+                {{ item.item.item_number }}
+            {% else %}
+                <span class="text-muted">↳ дозапуск</span>
+            {% endif %}
+        </td>
+        <td>{{ item.item.name }}</td>
+        <td>
+            {% if forloop.first %}
+                {{ item.planned_quantity }}
+            {% else %}
+                {{ inst.quantity }}
+            {% endif %}
+        </td>
+        <td>
             {% if inst.item.item_type == 'Сборочная единица' %}
                 {% with astatus=inst.assembly_status %}
                     {% if astatus == 'Ожидает комплектации' %}
-                        <div class="progress" style="height: 16px;" title="{{ astatus }} ({{ inst.components_completion_percent }}% компонентов готово)">
-                            <div class="progress-bar bg-warning" style="width: {{ inst.components_completion_percent }}%;">
-                                {{ inst.components_completion_percent }}%
-                            </div>
+                        <div class="progress" style="height: 12px;" title="{{ astatus }} ({{ inst.components_completion_percent }}% компонентов)">
+                            <div class="progress-bar bg-warning" style="width: {{ inst.components_completion_percent }}%;"></div>
                         </div>
                         <small class="text-warning">{{ astatus }}</small>
                     {% elif astatus == 'Готово к комплектованию' %}
-                        <div class="progress" style="height: 16px;" title="{{ astatus }}">
+                        <div class="progress" style="height: 12px;">
                             <div class="progress-bar bg-success" style="width: 0%;">0%</div>
                         </div>
                         <small class="text-success">{{ astatus }}</small>
                     {% else %}
                         {{ inst.current_operation_name }}<br>
-                        <div class="progress" style="height: 16px;">
+                        <div class="progress" style="height: 12px;">
                             <div class="progress-bar bg-{% if inst.route_card.operation_progress >= 100 %}success{% elif inst.route_card.operation_progress > 0 %}primary{% else %}secondary{% endif %}" 
                                  style="width: {{ inst.route_card.operation_progress }}%;">
                                 {{ inst.route_card.operation_progress }}%
@@ -41,35 +48,36 @@
                 {% endwith %}
             {% else %}
                 {{ inst.current_operation_name }}<br>
-                <div class="progress" style="height: 16px;">
+                <div class="progress" style="height: 12px;">
                     <div class="progress-bar bg-{% if inst.route_card.operation_progress >= 100 %}success{% elif inst.route_card.operation_progress > 0 %}primary{% else %}secondary{% endif %}" 
                          style="width: {{ inst.route_card.operation_progress }}%;">
                         {{ inst.route_card.operation_progress }}%
                     </div>
                 </div>
-                {% if inst.route_card %}
-                <div class="small text-muted">
-                    {% for op in inst.route_card.operations.all %}
-                        {% if op.status == 'in_progress' or op.status == 'completed' %}
-                            {{ op.operation_type.name }}: {{ op.good_qty|default:0 }}/{{ inst.planned_quantity }}<br>
-                        {% endif %}
-                    {% endfor %}
-                </div>
-                {% endif %}
             {% endif %}
             {% if inst.shortage > 0 %}
                 <small class="text-danger">Нехватка: {{ inst.shortage }}</small>
             {% endif %}
-        {% else %}
-            <span class="text-muted">Нет экземпляра</span>
-        {% endif %}
-    </td>
-    <td>
-        {% if inst %}
-            <a href="{% url 'instance_detail' item_number=inst.item.item_number serial=inst.serial %}" class="btn btn-sm btn-outline-primary">Открыть</a>
-        {% endif %}
-    </td>
-</tr>
+        </td>
+        <td>
+            {% if inst and inst.serial %}
+                <a href="{% url 'instance_detail' item_number=inst.item.item_number serial=inst.serial %}" class="btn btn-sm btn-outline-primary mb-1">Открыть</a>
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+{% else %}
+    <tr data-node-id="{{ item.id }}" data-parent="{{ item.parent.id|default:'' }}">
+        <td>
+            <span style="padding-left:{{ level|add:level }}em"></span>
+            {{ item.item.item_number }}
+        </td>
+        <td>{{ item.item.name }}</td>
+        <td>{{ item.planned_quantity }}</td>
+        <td><span class="text-muted">Нет экземпляра</span></td>
+        <td></td>
+    </tr>
+{% endif %}
 {% if item.children.exists %}
     {% for child in item.children.all %}
         {% include 'scanner/_tree_row.html' with item=child level=level|add:1 %}

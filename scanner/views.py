@@ -132,7 +132,10 @@ def instance_detail(request, item_number, serial):
 
             # Проверяем, выполнена ли норма
             planned = instance.planned_quantity()
-            if op.good_qty >= planned:
+            if (op.good_qty + op.bad_qty) >= planned or op.operation_type.name in (
+                'Прием на меж.операционный склад', 'Прием на склад',
+                'Контрольная', 'Контроль ОТК'
+            ):
                 op.status = 'completed'
                 op.completed_at = timezone.now()
                 op.save()
