@@ -156,6 +156,28 @@ def supplement_instance(request, instance_id):
 def route_card_print(request, route_card_id):
     from openpyxl.styles import PatternFill, Alignment as XlAlignment, Font as XlFont
     from openpyxl.utils import get_column_letter
+    from openpyxl.cell.cell import MergedCell
+    from datetime import datetime
+
+    def safe_write(ws, row, col, value, alignment=None):
+        cell = ws.cell(row=row, column=col)
+        if not isinstance(cell, MergedCell):
+            cell.value = value
+            if alignment:
+                cell.alignment = alignment
+            return cell
+        return None
+
+    def apply_border(ws, row, col, border):
+        cell = ws.cell(row=row, column=col)
+        if not isinstance(cell, MergedCell):
+            cell.border = border
+
+    # Принудительно ставим границу для всех ячеек объединённого диапазона
+    def apply_border_to_merged(ws, start_row, start_col, end_row, end_col, border):
+        for r in range(start_row, end_row+1):
+            for c in range(start_col, end_col+1):
+                apply_border(ws, r, c, border)
 
     rc = get_object_or_404(RouteCard, pk=route_card_id)
     ops = rc.operations.select_related('operation_type', 'worker').order_by('order')
@@ -164,24 +186,18 @@ def route_card_print(request, route_card_id):
     wb = openpyxl.load_workbook(template_path)
     ws = wb.active
 
-    # ---- Параметры страницы ----
+    # Сбрасываем объединения
+    merged_ranges = [str(m) for m in ws.merged_cells.ranges]
+    for rng in merged_ranges:
+        ws.unmerge_cells(rng)
+
+    # Параметры страницы
     ws.page_setup.orientation = 'portrait'
     ws.page_setup.paperSize = 9
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
 
-    # ---- Снимаем ВСЕ объединения в диапазоне, который будем трогать ----
-    for merge_range in list(ws.merged_cells.ranges):
-        # Если диапазон пересекается со строками 2..(12+len(ops)), снимаем
-        # Для простоты снимем все в диапазоне A1:G{конец}
-        end_row = 12 + len(ops) + 2
-        if merge_range.min_row <= end_row:
-            try:
-                ws.unmerge_cells(str(merge_range))
-            except:
-                pass
-
-    # ---- Определяем главную сборку и родительскую подсборку ----
+    # Сборки
     order_item = instance.order_item
     root_item = None
     parent_item = None
@@ -192,120 +208,150 @@ def route_card_print(request, route_card_id):
         root_item = current
         parent_item = order_item.parent
 
-    # ---- Заполняем основные поля ----
-    # B2:C2 объединим заново и запишем
-    ws.merge_cells('B2:C2')
-    if root_item:
-        ws['B2'] = f"{root_item.item.item_number} – {root_item.item.name}"
-    else:
-        ws['B2'] = instance.item.name
-
-    ws.merge_cells('B3:C3')
-    detail_str = f"{instance.item.item_number} – {instance.item.name}"
-    if parent_item and parent_item != root_item:
-        detail_str += f" (входит в {parent_item.item.item_number} – {parent_item.item.name})"
-    ws['B3'] = detail_str
-
-    ws['B4'] = instance.created_at.strftime('%d.%m.%Y') if instance.created_at else ''
-    ws['B5'] = instance.planned_quantity()
-
-    if instance.item.material:
-        mat_str = instance.item.material.name
-        if instance.item.profile:
-            mat_str += f" ({instance.item.profile})"
-    else:
-        mat_str = 'не указан'
-    ws['B6'] = mat_str
-
-    ws['B7'] = instance.item.blank_size or 'не указан'
-    ws['B8'] = instance.item.blanks_per_item if instance.item.blanks_per_item else ''
-
-    # ---- Стили ----
+    # Стили
     thin_border = Border(
         left=Side(style='thin'), right=Side(style='thin'),
         top=Side(style='thin'), bottom=Side(style='thin')
     )
     header_font = XlFont(bold=True, size=10)
     data_font = XlFont(size=10)
-    center_align = XlAlignment(horizontal='center', vertical='center', wrap_text=True)
-    left_align = XlAlignment(horizontal='left', vertical='center', wrap_text=True)
+    center_wrap = XlAlignment(horizontal='center', vertical='center', wrap_text=True)
+    left_wrap   = XlAlignment(horizontal='left', vertical='center', wrap_text=True)
 
-    # Удаляем старые изображения
-    for img in ws._images[:]:
-        ws._images.remove(img)
+    # Заголовок A1:D1
+    ws.merge_cells('A1:D1')
+    safe_write(ws, 1, 1, 'Маршрутно-операционный лист', center_wrap)
+    c = ws['A1']
+    if not isinstance(c, MergedCell):
+        c.font = XlFont(bold=True, size=14)
 
-    # QR-код в D1
-    try:
-        qr_url = request.build_absolute_uri(
-            reverse('instance_detail', kwargs={
-                'item_number': instance.item.item_number,
-                'serial': instance.serial
-            })
-        )
-        img = qrcode.make(qr_url)
-        buf = BytesIO()
-        img.save(buf, format='PNG')
-        buf.seek(0)
-        xl_img = XLImage(buf)
-        xl_img.width = 80
-        xl_img.height = 80
-        ws.add_image(xl_img, 'D1')
-    except Exception:
-        pass
+    # Изделие
+    ws.merge_cells('B2:D2')
+    if root_item:
+        safe_write(ws, 2, 2, f"{root_item.item.item_number} – {root_item.item.name}", center_wrap)
+    else:
+        safe_write(ws, 2, 2, instance.item.name, center_wrap)
+    ws.row_dimensions[2].height = 35
+    apply_border_to_merged(ws, 2, 2, 2, 4, thin_border)
 
-    # ---- Заголовки таблицы (строка 10) ----
-    headers = ['Наименование операции', 'Норма времени, ч', 'Оборудование', 'Исполнитель', 'Годных/Брак']
-    for col_idx, title in enumerate(headers, start=1):
-        cell = ws.cell(row=10, column=col_idx, value=title)
-        cell.font = header_font; cell.border = thin_border; cell.alignment = center_align
+    # Деталь
+    safe_write(ws, 3, 1, 'Деталь:', left_wrap)
+    apply_border(ws, 3, 1, thin_border)
+    ws.merge_cells('B3:D3')
+    detail_str = f"{instance.item.item_number} – {instance.item.name}"
+    if parent_item and parent_item != root_item:
+        detail_str += f" (входит в {parent_item.item.item_number} – {parent_item.item.name})"
+    safe_write(ws, 3, 2, detail_str, center_wrap)
+    ws.row_dimensions[3].height = 35
+    apply_border_to_merged(ws, 3, 2, 3, 4, thin_border)
 
-    # ---- Данные операций (строка 11+) ----
+    # Дата запуска
+    ws.merge_cells('B4:D4')
+    safe_write(ws, 4, 2, instance.created_at.strftime('%d.%m.%Y') if instance.created_at else '', center_wrap)
+    apply_border_to_merged(ws, 4, 2, 4, 4, thin_border)
+
+    # Количество
+    ws.merge_cells('B5:D5')
+    safe_write(ws, 5, 2, instance.planned_quantity(), center_wrap)
+    apply_border_to_merged(ws, 5, 2, 5, 4, thin_border)
+
+    # Материал
+    ws.merge_cells('B6:D6')
+    if instance.item.material:
+        safe_write(ws, 6, 2, instance.item.material.name, center_wrap)
+    else:
+        safe_write(ws, 6, 2, 'не указан', center_wrap)
+    apply_border_to_merged(ws, 6, 2, 6, 4, thin_border)
+
+    # Профиль (сортамент)
+    has_profile = bool(instance.item.profile)
+    offset = 0
+    if has_profile:
+        ws.insert_rows(7)
+        safe_write(ws, 7, 1, 'Сортамент:', left_wrap)
+        apply_border(ws, 7, 1, thin_border)
+        ws.merge_cells('B7:D7')
+        safe_write(ws, 7, 2, instance.item.profile, center_wrap)
+        # Применяем границы ко всем ячейкам объединённого диапазона B7:D7
+        for c in range(2, 5):  # B=2, C=3, D=4
+            apply_border(ws, 7, c, thin_border)
+        offset = 1
+
+    # Размер заготовки
+    ws.merge_cells(f'B{7+offset}:D{7+offset}')
+    safe_write(ws, 7+offset, 2, instance.item.blank_size or 'не указан', center_wrap)
+    apply_border_to_merged(ws, 7+offset, 2, 7+offset, 4, thin_border)
+
+    # Кол-во заготовок
+    ws.merge_cells(f'B{8+offset}:D{8+offset}')
+    safe_write(ws, 8+offset, 2, instance.item.blanks_per_item if instance.item.blanks_per_item else '', center_wrap)
+    apply_border_to_merged(ws, 8+offset, 2, 8+offset, 4, thin_border)
+
+    # Пустая строка-разделитель (без границ)
+    separator_row = 9 + offset
+    for c in range(1, 8):
+        cell = ws.cell(row=separator_row, column=c)
+        if not isinstance(cell, MergedCell):
+            cell.value = ''
+            cell.border = Border()
+
+    # Заголовки таблицы
+    header_row = 10 + offset
+    for col in range(1, 8):
+        cell = ws.cell(row=header_row, column=col)
+        if not isinstance(cell, MergedCell):
+            cell.font = header_font
+            cell.border = thin_border
+            cell.alignment = center_wrap
+
+    # Данные операций
     for i, op in enumerate(ops):
-        row = 11 + i
-        c = ws.cell(row=row, column=1, value=op.operation_type.name)
-        c.font = data_font; c.border = thin_border; c.alignment = left_align
-        c = ws.cell(row=row, column=2, value=float(op.planned_hours))
-        c.font = data_font; c.border = thin_border; c.alignment = center_align
-        c = ws.cell(row=row, column=3, value='')
-        c.font = data_font; c.border = thin_border; c.alignment = center_align
-        c = ws.cell(row=row, column=4, value=op.worker.get_full_name() if op.worker else '')
-        c.font = data_font; c.border = thin_border; c.alignment = left_align
-        c = ws.cell(row=row, column=5, value=f"{op.good_qty}/{op.bad_qty}")
-        c.font = data_font; c.border = thin_border; c.alignment = center_align
+        row = 11 + offset + i
+        safe_write(ws, row, 1, op.operation_type.name, left_wrap)
+        safe_write(ws, row, 2, float(op.planned_hours), center_wrap)
+        safe_write(ws, row, 3, '', center_wrap)
+        safe_write(ws, row, 4, op.worker.get_full_name() if op.worker else '', left_wrap)
+        safe_write(ws, row, 5, op.get_status_display(), center_wrap)
+        safe_write(ws, row, 6, f"{op.good_qty}/{op.bad_qty}", center_wrap)
+        safe_write(ws, row, 7, op.notes or '', left_wrap)
+        for c in range(1, 8):
+            cell = ws.cell(row=row, column=c)
+            if not isinstance(cell, MergedCell):
+                cell.font = data_font
+                cell.border = thin_border
 
-    # ---- Подпись (после таблицы) ----
-    signature_row = 11 + len(ops) + 1
+    # Ширина столбцов
+    widths = {'A': 22, 'B': 12, 'C': 14, 'D': 16, 'E': 12, 'F': 12, 'G': 16}
+    for col_letter, w in widths.items():
+        ws.column_dimensions[col_letter].width = w
+
+    for row in range(header_row, 11 + offset + len(ops)):
+        ws.row_dimensions[row].height = None
+
+    # Подпись
+    signature_row = 11 + offset + len(ops) + 1
     who = ''
     if hasattr(request.user, 'employee') and request.user.employee:
         emp = request.user.employee
         who = f"{emp.last_name} {emp.first_name} {emp.middle_name or ''}".replace('  ', ' ').strip()
     if not who:
         who = request.user.get_full_name() or request.user.username
-    # Объединяем и записываем подпись
     ws.merge_cells(f'A{signature_row}:G{signature_row}')
     c = ws[f'A{signature_row}']
-    c.value = f'Документ сформировал: {who}'
-    c.font = XlFont(italic=True, size=10)
-    c.alignment = XlAlignment(horizontal='left', vertical='center')
+    if not isinstance(c, MergedCell):
+        c.value = f'Документ сформировал: {who}'
+        c.font = XlFont(italic=True, size=10)
+        c.alignment = XlAlignment(horizontal='left', vertical='center')
 
-    # ---- Автоподбор ширины столбцов ----
-    col_widths = {1: 25, 2: 10, 3: 12, 4: 15, 5: 10}
-    for col_idx, w in col_widths.items():
-        col_letter = get_column_letter(col_idx)
-        max_len = 0
-        for row in range(10, 11 + len(ops)):
-            cell = ws[f'{col_letter}{row}']
-            if cell.value:
-                cur = len(str(cell.value)) * 1.1 + 1
-                if cur > max_len:
-                    max_len = cur
-        ws.column_dimensions[col_letter].width = min(max(max_len, w), 30)
+    # Дата печати
+    print_date_row = signature_row + 1
+    ws.merge_cells(f'A{print_date_row}:G{print_date_row}')
+    c = ws[f'A{print_date_row}']
+    if not isinstance(c, MergedCell):
+        c.value = f'Дата печати: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
+        c.font = XlFont(italic=True, size=10)
+        c.alignment = XlAlignment(horizontal='left', vertical='center')
 
-    for row in range(10, 11 + len(ops)):
-        ws.row_dimensions[row].height = None
-    ws.row_dimensions[signature_row].height = None
-
-    # ---- Сохраняем ----
     output = BytesIO()
     wb.save(output)
     output.seek(0)
