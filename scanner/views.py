@@ -528,7 +528,25 @@ def order_import(request, order_id):
                     order_item=oi
                 )
                 # Создаём пустую маршрутную карту
-                RouteCard.objects.create(instance=inst)
+                                # Попробуем скопировать операции из предыдущей карты для этой детали
+                previous_card = RouteCard.objects.filter(
+                    instance__item=item
+                ).exclude(instance=inst).order_by('-instance__created_at').first()
+                new_card = RouteCard.objects.create(instance=inst)
+                if previous_card:
+                    for op in previous_card.operations.all():
+                        # Копируем операцию, сбрасывая статус и фактические данные
+                        RouteOperation.objects.create(
+                            route_card=new_card,
+                            operation_type=op.operation_type,
+                            order=op.order,
+                            planned_hours=op.planned_hours,
+                            status='pending',
+                            good_qty=0,
+                            bad_qty=0
+                        )
+                    # Не копируем worker, started_at, completed_at – они будут заполнены при выполнении
+
 
         messages.success(request, f'Спецификация загружена. Создано позиций: {order.items.count()}.')
 
