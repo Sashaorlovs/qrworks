@@ -38,16 +38,10 @@ def create_user_accounts(modeladmin, request, queryset):
         emp.user = user
         emp.save(update_fields=['user'])
         # Устанавливаем is_staff для ролей, которым нужен доступ в админку
-        if emp.role in ['admin', 'dispatcher']:
+        if emp.role in ['admin', 'dispatcher', 'technologist']:
             user.is_staff = True
             user.save()
-        # Добавляем пользователя в группу, соответствующую роли сотрудника
-        if emp.role:
-            from django.contrib.auth.models import Group
-            group_name = dict(emp.ROLE_CHOICES).get(emp.role)
-            if group_name:
-                group = Group.objects.get(name=group_name)
-                user.groups.add(group)
+        # Сигнал в models.py автоматически добавит пользователя в нужную группу при сохранении Employee
         created += 1
         modeladmin.message_user(request, f'{emp}: создана учётная запись {username}')
     if created == 0:

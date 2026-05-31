@@ -28,6 +28,7 @@ class Employee(models.Model):
     ROLE_CHOICES = [
         ('admin', 'Администратор'),
         ('worker', 'Рабочий'),
+        ('supervisor', 'Руководитель'),
         ('dispatcher', 'Диспетчер'),
         ('master', 'Мастер'),
         ('controller', 'Контролёр'),
@@ -300,3 +301,20 @@ from django.dispatch import receiver
 def delete_order_instances(sender, instance, **kwargs):
     # Удаляем все экземпляры, связанные с этим заказом
     ItemInstance.objects.filter(order=instance).delete()
+
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+@receiver(post_save, sender=Employee)
+def assign_group_on_role_change(sender, instance, created, **kwargs):
+    if instance.user:
+        # Убираем пользователя из всех групп, связанных с ролями
+        role_groups = ['Диспетчер', 'Технолог', 'Кладовщик', 'Контролёр', 'Мастер', 'Рабочий', 'Руководитель']
+        for g in instance.user.groups.filter(name__in=role_groups):
+            instance.user.groups.remove(g)
+        # Добавляем в нужную группу по текущей роли
+        group_name = dict(Employee.ROLE_CHOICES).get(instance.role)
+        if group_name:
+            from django.contrib.auth.models import Group
+            group = Group.objects.get(name=group_name)
+            instance.user.groups.add(group)

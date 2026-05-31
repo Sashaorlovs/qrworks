@@ -62,6 +62,30 @@ def instance_detail(request, item_number, serial):
         action = request.POST.get('action')
         op = get_object_or_404(RouteOperation, pk=op_id, route_card=route_card)
 
+        # Проверка прав по ролям при старте
+        if hasattr(request.user, 'employee'):
+            role = request.user.employee.role
+            op_name = op.operation_type.name.lower()
+            is_warehouse = 'прием на' in op_name
+            is_control = 'контрол' in op_name
+
+            if role == 'dispatcher':
+                messages.error(request, 'Диспетчер не выполняет производственные операции.')
+                return redirect('instance_detail', item_number=item_number, serial=serial)
+            elif role == 'storekeeper' and not is_warehouse:
+                messages.error(request, 'Кладовщик выполняет только складские операции.')
+                return redirect('instance_detail', item_number=item_number, serial=serial)
+            elif role == 'controller' and not is_control:
+                messages.error(request, 'Контролёр выполняет только контрольные операции.')
+                return redirect('instance_detail', item_number=item_number, serial=serial)
+            elif role == 'worker' and (is_warehouse or is_control):
+                messages.error(request, 'Рабочий не выполняет складские и контрольные операции.')
+                return redirect('instance_detail', item_number=item_number, serial=serial)
+            elif role in ('supervisor', 'technologist'):
+                msg = 'Руководитель' if role == 'supervisor' else 'Технолог'
+                messages.error(request, f'{msg} не выполняет производственные операции.')
+                return redirect('instance_detail', item_number=item_number, serial=serial)
+
         if action == 'start' and op.status == 'pending':
             if instance.item.item_type == 'Сборочная единица' and not instance.all_components_ready():
                 messages.error(request, 'Невозможно начать сборку: не все компоненты готовы.')
@@ -72,6 +96,30 @@ def instance_detail(request, item_number, serial):
                 op.save()
 
         elif action == 'complete' and op.status == 'in_progress':
+            # Проверка прав по ролям при завершении
+            if hasattr(request.user, 'employee'):
+                role = request.user.employee.role
+                op_name = op.operation_type.name.lower()
+                is_warehouse = 'прием на' in op_name
+                is_control = 'контрол' in op_name
+
+                if role == 'dispatcher':
+                    messages.error(request, 'Диспетчер не выполняет производственные операции.')
+                    return redirect('instance_detail', item_number=item_number, serial=serial)
+                elif role == 'storekeeper' and not is_warehouse:
+                    messages.error(request, 'Кладовщик выполняет только складские операции.')
+                    return redirect('instance_detail', item_number=item_number, serial=serial)
+                elif role == 'controller' and not is_control:
+                    messages.error(request, 'Контролёр выполняет только контрольные операции.')
+                    return redirect('instance_detail', item_number=item_number, serial=serial)
+                elif role == 'worker' and (is_warehouse or is_control):
+                    messages.error(request, 'Рабочий не выполняет складские и контрольные операции.')
+                    return redirect('instance_detail', item_number=item_number, serial=serial)
+                elif role in ('supervisor', 'technologist'):
+                    msg = 'Руководитель' if role == 'supervisor' else 'Технолог'
+                    messages.error(request, f'{msg} не выполняет производственные операции.')
+                    return redirect('instance_detail', item_number=item_number, serial=serial)
+
             new_good = int(request.POST.get('good_qty', 0) or 0)
             new_bad = int(request.POST.get('bad_qty', 0) or 0)
 
@@ -622,6 +670,11 @@ def warehouse_dashboard(request):
         'records': records,
         'employee_list': employee_list,
     }
+    user_role = request.user.employee.role if hasattr(request.user, 'employee') else ''
+    for item in context['main_data']:
+        item['can_issue'] = user_role in ['admin', 'storekeeper', 'master']
+    for item in context['intermediate_data']:
+        item['can_issue'] = user_role in ['admin', 'storekeeper', 'master']
     return render(request, 'scanner/warehouse_dashboard.html', context)
 
 
