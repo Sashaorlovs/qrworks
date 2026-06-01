@@ -265,12 +265,12 @@ def route_card_print(request, route_card_id):
         if not isinstance(cell, MergedCell):
             cell.border = border
 
-    # Заголовок A1:D1
+    # ---------- Заголовок A1:D1 ----------
     ws.merge_cells('A1:D1')
     safe_write(ws, 1, 1, 'Маршрутно-операционный лист', center_wrap)
     ws['A1'].font = XlFont(bold=True, size=14)
 
-    # Изделие (строка 2)
+    # ---------- Изделие (строка 2) ----------
     ws.merge_cells('B2:D2')
     if root_item:
         safe_write(ws, 2, 2, f"{root_item.item.item_number} – {root_item.item.name}", center_wrap)
@@ -280,7 +280,7 @@ def route_card_print(request, route_card_id):
     for c in range(1, 5):
         apply_border(ws, 2, c, thin_border)
 
-    # Деталь (строка 3)
+    # ---------- Деталь (строка 3) ----------
     safe_write(ws, 3, 1, 'Деталь:', left_wrap)
     apply_border(ws, 3, 1, thin_border)
     ws.merge_cells('B3:D3')
@@ -292,19 +292,19 @@ def route_card_print(request, route_card_id):
     for c in range(2, 5):
         apply_border(ws, 3, c, thin_border)
 
-    # Дата запуска (строка 4)
+    # ---------- Дата запуска (строка 4) ----------
     ws.merge_cells('B4:D4')
     safe_write(ws, 4, 2, instance.created_at.strftime('%d.%m.%Y') if instance.created_at else '', center_wrap)
     for c in range(1, 5):
         apply_border(ws, 4, c, thin_border)
 
-    # Количество (строка 5)
+    # ---------- Количество (строка 5) ----------
     ws.merge_cells('B5:D5')
     safe_write(ws, 5, 2, instance.planned_quantity(), center_wrap)
     for c in range(1, 5):
         apply_border(ws, 5, c, thin_border)
 
-    # Материал (строка 6)
+    # ---------- Материал (строка 6) ----------
     ws.merge_cells('B6:D6')
     if instance.item.material:
         mat_str = instance.item.material.name
@@ -316,7 +316,7 @@ def route_card_print(request, route_card_id):
     for c in range(1, 5):
         apply_border(ws, 6, c, thin_border)
 
-    # Профиль (сортамент) – если есть
+    # ---------- Профиль (если есть) ----------
     has_profile = bool(instance.item.profile)
     offset = 0
     if has_profile:
@@ -329,19 +329,19 @@ def route_card_print(request, route_card_id):
             apply_border(ws, 7, c, thin_border)
         offset = 1
 
-    # Размер заготовки
+    # ---------- Размер заготовки ----------
     ws.merge_cells(f'B{7+offset}:D{7+offset}')
     safe_write(ws, 7+offset, 2, instance.item.blank_size or 'не указан', center_wrap)
     for c in range(1, 5):
         apply_border(ws, 7+offset, c, thin_border)
 
-    # Кол-во заготовок
+    # ---------- Кол-во заготовок ----------
     ws.merge_cells(f'B{8+offset}:D{8+offset}')
     safe_write(ws, 8+offset, 2, instance.item.blanks_per_item or '', center_wrap)
     for c in range(1, 5):
         apply_border(ws, 8+offset, c, thin_border)
 
-    # Пустая строка-разделитель
+    # ---------- Пустая строка-разделитель ----------
     sep_row = 9 + offset
     for c in range(1, 6):
         cell = ws.cell(row=sep_row, column=c)
@@ -349,34 +349,48 @@ def route_card_print(request, route_card_id):
             cell.value = ''
             cell.border = Border()
 
-    # Заголовки таблицы (строка 10+offset)
+    # ---------- Заголовки таблицы (5 столбцов) ----------
     header_row = 10 + offset
-    headers = ['Наименование операции', 'Норма времени, ч', 'Оборудование', 'Исполнитель', 'Годных/Брак']
+    for col in range(1, 8):
+        cell = ws.cell(row=header_row, column=col)
+        if not isinstance(cell, MergedCell):
+            cell.value = None
+            cell.border = Border()  # убираем все границы, потом нарисуем нужные
+    # Рисуем границы только для столбцов A-E
+    headers = ['Наименование операции', 'Норма времени, ч', 'Исполнитель', 'Годных/Брак', 'Примечание']
     for col_idx, title in enumerate(headers, start=1):
         cell = ws.cell(row=header_row, column=col_idx, value=title)
         cell.font = header_font
         cell.border = thin_border
         cell.alignment = center_wrap
 
-    # Данные операций
+    # ---------- Данные операций ----------
     for i, op in enumerate(ops):
         row = 11 + offset + i
         safe_write(ws, row, 1, op.operation_type.name, left_wrap)
         safe_write(ws, row, 2, float(op.planned_hours), center_wrap)
-        safe_write(ws, row, 3, '', center_wrap)
-        safe_write(ws, row, 4, op.worker.get_full_name() if op.worker else '', left_wrap)
-        safe_write(ws, row, 5, f"{op.good_qty}/{op.bad_qty}", center_wrap)
+        safe_write(ws, row, 3, op.worker.get_full_name() if op.worker else '', left_wrap)
+        safe_write(ws, row, 4, f"{op.good_qty}/{op.bad_qty}", center_wrap)
+        safe_write(ws, row, 5, op.notes or '', left_wrap)
         for c in range(1, 6):
             apply_border(ws, row, c, thin_border)
 
-    # Ширина столбцов
-    col_widths = {1: 25, 2: 12, 3: 14, 4: 18, 5: 12}
+    # ---------- Ширина столбцов ----------
+    col_widths = {1: 25, 2: 12, 3: 18, 4: 12, 5: 20}
     for col_idx, w in col_widths.items():
         ws.column_dimensions[get_column_letter(col_idx)].width = w
+    # Столбцы F и G делаем очень узкими и без границ
+    for col_letter in ['F', 'G']:
+        ws.column_dimensions[col_letter].width = 2
+    for r in range(1, 11 + offset + len(ops)):
+        for c in ['F', 'G']:
+            cell = ws[f'{c}{r}']
+            if not isinstance(cell, MergedCell):
+                cell.border = Border()
     for r in range(header_row, 11 + offset + len(ops)):
         ws.row_dimensions[r].height = None
 
-    # Подпись
+    # ---------- Подпись ----------
     signature_row = 11 + offset + len(ops) + 1
     who = ''
     if hasattr(request.user, 'employee') and request.user.employee:
@@ -391,7 +405,7 @@ def route_card_print(request, route_card_id):
         c.font = XlFont(italic=True, size=10)
         c.alignment = XlAlignment(horizontal='left', vertical='center')
 
-    # Дата печати
+    # ---------- Дата печати ----------
     print_date_row = signature_row + 1
     ws.merge_cells(f'A{print_date_row}:E{print_date_row}')
     c = ws[f'A{print_date_row}']
@@ -400,7 +414,7 @@ def route_card_print(request, route_card_id):
         c.font = XlFont(italic=True, size=10)
         c.alignment = XlAlignment(horizontal='left', vertical='center')
 
-    # QR-код (один, на актуальный экземпляр)
+    # ---------- QR-код (E1, 110x100, сдвинут влево) ----------
     try:
         from django.urls import reverse
         raw_url = request.build_absolute_uri(
@@ -409,20 +423,22 @@ def route_card_print(request, route_card_id):
                 'serial': instance.serial
             })
         )
-        # Кодируем URL для QR (пробелы -> %20)
         qr_url = quote(raw_url, safe='/:?=&%')
         img = qrcode.make(qr_url)
         buf = BytesIO()
         img.save(buf, format='PNG')
         buf.seek(0)
         xl_img = XLImage(buf)
-        xl_img.width = 80
-        xl_img.height = 80
-        ws.add_image(xl_img, 'F1')
+        xl_img.width = 110
+        xl_img.height = 100
+        # Сдвигаем картинку максимально влево внутри ячейки E1
+        xl_img.anchor = 'E1'
+        # Устанавливаем отступ от левого края ячейки равным 0
+        ws.add_image(xl_img, 'E1')
     except Exception:
         pass
 
-    # Сохранение
+    # ---------- Сохранение ----------
     output = BytesIO()
     wb.save(output)
     output.seek(0)
