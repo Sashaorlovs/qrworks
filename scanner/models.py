@@ -29,6 +29,7 @@ class Employee(models.Model):
         ('admin', 'Администратор'),
         ('worker', 'Рабочий'),
         ('supervisor', 'Руководитель'),
+        ('technologist', 'Технолог'),
         ('dispatcher', 'Диспетчер'),
         ('master', 'Мастер'),
         ('controller', 'Контролёр'),

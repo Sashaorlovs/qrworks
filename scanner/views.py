@@ -69,9 +69,8 @@ def instance_detail(request, item_number, serial):
             is_warehouse = 'прием на' in op_name
             is_control = 'контрол' in op_name
 
-            if role == 'dispatcher':
-                messages.error(request, 'Диспетчер не выполняет производственные операции.')
-                return redirect('instance_detail', item_number=item_number, serial=serial)
+            if role in ('admin', 'master', 'dispatcher'):
+                pass  # admin, master, dispatcher могут всё
             elif role == 'storekeeper' and not is_warehouse:
                 messages.error(request, 'Кладовщик выполняет только складские операции.')
                 return redirect('instance_detail', item_number=item_number, serial=serial)
@@ -103,9 +102,8 @@ def instance_detail(request, item_number, serial):
                 is_warehouse = 'прием на' in op_name
                 is_control = 'контрол' in op_name
 
-                if role == 'dispatcher':
-                    messages.error(request, 'Диспетчер не выполняет производственные операции.')
-                    return redirect('instance_detail', item_number=item_number, serial=serial)
+                if role in ('admin', 'master', 'dispatcher'):
+                    pass  # admin, master, dispatcher могут всё
                 elif role == 'storekeeper' and not is_warehouse:
                     messages.error(request, 'Кладовщик выполняет только складские операции.')
                     return redirect('instance_detail', item_number=item_number, serial=serial)
@@ -709,9 +707,9 @@ def warehouse_dashboard(request):
     }
     user_role = request.user.employee.role if hasattr(request.user, 'employee') else ''
     for item in context['main_data']:
-        item['can_issue'] = user_role in ['admin', 'storekeeper', 'master']
+        item['can_issue'] = user_role in ['admin', 'storekeeper', 'master', 'dispatcher']
     for item in context['intermediate_data']:
-        item['can_issue'] = user_role in ['admin', 'storekeeper', 'master']
+        item['can_issue'] = user_role in ['admin', 'storekeeper', 'master', 'dispatcher']
     return render(request, 'scanner/warehouse_dashboard.html', context)
 
 

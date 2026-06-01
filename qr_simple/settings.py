@@ -121,6 +121,9 @@ LOGIN_REDIRECT_URL = '/'
 LOGIN_URL = '/accounts/login/'
 
 JAZZMIN_SETTINGS = {
+    "usermenu_links": [
+        {"name": "Главная", "url": "/", "icon": "fas fa-home"},
+    ],
     "custom_css": "admin/css/custom_admin.css",
     "site_title": "QR Производство",
     "site_header": "Управление производством",
