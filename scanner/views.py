@@ -121,9 +121,24 @@ def instance_detail(request, item_number, serial):
             new_good = int(request.POST.get('good_qty', 0) or 0)
             new_bad = int(request.POST.get('bad_qty', 0) or 0)
 
+            planned = instance.planned_quantity()
+            current_good = op.good_qty or 0
+            current_bad = op.bad_qty or 0
+
+            # Проверки на превышение плана
+            if new_good > planned:
+                messages.error(request, f'Количество годных не может превышать план ({planned} шт.).')
+                return redirect('instance_detail', item_number=item_number, serial=serial)
+            if new_bad > planned:
+                messages.error(request, f'Количество брака не может превышать план ({planned} шт.).')
+                return redirect('instance_detail', item_number=item_number, serial=serial)
+            if (current_good + current_bad + new_good + new_bad) > planned:
+                messages.error(request, f'Сумма годных и брака не может превышать план ({planned} шт.).')
+                return redirect('instance_detail', item_number=item_number, serial=serial)
+
             # накапливаем годные и брак
-            op.good_qty = (op.good_qty or 0) + new_good
-            op.bad_qty = (op.bad_qty or 0) + new_bad
+            op.good_qty = current_good + new_good
+            op.bad_qty = current_bad + new_bad
             notes = request.POST.get('notes', '')
             if notes:
                 op.notes = notes
