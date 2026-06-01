@@ -222,7 +222,11 @@ def route_card_print(request, route_card_id):
     wb = openpyxl.load_workbook(template_path)
     ws = wb.active
 
-    # Сбрасываем все объединения в рабочей области
+    # Удаляем ВСЕ старые изображения с ЛИСТА (не из книги)
+    for img in ws._images[:]:
+        ws._images.remove(img)
+
+    # Сбрасываем объединения
     for merged_range in list(ws.merged_cells.ranges):
         ws.unmerge_cells(str(merged_range))
 
@@ -355,8 +359,7 @@ def route_card_print(request, route_card_id):
         cell = ws.cell(row=header_row, column=col)
         if not isinstance(cell, MergedCell):
             cell.value = None
-            cell.border = Border()  # убираем все границы, потом нарисуем нужные
-    # Рисуем границы только для столбцов A-E
+            cell.border = Border()
     headers = ['Наименование операции', 'Норма времени, ч', 'Исполнитель', 'Годных/Брак', 'Примечание']
     for col_idx, title in enumerate(headers, start=1):
         cell = ws.cell(row=header_row, column=col_idx, value=title)
@@ -379,7 +382,6 @@ def route_card_print(request, route_card_id):
     col_widths = {1: 25, 2: 12, 3: 18, 4: 12, 5: 20}
     for col_idx, w in col_widths.items():
         ws.column_dimensions[get_column_letter(col_idx)].width = w
-    # Столбцы F и G делаем очень узкими и без границ
     for col_letter in ['F', 'G']:
         ws.column_dimensions[col_letter].width = 2
     for r in range(1, 11 + offset + len(ops)):
@@ -414,7 +416,7 @@ def route_card_print(request, route_card_id):
         c.font = XlFont(italic=True, size=10)
         c.alignment = XlAlignment(horizontal='left', vertical='center')
 
-    # ---------- QR-код (E1, 110x100, сдвинут влево) ----------
+    # ---------- QR-код (ПОД ДАТОЙ ПЕЧАТИ) ----------
     try:
         from django.urls import reverse
         raw_url = request.build_absolute_uri(
@@ -431,10 +433,8 @@ def route_card_print(request, route_card_id):
         xl_img = XLImage(buf)
         xl_img.width = 110
         xl_img.height = 100
-        # Сдвигаем картинку максимально влево внутри ячейки E1
-        xl_img.anchor = 'E1'
-        # Устанавливаем отступ от левого края ячейки равным 0
-        ws.add_image(xl_img, 'E1')
+        qr_row = print_date_row + 2
+        ws.add_image(xl_img, f'A{qr_row}')
     except Exception:
         pass
 
@@ -465,7 +465,7 @@ def route_card_export(request, route_card_id):
         xl_img = XLImage(buf)
         xl_img.width = 80
         xl_img.height = 80
-        ws.add_image(xl_img, 'A1')
+        
         start_row = 6
     except Exception:
         start_row = 1
