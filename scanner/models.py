@@ -195,6 +195,14 @@ class ItemInstance(models.Model):
         verbose_name_plural = 'Экземпляры'
 
     
+    
+    def display_serial(self):
+        """Возвращает серийный номер без системного суффикса (после последнего дефиса)."""
+        parts = self.serial.rsplit('-', 1)
+        if len(parts) > 1 and parts[1].isdigit():
+            return parts[0]
+        return self.serial
+
     def __str__(self):
         return f"{self.item.item_number} - {self.serial}"
 

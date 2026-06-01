@@ -205,39 +205,26 @@ def supplement_instance(request, instance_id):
 
 @login_required
 def route_card_print(request, route_card_id):
-    from openpyxl.styles import PatternFill, Alignment as XlAlignment, Font as XlFont
+    from openpyxl.styles import PatternFill, Alignment as XlAlignment, Font as XlFont, Border, Side
     from openpyxl.utils import get_column_letter
     from openpyxl.cell.cell import MergedCell
     from datetime import datetime
-
-    def safe_write(ws, row, col, value, alignment=None):
-        cell = ws.cell(row=row, column=col)
-        if not isinstance(cell, MergedCell):
-            cell.value = value
-            if alignment:
-                cell.alignment = alignment
-            return cell
-        return None
-
-    def apply_border_to_range(ws, start_row, start_col, end_row, end_col, border):
-        """Применить границу ко всем ячейкам диапазона, включая объединённые"""
-        for r in range(start_row, end_row + 1):
-            for c in range(start_col, end_col + 1):
-                cell = ws.cell(row=r, column=c)
-                if not isinstance(cell, MergedCell):
-                    cell.border = border
+    from urllib.parse import quote
 
     rc = get_object_or_404(RouteCard, pk=route_card_id)
-    ops = rc.operations.select_related('operation_type', 'worker').order_by('order')
+    if not rc.instance:
+        messages.error(request, 'Маршрутная карта повреждена.')
+        return redirect('home')
     instance = rc.instance
+    ops = rc.operations.select_related('operation_type', 'worker').order_by('order')
+
     template_path = '/opt/qr_simple/templates/route_template.xlsx'
     wb = openpyxl.load_workbook(template_path)
     ws = wb.active
 
-    # Сбрасываем все объединения
-    merged_ranges = [str(m) for m in ws.merged_cells.ranges]
-    for rng in merged_ranges:
-        ws.unmerge_cells(rng)
+    # Сбрасываем все объединения в рабочей области
+    for merged_range in list(ws.merged_cells.ranges):
+        ws.unmerge_cells(str(merged_range))
 
     # Параметры страницы
     ws.page_setup.orientation = 'portrait'
@@ -257,107 +244,119 @@ def route_card_print(request, route_card_id):
         parent_item = order_item.parent
 
     # Стили
-    thin_border = Border(
-        left=Side(style='thin'), right=Side(style='thin'),
-        top=Side(style='thin'), bottom=Side(style='thin')
-    )
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
+                         top=Side(style='thin'), bottom=Side(style='thin'))
     header_font = XlFont(bold=True, size=10)
     data_font = XlFont(size=10)
     center_wrap = XlAlignment(horizontal='center', vertical='center', wrap_text=True)
     left_wrap   = XlAlignment(horizontal='left', vertical='center', wrap_text=True)
 
-    # Заголовок A1:D1 (без границ)
+    def safe_write(ws, row, col, value, alignment=None):
+        cell = ws.cell(row=row, column=col)
+        if not isinstance(cell, MergedCell):
+            cell.value = value
+            if alignment:
+                cell.alignment = alignment
+            return cell
+        return None
+
+    def apply_border(ws, row, col, border):
+        cell = ws.cell(row=row, column=col)
+        if not isinstance(cell, MergedCell):
+            cell.border = border
+
+    # Заголовок A1:D1
     ws.merge_cells('A1:D1')
     safe_write(ws, 1, 1, 'Маршрутно-операционный лист', center_wrap)
-    c = ws['A1']
-    if not isinstance(c, MergedCell):
-        c.font = XlFont(bold=True, size=14)
+    ws['A1'].font = XlFont(bold=True, size=14)
 
     # Изделие (строка 2)
-    safe_write(ws, 2, 1, 'Изделие:', left_wrap)
     ws.merge_cells('B2:D2')
     if root_item:
         safe_write(ws, 2, 2, f"{root_item.item.item_number} – {root_item.item.name}", center_wrap)
     else:
         safe_write(ws, 2, 2, instance.item.name, center_wrap)
     ws.row_dimensions[2].height = 35
-    apply_border_to_range(ws, 2, 1, 2, 4, thin_border)   # A2:D2
+    for c in range(1, 5):
+        apply_border(ws, 2, c, thin_border)
 
     # Деталь (строка 3)
     safe_write(ws, 3, 1, 'Деталь:', left_wrap)
+    apply_border(ws, 3, 1, thin_border)
     ws.merge_cells('B3:D3')
     detail_str = f"{instance.item.item_number} – {instance.item.name}"
     if parent_item and parent_item != root_item:
         detail_str += f" (входит в {parent_item.item.item_number} – {parent_item.item.name})"
     safe_write(ws, 3, 2, detail_str, center_wrap)
     ws.row_dimensions[3].height = 35
-    apply_border_to_range(ws, 3, 1, 3, 4, thin_border)   # A3:D3
+    for c in range(2, 5):
+        apply_border(ws, 3, c, thin_border)
 
     # Дата запуска (строка 4)
-    safe_write(ws, 4, 1, 'Дата запуска:', left_wrap)
     ws.merge_cells('B4:D4')
     safe_write(ws, 4, 2, instance.created_at.strftime('%d.%m.%Y') if instance.created_at else '', center_wrap)
-    apply_border_to_range(ws, 4, 1, 4, 4, thin_border)
+    for c in range(1, 5):
+        apply_border(ws, 4, c, thin_border)
 
     # Количество (строка 5)
-    safe_write(ws, 5, 1, 'Количество:', left_wrap)
     ws.merge_cells('B5:D5')
     safe_write(ws, 5, 2, instance.planned_quantity(), center_wrap)
-    apply_border_to_range(ws, 5, 1, 5, 4, thin_border)
+    for c in range(1, 5):
+        apply_border(ws, 5, c, thin_border)
 
     # Материал (строка 6)
-    safe_write(ws, 6, 1, 'Материал:', left_wrap)
     ws.merge_cells('B6:D6')
     if instance.item.material:
-        safe_write(ws, 6, 2, instance.item.material.name, center_wrap)
+        mat_str = instance.item.material.name
+        if instance.item.profile:
+            mat_str += f" ({instance.item.profile})"
     else:
-        safe_write(ws, 6, 2, 'не указан', center_wrap)
-    apply_border_to_range(ws, 6, 1, 6, 4, thin_border)
+        mat_str = 'не указан'
+    safe_write(ws, 6, 2, mat_str, center_wrap)
+    for c in range(1, 5):
+        apply_border(ws, 6, c, thin_border)
 
     # Профиль (сортамент) – если есть
     has_profile = bool(instance.item.profile)
     offset = 0
     if has_profile:
         ws.insert_rows(7)
-        # Записываем значение для A7
         safe_write(ws, 7, 1, 'Сортамент:', left_wrap)
-        apply_border_to_range(ws, 7, 1, 7, 1, thin_border)
-        # Для B7, C7, D7 сначала ставим границы (до объединения)
-        for col in [2, 3, 4]:
-            apply_border_to_range(ws, 7, col, 7, col, thin_border)
-        # Записываем значение и объединяем
-        safe_write(ws, 7, 2, instance.item.profile, center_wrap)
+        apply_border(ws, 7, 1, thin_border)
         ws.merge_cells('B7:D7')
+        safe_write(ws, 7, 2, instance.item.profile, center_wrap)
+        for c in range(2, 5):
+            apply_border(ws, 7, c, thin_border)
         offset = 1
 
     # Размер заготовки
-    safe_write(ws, 7 + offset, 1, 'Размер заготовки:', left_wrap)
     ws.merge_cells(f'B{7+offset}:D{7+offset}')
     safe_write(ws, 7+offset, 2, instance.item.blank_size or 'не указан', center_wrap)
-    apply_border_to_range(ws, 7+offset, 1, 7+offset, 4, thin_border)
+    for c in range(1, 5):
+        apply_border(ws, 7+offset, c, thin_border)
 
     # Кол-во заготовок
-    safe_write(ws, 8 + offset, 1, 'Кол-во заготовок:', left_wrap)
     ws.merge_cells(f'B{8+offset}:D{8+offset}')
-    safe_write(ws, 8+offset, 2, instance.item.blanks_per_item if instance.item.blanks_per_item else '', center_wrap)
-    apply_border_to_range(ws, 8+offset, 1, 8+offset, 4, thin_border)
+    safe_write(ws, 8+offset, 2, instance.item.blanks_per_item or '', center_wrap)
+    for c in range(1, 5):
+        apply_border(ws, 8+offset, c, thin_border)
 
-    # Пустая строка-разделитель (без границ)
-    separator_row = 9 + offset
-    for c in range(1, 8):
-        cell = ws.cell(row=separator_row, column=c)
+    # Пустая строка-разделитель
+    sep_row = 9 + offset
+    for c in range(1, 6):
+        cell = ws.cell(row=sep_row, column=c)
         if not isinstance(cell, MergedCell):
             cell.value = ''
             cell.border = Border()
 
-    # Заголовки таблицы
+    # Заголовки таблицы (строка 10+offset)
     header_row = 10 + offset
-    for col in range(1, 8):
-        cell = ws.cell(row=header_row, column=col)
-        if not isinstance(cell, MergedCell):
-            cell.font = header_font
-            cell.border = thin_border
-            cell.alignment = center_wrap
+    headers = ['Наименование операции', 'Норма времени, ч', 'Оборудование', 'Исполнитель', 'Годных/Брак']
+    for col_idx, title in enumerate(headers, start=1):
+        cell = ws.cell(row=header_row, column=col_idx, value=title)
+        cell.font = header_font
+        cell.border = thin_border
+        cell.alignment = center_wrap
 
     # Данные операций
     for i, op in enumerate(ops):
@@ -366,18 +365,16 @@ def route_card_print(request, route_card_id):
         safe_write(ws, row, 2, float(op.planned_hours), center_wrap)
         safe_write(ws, row, 3, '', center_wrap)
         safe_write(ws, row, 4, op.worker.get_full_name() if op.worker else '', left_wrap)
-        safe_write(ws, row, 5, op.get_status_display(), center_wrap)
-        safe_write(ws, row, 6, f"{op.good_qty}/{op.bad_qty}", center_wrap)
-        safe_write(ws, row, 7, op.notes or '', left_wrap)
-        apply_border_to_range(ws, row, 1, row, 7, thin_border)
+        safe_write(ws, row, 5, f"{op.good_qty}/{op.bad_qty}", center_wrap)
+        for c in range(1, 6):
+            apply_border(ws, row, c, thin_border)
 
     # Ширина столбцов
-    widths = {'A': 22, 'B': 12, 'C': 14, 'D': 16, 'E': 12, 'F': 12, 'G': 16}
-    for col_letter, w in widths.items():
-        ws.column_dimensions[col_letter].width = w
-
-    for row in range(header_row, 11 + offset + len(ops)):
-        ws.row_dimensions[row].height = None
+    col_widths = {1: 25, 2: 12, 3: 14, 4: 18, 5: 12}
+    for col_idx, w in col_widths.items():
+        ws.column_dimensions[get_column_letter(col_idx)].width = w
+    for r in range(header_row, 11 + offset + len(ops)):
+        ws.row_dimensions[r].height = None
 
     # Подпись
     signature_row = 11 + offset + len(ops) + 1
@@ -387,7 +384,7 @@ def route_card_print(request, route_card_id):
         who = f"{emp.last_name} {emp.first_name} {emp.middle_name or ''}".replace('  ', ' ').strip()
     if not who:
         who = request.user.get_full_name() or request.user.username
-    ws.merge_cells(f'A{signature_row}:G{signature_row}')
+    ws.merge_cells(f'A{signature_row}:E{signature_row}')
     c = ws[f'A{signature_row}']
     if not isinstance(c, MergedCell):
         c.value = f'Документ сформировал: {who}'
@@ -396,20 +393,41 @@ def route_card_print(request, route_card_id):
 
     # Дата печати
     print_date_row = signature_row + 1
-    ws.merge_cells(f'A{print_date_row}:G{print_date_row}')
+    ws.merge_cells(f'A{print_date_row}:E{print_date_row}')
     c = ws[f'A{print_date_row}']
     if not isinstance(c, MergedCell):
         c.value = f'Дата печати: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
         c.font = XlFont(italic=True, size=10)
         c.alignment = XlAlignment(horizontal='left', vertical='center')
 
+    # QR-код (один, на актуальный экземпляр)
+    try:
+        from django.urls import reverse
+        raw_url = request.build_absolute_uri(
+            reverse('instance_detail', kwargs={
+                'item_number': instance.item.item_number,
+                'serial': instance.serial
+            })
+        )
+        # Кодируем URL для QR (пробелы -> %20)
+        qr_url = quote(raw_url, safe='/:?=&%')
+        img = qrcode.make(qr_url)
+        buf = BytesIO()
+        img.save(buf, format='PNG')
+        buf.seek(0)
+        xl_img = XLImage(buf)
+        xl_img.width = 80
+        xl_img.height = 80
+        ws.add_image(xl_img, 'F1')
+    except Exception:
+        pass
+
+    # Сохранение
     output = BytesIO()
     wb.save(output)
     output.seek(0)
-    response = HttpResponse(
-        output.read(),
-        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
+    response = HttpResponse(output.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     safe_name = f"{instance.item.item_number}_{instance.item.name}_{instance.serial}.xlsx"
     safe_name = quote(safe_name.replace(' ', '_').replace('/', '_'))
     response['Content-Disposition'] = f'attachment; filename="{safe_name}"'
