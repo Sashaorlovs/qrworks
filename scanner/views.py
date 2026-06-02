@@ -18,7 +18,7 @@ from urllib.parse import quote
 
 @login_required
 def dashboard(request):
-    orders = Order.objects.all().order_by('order_number')
+    orders = Order.objects.all().order_by('-created_at')
     return render(request, 'scanner/dashboard.html', {'orders': orders})
 
 @login_required
@@ -1263,7 +1263,7 @@ def orders_control(request):
         return redirect('home')
     
     from datetime import date
-    orders = Order.objects.all().order_by('order_number').order_by('-created_at')
+    orders = Order.objects.all().order_by('-created_at').order_by('-created_at')
     today = date.today()
     
     orders_data = []
