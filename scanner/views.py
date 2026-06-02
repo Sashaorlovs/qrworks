@@ -1325,3 +1325,40 @@ def update_order_due_date(request, order_id):
         order.save()
         messages.success(request, f'Дата отгрузки заказа {order.order_number} обновлена.')
     return redirect('home')
+
+import tempfile
+import zipfile
+import os
+
+@login_required
+def download_all_route_cards(request, order_id):
+    if not request.user.is_staff:
+        messages.error(request, 'Недостаточно прав.')
+        return redirect('order_tree', order_id=order_id)
+
+    order = get_object_or_404(Order, pk=order_id)
+    instances = ItemInstance.objects.filter(order=order).select_related('item')
+
+    # Создаём временную папку для Excel-файлов
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = os.path.join(tmpdir, 'ml_files.zip')
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            for inst in instances:
+                if not inst.route_card:
+                    continue
+                # Получаем Excel-файл через route_card_print
+                # Передаём request, чтобы работал build_absolute_uri
+                response = route_card_print(request, inst.route_card.id)
+                if response.status_code == 200:
+                    # Имя файла внутри архива
+                    filename = f"{inst.item.item_number}_{inst.serial}.xlsx"
+                    # Сохраняем в zip
+                    zf.writestr(filename, response.content)
+
+        # Отдаём архив
+        with open(zip_path, 'rb') as f:
+            archive_data = f.read()
+
+    response = HttpResponse(archive_data, content_type='application/zip')
+    response['Content-Disposition'] = f'attachment; filename="маршрутные_карты_заказ_{order.id}.zip"'
+    return response
