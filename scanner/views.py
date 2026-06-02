@@ -290,7 +290,7 @@ def route_card_print(request, route_card_id):
     # ---------- Изделие (строка 2) ----------
     ws.merge_cells('B2:D2')
     if root_item:
-        safe_write(ws, 2, 2, f"{root_item.item.item_number} – {root_item.item.name}", center_wrap)
+        safe_write(ws, 2, 2, f"{root_item.item.item_number} – {root_item.item.name} ({root_item.quantity} шт.)", center_wrap)
     else:
         safe_write(ws, 2, 2, instance.item.name, center_wrap)
     ws.row_dimensions[2].height = 35
@@ -415,7 +415,7 @@ def route_card_print(request, route_card_id):
     c = ws[f'A{signature_row}']
     if not isinstance(c, MergedCell):
         c.value = f'Документ сформировал: {who}'
-        c.font = XlFont(italic=True, size=10)
+        c.font = XlFont(italic=False, size=10)
         c.alignment = XlAlignment(horizontal='left', vertical='center')
 
     # ---------- Дата печати ----------
@@ -424,7 +424,7 @@ def route_card_print(request, route_card_id):
     c = ws[f'A{print_date_row}']
     if not isinstance(c, MergedCell):
         c.value = f'Дата печати: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
-        c.font = XlFont(italic=True, size=10)
+        c.font = XlFont(italic=False, size=10)
         c.alignment = XlAlignment(horizontal='left', vertical='center')
 
     # ---------- QR-код (ПОД ДАТОЙ ПЕЧАТИ) ----------
