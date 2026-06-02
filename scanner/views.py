@@ -325,8 +325,6 @@ def route_card_print(request, route_card_id):
     ws.merge_cells('B6:D6')
     if instance.item.material:
         mat_str = instance.item.material.name
-        if instance.item.profile:
-            mat_str += f" ({instance.item.profile})"
     else:
         mat_str = 'не указан'
     safe_write(ws, 6, 2, mat_str, center_wrap)
