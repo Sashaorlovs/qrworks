@@ -338,10 +338,11 @@ def route_card_print(request, route_card_id):
         ws.insert_rows(7)
         safe_write(ws, 7, 1, 'Сортамент:', left_wrap)
         apply_border(ws, 7, 1, thin_border)
-        ws.merge_cells('B7:D7')
-        safe_write(ws, 7, 2, instance.item.profile, center_wrap)
+        # Применяем границы к B7, C7, D7 до объединения
         for c in range(2, 5):
             apply_border(ws, 7, c, thin_border)
+        ws.merge_cells('B7:D7')
+        safe_write(ws, 7, 2, instance.item.profile, center_wrap)
         offset = 1
 
     # ---------- Размер заготовки ----------
