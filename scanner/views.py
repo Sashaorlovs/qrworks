@@ -163,7 +163,7 @@ def instance_detail(request, item_number, serial):
                         quantity=op.good_qty,
                         employee=request.user.employee if hasattr(request.user, 'employee') else None,
                         basis=f'Завершение операции «{op.operation_type.name}»',
-                        notes=op.notes or ''
+                        notes=(op.notes if op.notes else '')
                     )
                 # активируем следующую операцию
                 next_op = route_card.operations.filter(order=op.order + 1).first()
@@ -264,8 +264,8 @@ def route_card_print(request, route_card_id):
     # Стили
     thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
                          top=Side(style='thin'), bottom=Side(style='thin'))
-    header_font = XlFont(bold=True, size=10)
-    data_font = XlFont(size=10)
+    header_font = XlFont(bold=True, size=11)
+    data_font = XlFont(size=11)
     center_wrap = XlAlignment(horizontal='center', vertical='center', wrap_text=True)
     left_wrap   = XlAlignment(horizontal='left', vertical='center', wrap_text=True)
 
@@ -289,12 +289,13 @@ def route_card_print(request, route_card_id):
     ws['A1'].font = XlFont(bold=True, size=14)
 
     # ---------- Изделие (строка 2) ----------
+    safe_write(ws, 2, 1, 'Изделие:', XlAlignment(horizontal='center', vertical='center'))
     ws.merge_cells('B2:D2')
     if root_item:
         safe_write(ws, 2, 2, f"{root_item.item.item_number} – {root_item.item.name} ({root_item.quantity} шт.)", center_wrap)
     else:
         safe_write(ws, 2, 2, instance.item.name, center_wrap)
-    ws.row_dimensions[2].height = 35
+    ws.row_dimensions[2].height = 40
     for c in range(1, 5):
         apply_border(ws, 2, c, thin_border)
 
@@ -348,13 +349,16 @@ def route_card_print(request, route_card_id):
 
     # ---------- Размер заготовки ----------
     ws.merge_cells(f'B{7+offset}:D{7+offset}')
-    safe_write(ws, 7+offset, 2, instance.item.blank_size or 'не указан', center_wrap)
+    safe_write(ws, 7+offset, 2, (instance.item.blank_size if instance.item.blank_size else 'не указан'), center_wrap)
     for c in range(1, 5):
         apply_border(ws, 7+offset, c, thin_border)
 
     # ---------- Кол-во заготовок ----------
     ws.merge_cells(f'B{8+offset}:D{8+offset}')
-    safe_write(ws, 8+offset, 2, instance.item.blanks_per_item or '', center_wrap)
+    blanks_qty = instance.item.blanks_per_item
+    if not blanks_qty and instance.item.item_type == 'Сборочная единица':
+        blanks_qty = instance.planned_quantity()
+    safe_write(ws, 8+offset, 2, blanks_qty if blanks_qty else 'не указан', center_wrap)
     for c in range(1, 5):
         apply_border(ws, 8+offset, c, thin_border)
 
@@ -387,12 +391,12 @@ def route_card_print(request, route_card_id):
         safe_write(ws, row, 2, float(op.planned_hours), center_wrap)
         safe_write(ws, row, 3, op.worker.get_full_name() if op.worker else '', left_wrap)
         safe_write(ws, row, 4, f"{op.good_qty}/{op.bad_qty}", center_wrap)
-        safe_write(ws, row, 5, op.notes or '', left_wrap)
+        safe_write(ws, row, 5, (op.notes if op.notes else ''), left_wrap)
         for c in range(1, 6):
             apply_border(ws, row, c, thin_border)
 
     # ---------- Ширина столбцов ----------
-    col_widths = {1: 25, 2: 12, 3: 18, 4: 12, 5: 20}
+    col_widths = {1: 25, 2: 12, 3: 18, 4: 16, 5: 20}
     for col_idx, w in col_widths.items():
         ws.column_dimensions[get_column_letter(col_idx)].width = w
     for col_letter in ['F', 'G']:
@@ -417,7 +421,7 @@ def route_card_print(request, route_card_id):
     c = ws[f'A{signature_row}']
     if not isinstance(c, MergedCell):
         c.value = f'Документ сформировал: {who}'
-        c.font = XlFont(italic=False, size=10)
+        c.font = XlFont(italic=False, size=11)
         c.alignment = XlAlignment(horizontal='left', vertical='center')
 
     # ---------- Дата печати ----------
@@ -426,7 +430,7 @@ def route_card_print(request, route_card_id):
     c = ws[f'A{print_date_row}']
     if not isinstance(c, MergedCell):
         c.value = f'Дата печати: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
-        c.font = XlFont(italic=False, size=10)
+        c.font = XlFont(italic=False, size=11)
         c.alignment = XlAlignment(horizontal='left', vertical='center')
 
     # ---------- QR-код (ПОД ДАТОЙ ПЕЧАТИ) ----------
@@ -452,6 +456,9 @@ def route_card_print(request, route_card_id):
         pass
 
     # ---------- Сохранение ----------
+    # Принудительно устанавливаем выравнивание для A2
+    from openpyxl.styles import Alignment
+    ws['A2'].alignment = Alignment(horizontal='left', vertical='center')
     output = BytesIO()
     wb.save(output)
     output.seek(0)
