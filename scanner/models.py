@@ -89,6 +89,10 @@ class Order(models.Model):
     def __str__(self):
         return f"Заказ {self.order_number}"
 
+    
+    color1 = models.CharField(max_length=7, default='#ffffff', verbose_name='Цвет 1')
+    color2 = models.CharField(max_length=7, default='#ffffff', verbose_name='Цвет 2')
+
     class Meta:
         verbose_name = 'Заказ'
         verbose_name_plural = 'Заказы'

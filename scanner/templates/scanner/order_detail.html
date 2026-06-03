@@ -26,6 +26,16 @@
         <button type="submit" class="btn btn-sm btn-outline-secondary ms-1">Сохранить</button>
     </form>
 </div>
+
+<div class="mb-3">
+    <strong>Цветовая маркировка:</strong>
+    <form method="post" action="{% url 'save_order_colors' order.id %}" class="d-inline">
+        {% csrf_token %}
+        <input type="color" name="color1" value="{{ order.color1 }}" class="form-control form-control-sm d-inline" style="width: 60px; height: 30px;">
+        <input type="color" name="color2" value="{{ order.color2 }}" class="form-control form-control-sm d-inline ms-1" style="width: 60px; height: 30px;">
+        <button type="submit" class="btn btn-sm btn-outline-secondary ms-1">Сохранить цвета</button>
+    </form>
+</div>
 {% else %}
 <div class="mb-3">
     <strong>Дата отгрузки:</strong> {{ order.due_date|date:"d.m.Y"|default:"—" }}

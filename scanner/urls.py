@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('order/<int:order_id>/colors/', views.save_order_colors, name='save_order_colors'),
     path('order/<int:order_id>/download-all-ml/', views.download_all_route_cards, name='download_all_ml'),
     path('order/<int:order_id>/due-date/', views.update_order_due_date, name='update_order_due_date'),
     path('order/<int:order_id>/status/<str:new_status>/', views.change_order_status, name='change_order_status'),

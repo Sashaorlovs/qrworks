@@ -1367,3 +1367,18 @@ def download_all_route_cards(request, order_id):
     response = HttpResponse(archive_data, content_type='application/zip')
     response['Content-Disposition'] = f'attachment; filename="маршрутные_карты_заказ_{order.id}.zip"'
     return response
+
+@login_required
+def save_order_colors(request, order_id):
+    order = get_object_or_404(Order, pk=order_id)
+    if not request.user.is_staff:
+        messages.error(request, 'Недостаточно прав.')
+        return redirect('order_detail', order_id=order.id)
+    if request.method == 'POST':
+        color1 = request.POST.get('color1', '#ffffff')
+        color2 = request.POST.get('color2', '#ffffff')
+        order.color1 = color1
+        order.color2 = color2
+        order.save()
+        messages.success(request, 'Цвета сохранены.')
+    return redirect('order_detail', order_id=order.id)

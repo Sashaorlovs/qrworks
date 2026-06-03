@@ -15,7 +15,10 @@
     {% for order in orders %}
     <tr class="{% if order.status == 'draft' %}table-secondary{% elif order.status == 'in_progress' %}table-primary{% elif order.status == 'paused' %}table-warning{% elif order.status == 'completed' %}table-success{% elif order.status == 'shipped' %}table-info{% elif order.status == 'closed' %}table-light{% endif %}">
         <td>{{ order.order_number }}</td>
-        <td>{{ order.full_name }}</td>
+        <td>
+                    {{ order.full_name }}
+                    <span style="display: inline-block; width: 32px; height: 32px; background: linear-gradient(to bottom, {{ order.color1 }} 50%, {{ order.color2 }} 50%); border: 1px solid #ccc; vertical-align: middle; margin-left: 6px;"></span>
+                </td>
         <td>{{ order.created_at|date:"d.m.Y" }}</td>
         <td>{{ order.due_date|date:"d.m.Y"|default:"—" }}</td>
         <td>{{ order.get_status_display }}</td>
