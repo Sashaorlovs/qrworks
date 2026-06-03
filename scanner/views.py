@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, date
 from django.db.models import Q
 from django.conf import settings
 from django.shortcuts import render, get_object_or_404, redirect
@@ -781,7 +782,7 @@ def warehouse_issue(request):
 @login_required
 def statistics(request):
     from django.db.models import Sum, Count, Q, Q, Q, Q
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, date
 
     # Параметры фильтрации
     start_date = request.GET.get('start')
@@ -858,7 +859,7 @@ def logout_view(request):
 @login_required
 def statistics_operations(request, type_name):
     from django.db.models import Sum
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, date
 
     start_date = request.GET.get('start')
     end_date = request.GET.get('end')
@@ -894,7 +895,7 @@ def statistics_operations(request, type_name):
 def statistics_operations_export(request, type_name):
     from openpyxl import Workbook
     from openpyxl.styles import Font, Border, Side, PatternFill
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, date
     from django.db.models import Sum
 
     start_date = request.GET.get('start')
@@ -988,7 +989,7 @@ def statistics_operations_export(request, type_name):
 def statistics_export(request):
     from openpyxl import Workbook
     from openpyxl.styles import Font, Border, Side, PatternFill, Alignment
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, date
     from django.db.models import Sum
 
     start_date = request.GET.get('start')
@@ -1116,7 +1117,7 @@ def statistics_export(request):
 @login_required
 def statistics_compare(request):
     from django.db.models import Sum
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, date
 
     start_a = request.GET.get('start_a')
     end_a = request.GET.get('end_a')
@@ -1258,12 +1259,11 @@ def search(request):
     })
 @login_required
 def orders_control(request):
-    if not request.user.is_staff:
-        messages.error(request, 'Недостаточно прав.')
+    if not request.user.is_staff and (not hasattr(request.user, 'employee') or request.user.employee.role not in ['admin', 'dispatcher', 'master', 'technologist', 'supervisor']):
+        messages.error(request, 'Недостаточно прав. Обратитесь к администратору.')
         return redirect('home')
     
-    from datetime import date
-    orders = Order.objects.all().order_by('-created_at').order_by('-created_at')
+    orders = Order.objects.all().order_by('order_number')
     today = date.today()
     
     orders_data = []
@@ -1273,7 +1273,7 @@ def orders_control(request):
             delta = order.due_date - today
             days_left = delta.days
         
-        # Считаем прогресс выполнения заказа (средний процент по всем операциям)
+        # Прогресс выполнения заказа
         total_ops = 0
         completed_ops = 0
         for inst in ItemInstance.objects.filter(order=order, route_card__isnull=False):
@@ -1292,9 +1292,6 @@ def orders_control(request):
         'orders_data': orders_data,
         'today': today,
     })
-
-
-
 @login_required
 def change_order_status(request, order_id, new_status):
     order = get_object_or_404(Order, pk=order_id)

@@ -5,17 +5,20 @@
 
 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createOrderModal">+ Новый заказ</button>
 
-<div class="table-responsive">
-<table class="table">
-    <thead><tr style="cursor: pointer;"><th data-sort="order_number">Номер договора</th><th data-sort="full_name">Наименование</th><th data-sort="created_at">Создан</th><th data-sort="due_date">Отгрузка</th><th data-sort="status">Статус</th><th>Действия</th></tr></thead>
-    <tbody style="vertical-align: middle;">
+<div class="mb-3">
+    <input type="text" id="dashboardSearch" class="form-control" placeholder="Поиск по номеру договора или наименованию...">
+</div>
+
+<table class="table searchable align-middle">
+    <thead><tr><th>Номер договора</th><th>Наименование</th><th>Создан</th><th>Отгрузка</th><th>Статус</th><th></th></tr></thead>
+    <tbody>
     {% for order in orders %}
-    <tr>
-        <td data-order_number="{{ order.order_number }}">{{ order.order_number }}</td>
-        <td data-full_name="{{ order.full_name }}">{{ order.full_name }}</td>
-        <td data-created_at="{{ order.created_at|date:"d.m.Y" }}">{{ order.created_at|date:"d.m.Y" }}</td>
-        <td data-due_date="{{ order.due_date|date:"d.m.Y"|default:"—" }}">{{ order.due_date|date:"d.m.Y"|default:"—" }}</td>
-        <td data-status="{{ order.get_status_display }}">{{ order.get_status_display }}</td>
+    <tr class="{% if order.status == 'draft' %}table-secondary{% elif order.status == 'in_progress' %}table-primary{% elif order.status == 'paused' %}table-warning{% elif order.status == 'completed' %}table-success{% elif order.status == 'shipped' %}table-info{% elif order.status == 'closed' %}table-light{% endif %}">
+        <td>{{ order.order_number }}</td>
+        <td>{{ order.full_name }}</td>
+        <td>{{ order.created_at|date:"d.m.Y" }}</td>
+        <td>{{ order.due_date|date:"d.m.Y"|default:"—" }}</td>
+        <td>{{ order.get_status_display }}</td>
         <td>
             <a href="{% url 'order_detail' order.id %}" class="btn btn-sm btn-outline-primary">Загрузить</a>
             <a href="{% url 'order_tree' order.id %}" class="btn btn-sm btn-primary">Дерево</a>
@@ -24,35 +27,20 @@
     {% endfor %}
     </tbody>
 </table>
-</div>
 
-<!-- Модальное окно создания заказа (без изменений) -->
-<div class="modal fade" id="createOrderModal" tabindex="-1" aria-labelledby="createOrderModalLabel" aria-hidden="true">
+<!-- Модальное окно создания заказа -->
+<div class="modal fade" id="createOrderModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="createOrderModalLabel">Новый заказ</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
+      <div class="modal-header"><h5 class="modal-title">Новый заказ</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <form method="post" action="{% url 'order_create' %}">
         {% csrf_token %}
         <div class="modal-body">
-            <div class="mb-3">
-                <label class="form-label">Номер договора</label>
-                <input type="text" name="order_number" class="form-control" required>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Наименование</label>
-                <input type="text" name="full_name" class="form-control">
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Дата отгрузки</label>
-                <input type="date" name="due_date" class="form-control">
-            </div>
+            <div class="mb-3"><label class="form-label">Номер договора</label><input type="text" name="order_number" class="form-control" required></div>
+            <div class="mb-3"><label class="form-label">Наименование</label><input type="text" name="full_name" class="form-control"></div>
+            <div class="mb-3"><label class="form-label">Дата отгрузки</label><input type="date" name="due_date" class="form-control"></div>
         </div>
-        <div class="modal-footer">
-            <button type="submit" class="btn btn-primary">Создать</button>
-        </div>
+        <div class="modal-footer"><button type="submit" class="btn btn-primary">Создать</button></div>
       </form>
     </div>
   </div>

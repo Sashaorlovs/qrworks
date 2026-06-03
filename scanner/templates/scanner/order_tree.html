@@ -2,11 +2,14 @@
 {% block title %}Структура заказа {{ order.order_number }}{% endblock %}
 {% block content %}
 <h1>Заказ {{ order.order_number }}</h1>
+
 {% if user.is_staff %}
-<a href="{% url 'download_all_ml' order.id %}" class="btn btn-outline-primary mb-3">📦 Скачать все МЛ</a>
+<div class="mb-3">
+    <a href="{% url 'download_all_ml' order.id %}" class="btn btn-outline-primary">📦 Скачать все МЛ</a>
+</div>
 {% endif %}
-<a href="{% url 'order_detail' order.id %}" class="btn btn-outline-primary mb-3">Загрузить спецификацию</a>
-<div class="table-responsive"><table class="table table-bordered" id="tree-table">
+
+<table class="table table-bordered" id="tree-table">
     <thead class="table-dark">
         <tr><th>Обозначение</th><th>Наименование</th><th>Кол-во</th><th>Готовность</th><th>Действия</th></tr>
     </thead>
@@ -15,5 +18,5 @@
         {% include 'scanner/_tree_row.html' with item=item level=0 %}
     {% endfor %}
     </tbody>
-</table></div>
+</table>
 {% endblock %}
