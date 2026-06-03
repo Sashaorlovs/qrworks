@@ -7,3 +7,4 @@ gunicorn.sock
 *.log
 staticfiles/
 media/
+backups/
