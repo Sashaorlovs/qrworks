@@ -1,5 +1,8 @@
 {% extends 'scanner/base.html' %}
-{% block title %}Заказы{% endblock %}
+{% block title %}Заказы
+
+
+{% endblock %}
 {% block content %}
 <h1>Список заказов</h1>
 
@@ -23,7 +26,7 @@
         <td>{{ order.due_date|date:"d.m.Y"|default:"—" }}</td>
         <td>{{ order.get_status_display }}</td>
         <td>
-            <a href="{% url 'order_detail' order.id %}" class="btn btn-sm btn-outline-primary">Загрузить</a>
+            <a href="{% url 'order_detail' order.id %}" class="btn btn-sm btn-outline-primary">Изменить</a>
             <a href="{% url 'order_tree' order.id %}" class="btn btn-sm btn-primary">Дерево</a>
         </td>
     </tr>
@@ -48,4 +51,19 @@
     </div>
   </div>
 </div>
+
+
+
+
+<script>
+    document.getElementById('dashboardSearch').addEventListener('input', function(e) {
+        var term = e.target.value.toLowerCase();
+        var rows = document.querySelectorAll('.searchable tbody tr');
+        rows.forEach(function(row) {
+            var text = row.textContent.toLowerCase();
+            row.style.display = text.includes(term) ? '' : 'none';
+        });
+    });
+</script>
+
 {% endblock %}
