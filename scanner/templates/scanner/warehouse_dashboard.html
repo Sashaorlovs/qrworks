@@ -29,14 +29,7 @@
 
   <!-- Основной склад -->
   <div class="tab-pane fade show active" id="main" role="tabpanel">
-    <div class="mb-2">
-        <select class="form-select form-select-sm filter-contract" onchange="filterByContract(this, 'main')" style="width: auto; display: inline-block;">
-            <option value="">Все договоры</option>
-            {% for entry in main_data %}
-                <option value="{{ entry.order_number }}">{{ entry.order_number }}</option>
-            {% endfor %}
-        </select>
-    </div>
+
     <table class="table table-bordered searchable">
         <thead class="table-dark">
             <tr>
@@ -80,14 +73,7 @@
 
   <!-- Меж.операционный склад -->
   <div class="tab-pane fade" id="intermediate" role="tabpanel">
-    <div class="mb-2">
-        <select class="form-select form-select-sm filter-contract" onchange="filterByContract(this, 'intermediate')" style="width: auto; display: inline-block;">
-            <option value="">Все договоры</option>
-            {% for entry in intermediate_data %}
-                <option value="{{ entry.order_number }}">{{ entry.order_number }}</option>
-            {% endfor %}
-        </select>
-    </div>
+
     <table class="table table-bordered searchable">
         <thead class="table-dark">
             <tr>

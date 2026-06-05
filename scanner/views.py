@@ -362,6 +362,13 @@ def route_card_print(request, route_card_id):
     for c in range(1, 5):
         apply_border(ws, 8+offset, c, thin_border)
 
+    # Принудительно устанавливаем единый шрифт для всех заполненных ячеек
+    for r in range(2, 9 + offset + 1):
+        for c in range(1, 8):
+            cell = ws.cell(row=r, column=c)
+            if cell.value and not isinstance(cell, MergedCell):
+                cell.font = data_font
+
     # ---------- Пустая строка-разделитель ----------
     sep_row = 9 + offset
     for c in range(1, 6):
@@ -459,6 +466,11 @@ def route_card_print(request, route_card_id):
     # Принудительно устанавливаем выравнивание для A2
     from openpyxl.styles import Alignment
     ws['A2'].alignment = Alignment(horizontal='left', vertical='center')
+    # Принудительно устанавливаем Calibri 11pt для всех заполненных ячеек
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=ws.max_column):
+        for cell in row:
+            if cell.value is not None and not isinstance(cell, openpyxl.cell.cell.MergedCell):
+                cell.font = openpyxl.styles.Font(name='Calibri', size=11)
     output = BytesIO()
     wb.save(output)
     output.seek(0)
