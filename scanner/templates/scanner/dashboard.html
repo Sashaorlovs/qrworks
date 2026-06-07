@@ -27,7 +27,7 @@
         <td>{{ order.get_status_display }}</td>
         <td>
             <a href="{% url 'order_detail' order.id %}" class="btn btn-sm btn-outline-primary">Изменить</a>
-            <a href="{% url 'order_tree' order.id %}" class="btn btn-sm btn-primary">Дерево</a>
+            <a href="{% url 'order_tree' order.id %}" class="btn btn-sm btn-primary">Подробнее</a>
         </td>
     </tr>
     {% endfor %}

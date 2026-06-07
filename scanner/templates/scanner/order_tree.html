@@ -6,16 +6,12 @@
 {% if user.is_staff %}
 <div class="mb-3">
     <a href="{% url 'download_all_ml' order.id %}" class="btn btn-outline-primary">📦 Скачать все МЛ</a>
+    <a href="{% url 'order_tree_export' order.id %}" class="btn btn-outline-success">📥 Скачать отчёт</a>
 </div>
 {% endif %}
 
 <div class="alert alert-info py-2 mb-3">
     ❗ Строки, выделенные <strong>голубым</strong> цветом, содержат приоритетные операции (Гальваника, Расточная, Кооперация).
-</div>
-
-<div class="form-check mb-3">
-    <input class="form-check-input" type="checkbox" id="hideCompleted">
-    <label class="form-check-label" for="hideCompleted">Скрыть завершённые</label>
 </div>
 
 <table class="table table-bordered" id="tree-table">
@@ -28,23 +24,4 @@
     {% endfor %}
     </tbody>
 </table>
-
-<script>
-    document.getElementById('hideCompleted').addEventListener('change', function() {
-        var hide = this.checked;
-        // Проходим по всем строкам с data-node-id
-        document.querySelectorAll('tr[data-node-id]').forEach(function(row) {
-            var progressBar = row.querySelector('.progress-bar');
-            if (progressBar) {
-                var width = progressBar.style.width;
-                var percent = parseInt(width);
-                if (hide && percent >= 100) {
-                    row.style.display = 'none';
-                } else {
-                    row.style.display = '';
-                }
-            }
-        });
-    });
-</script>
 {% endblock %}

@@ -70,6 +70,11 @@ class OperationTypeAdmin(admin.ModelAdmin):
     list_display = ('name', 'code')
     search_fields = ('name', 'code')
 
+class OrderItemAdmin(admin.ModelAdmin):
+    list_display = ('id', 'order', 'item', 'quantity', 'parent')
+    list_filter = ('order',)
+    search_fields = ('item__item_number', 'item__name')
+
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 0
@@ -144,3 +149,5 @@ class WarehouseRecordAdmin(admin.ModelAdmin):
     @admin.display(description='Партия')
     def instance_info(self, obj):
         return f"{obj.instance.item.item_number} — {obj.instance.serial}"
+
+admin.site.register(OrderItem, OrderItemAdmin)

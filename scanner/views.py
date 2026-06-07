@@ -1395,21 +1395,72 @@ def save_order_colors(request, order_id):
         messages.success(request, 'Цвета сохранены.')
     return redirect('order_detail', order_id=order.id)
 
+import openpyxl
+from openpyxl.styles import Font, Border, Side
+
 @login_required
-def change_order_number(request, order_id):
+def order_tree_export(request, order_id):
     if not request.user.is_staff:
         messages.error(request, 'Недостаточно прав.')
-        return redirect('order_detail', order_id=order_id)
+        return redirect('order_tree', order_id=order_id)
+    
     order = get_object_or_404(Order, pk=order_id)
-    if request.method == 'POST':
-        new_number = request.POST.get('order_number', '').strip()
-        if new_number:
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f'Заказ {order.order_number}'
+    
+    headers = ['Обозначение', 'Наименование', 'Тип', 'Кол-во по плану', 'Статус', 'Прогресс', 'Годных', 'Текущая операция', 'Нехватка']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.border = Border(bottom=Side(style='thin'))
+    
+    def add_items(items, level=0, start_row=2):
+        row = start_row
+        for item in items:
+            inst = item.instances.first()
+            designation = '  ' * level + item.item.item_number
+            ws.cell(row=row, column=1, value=designation)
+            ws.cell(row=row, column=2, value=item.item.name)
+            ws.cell(row=row, column=3, value=item.item.item_type)
+            ws.cell(row=row, column=4, value=item.planned_quantity())
+            
+            if inst:
+                status = inst.assembly_status() if inst.item.item_type == 'Сборочная единица' else inst.current_operation_name()
+                ws.cell(row=row, column=5, value=status)
+                ws.cell(row=row, column=6, value=f"{inst.completion_percent()}%")
+                ws.cell(row=row, column=7, value=inst.good_produced())
+                ws.cell(row=row, column=8, value=inst.current_operation_name())
+                ws.cell(row=row, column=9, value=inst.shortage())
+            else:
+                ws.cell(row=row, column=5, value='Нет экземпляра')
+            
+            row += 1
+            children = item.children.all()
+            if children:
+                row = add_items(children, level + 1, row)
+        return row
+    
+    add_items(order.items.filter(parent__isnull=True))
+    
+    for col in ws.columns:
+        max_length = 0
+        column_letter = col[0].column_letter
+        for cell in col:
             try:
-                order.order_number = new_number
-                order.save()
-                messages.success(request, f'Номер договора изменён на {new_number}.')
-            except Exception as e:
-                messages.error(request, f'Ошибка при изменении номера: {e}.')
-        else:
-            messages.error(request, 'Номер не может быть пустым.')
-    return redirect('order_detail', order_id=order.id)
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = (max_length + 2) * 1.2
+        ws.column_dimensions[column_letter].width = adjusted_width
+    
+    from io import BytesIO
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    response = HttpResponse(output.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="Заказ_{order.order_number}_отчёт.xlsx"'
+    return response

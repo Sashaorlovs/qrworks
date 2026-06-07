@@ -2,16 +2,6 @@
 {% block title %}{{ order }}{% endblock %}
 {% block content %}
 <h1>Заказ {{ order.order_number }}</h1>
-{% if user.is_staff %}
-<div class="mb-3">
-    <strong>Изменить номер договора:</strong>
-    <form method="post" action="{% url 'change_order_number' order.id %}" class="d-inline">
-        {% csrf_token %}
-        <input type="text" name="order_number" value="{{ order.order_number }}" class="form-control form-control-sm d-inline" style="width: 200px;">
-        <button type="submit" class="btn btn-sm btn-outline-secondary ms-1">Сохранить</button>
-    </form>
-</div>
-{% endif %}
 <p>{{ order.full_name }}</p>
 
 <div class="mb-3">
