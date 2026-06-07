@@ -1394,3 +1394,22 @@ def save_order_colors(request, order_id):
         order.save()
         messages.success(request, 'Цвета сохранены.')
     return redirect('order_detail', order_id=order.id)
+
+@login_required
+def change_order_number(request, order_id):
+    if not request.user.is_staff:
+        messages.error(request, 'Недостаточно прав.')
+        return redirect('order_detail', order_id=order_id)
+    order = get_object_or_404(Order, pk=order_id)
+    if request.method == 'POST':
+        new_number = request.POST.get('order_number', '').strip()
+        if new_number:
+            try:
+                order.order_number = new_number
+                order.save()
+                messages.success(request, f'Номер договора изменён на {new_number}.')
+            except Exception as e:
+                messages.error(request, f'Ошибка при изменении номера: {e}.')
+        else:
+            messages.error(request, 'Номер не может быть пустым.')
+    return redirect('order_detail', order_id=order.id)
