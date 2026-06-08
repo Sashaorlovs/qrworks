@@ -1,5 +1,6 @@
+from scanner.models import RouteCard
 from datetime import datetime, timedelta, date
-from django.db.models import Q
+from django.db.models import Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Q
 from django.conf import settings
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth import logout
@@ -804,7 +805,7 @@ def warehouse_issue(request):
 # --- Статистика ---
 @login_required
 def statistics(request):
-    from django.db.models import Sum, Count, Q, Q, Q, Q
+    from django.db.models import Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum, Count, Q, Q, Q, Q
     from datetime import datetime, timedelta, date
 
     # Параметры фильтрации
@@ -826,7 +827,25 @@ def statistics(request):
 
     # Суммарные показатели
     total_ops = ops.filter(status='completed').count()
-    total_good = ops.filter(status='completed').aggregate(s=Sum('good_qty'))['s'] or 0
+    # Годные = сумма плановых количеств экземпляров, у которых все операции завершены
+    # Фильтр по дате завершения последней операции применяется, если заданы параметры
+    completed_cards = RouteCard.objects.annotate(
+        total_ops=Count('operations'),
+        completed_ops=Count('operations', filter=Q(operations__status='completed')),
+        last_completed=Max('operations__completed_at')
+    ).filter(
+        total_ops=F('completed_ops')
+    )
+    if start_date:
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        completed_cards = completed_cards.filter(last_completed__gte=start_dt)
+    if end_date:
+        # end_date включительно до конца дня
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+        completed_cards = completed_cards.filter(last_completed__lt=end_dt)
+    total_good = completed_cards.aggregate(total=Sum('instance__quantity'))['total'] or 0
+
+    # Брак = сумма бракованных деталей по всем завершённым операциям в периоде
     total_bad = ops.filter(status='completed').aggregate(s=Sum('bad_qty'))['s'] or 0
 
     # По типам операций
@@ -881,7 +900,7 @@ def logout_view(request):
 
 @login_required
 def statistics_operations(request, type_name):
-    from django.db.models import Sum
+    from django.db.models import Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum
     from datetime import datetime, timedelta, date
 
     start_date = request.GET.get('start')
@@ -890,7 +909,7 @@ def statistics_operations(request, type_name):
     ops = RouteOperation.objects.select_related('operation_type', 'worker', 'route_card__instance__item', 'route_card__instance__order').filter(
         operation_type__name=type_name,
         status='completed'
-    ).order_by('-date')
+    ).order_by('-completed_at')
 
     if start_date and start_date != 'None':
         ops = ops.filter(completed_at__gte=start_date)
@@ -919,7 +938,7 @@ def statistics_operations_export(request, type_name):
     from openpyxl import Workbook
     from openpyxl.styles import Font, Border, Side, PatternFill
     from datetime import datetime, timedelta, date
-    from django.db.models import Sum
+    from django.db.models import Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum
 
     start_date = request.GET.get('start')
     end_date = request.GET.get('end')
@@ -1013,7 +1032,7 @@ def statistics_export(request):
     from openpyxl import Workbook
     from openpyxl.styles import Font, Border, Side, PatternFill, Alignment
     from datetime import datetime, timedelta, date
-    from django.db.models import Sum
+    from django.db.models import Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum
 
     start_date = request.GET.get('start')
     end_date = request.GET.get('end')
@@ -1139,7 +1158,7 @@ def statistics_export(request):
 
 @login_required
 def statistics_compare(request):
-    from django.db.models import Sum
+    from django.db.models import Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum
     from datetime import datetime, timedelta, date
 
     start_a = request.GET.get('start_a')
@@ -1490,7 +1509,7 @@ def warehouse_report(request):
     
     records = WarehouseRecord.objects.select_related('instance__item', 'employee').filter(
         date__gte=start_dt, date__lt=end_dt
-    ).order_by('-date').order_by('-date')
+    ).order_by('-date')
     
     # Создаём Excel
     wb = openpyxl.Workbook()
