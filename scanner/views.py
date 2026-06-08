@@ -732,6 +732,10 @@ def warehouse_dashboard(request):
                 
             })
 
+    # Новые поступления — сверху
+    main_data.reverse()
+    intermediate_data.reverse()
+
     records = WarehouseRecord.objects.select_related('instance__item', 'employee').order_by('-date')[:200]
     context = {
         'main_data': main_data,
@@ -886,7 +890,7 @@ def statistics_operations(request, type_name):
     ops = RouteOperation.objects.select_related('operation_type', 'worker', 'route_card__instance__item', 'route_card__instance__order').filter(
         operation_type__name=type_name,
         status='completed'
-    )
+    ).order_by('-date')
 
     if start_date and start_date != 'None':
         ops = ops.filter(completed_at__gte=start_date)
@@ -1463,4 +1467,83 @@ def order_tree_export(request, order_id):
     
     response = HttpResponse(output.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     response['Content-Disposition'] = f'attachment; filename="Заказ_{order.order_number}_отчёт.xlsx"'
+    return response
+
+import openpyxl
+from openpyxl.styles import Font, Border, Side, PatternFill
+from datetime import datetime, timedelta
+
+@login_required
+def warehouse_report(request):
+    # Получаем даты из GET-параметров, если не заданы – последние 30 дней
+    start_date = request.GET.get('start')
+    end_date = request.GET.get('end')
+    today = timezone.now().date()
+    if not start_date:
+        start_date = (today - timedelta(days=30)).strftime('%Y-%m-%d')
+    if not end_date:
+        end_date = today.strftime('%Y-%m-%d')
+    
+    # Преобразуем в datetime для фильтрации
+    start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+    end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+    
+    records = WarehouseRecord.objects.select_related('instance__item', 'employee').filter(
+        date__gte=start_dt, date__lt=end_dt
+    ).order_by('-date').order_by('-date')
+    
+    # Создаём Excel
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Складской отчёт'
+    
+    # Заголовок
+    ws.merge_cells('A1:I1')
+    ws['A1'] = f'Складской отчёт за период: {start_date} – {end_date}'
+    ws['A1'].font = Font(bold=True, size=12)
+    
+    # Шапка таблицы
+    headers = ['Дата', 'Тип', 'Деталь', 'Партия', 'Кол-во', 'Кому', 'Основание', 'Сотрудник', 'Примечание']
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='00557A', end_color='00557A', fill_type='solid')
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=3, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = thin_border
+    
+    # Данные
+    for i, rec in enumerate(records, 4):
+        ws.cell(row=i, column=1, value=rec.date.strftime('%d.%m.%Y %H:%M')).border = thin_border
+        ws.cell(row=i, column=2, value=rec.get_movement_type_display()).border = thin_border
+        ws.cell(row=i, column=3, value=f"{rec.instance.item.item_number} – {rec.instance.item.name}").border = thin_border
+        ws.cell(row=i, column=4, value=rec.instance.serial).border = thin_border
+        ws.cell(row=i, column=5, value=rec.quantity).border = thin_border
+        ws.cell(row=i, column=6, value=rec.recipient or '—').border = thin_border
+        ws.cell(row=i, column=7, value=rec.basis or '—').border = thin_border
+        ws.cell(row=i, column=8, value=rec.employee.last_name if rec.employee else '—').border = thin_border
+        ws.cell(row=i, column=9, value=rec.notes or '—').border = thin_border
+    
+    # Автоширина (без учёта объединённых ячеек)
+    for col_idx in range(1, len(headers) + 1):
+        max_length = 0
+        for row in ws.iter_rows(min_col=col_idx, max_col=col_idx, values_only=True):
+            for value in row:
+                if value and len(str(value)) > max_length:
+                    max_length = len(str(value))
+        adjusted_width = (max_length + 2) * 1.2
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = adjusted_width
+    
+    from io import BytesIO
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    response = HttpResponse(output.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="Складской_отчёт_{start_date}_{end_date}.xlsx"'
     return response
