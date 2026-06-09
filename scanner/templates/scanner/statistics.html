@@ -1,5 +1,26 @@
 {% extends 'scanner/base.html' %}
-{% block title %}Статистика{% endblock %}
+{% block title %}Статистика
+<script>
+var ctx_warehouse = document.getElementById('warehouseChart').getContext('2d');
+new Chart(ctx_warehouse, {
+    type: 'pie',
+    data: {
+        labels: ['Основной склад', 'Межоперационный'],
+        datasets: [{
+            data: [{{ in_main }}, {{ in_inter }}],
+            backgroundColor: ['#0dcaf0', '#6c757d'],
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { position: 'bottom' }
+        }
+    }
+});
+</script>
+
+{% endblock %}
 {% block content %}
 <h1>Статистика производства</h1>
 
@@ -24,13 +45,13 @@
         <div class="card text-white bg-primary"><div class="card-body"><h5 class="card-title">{{ total_ops }}</h5><p class="card-text">Выполнено операций</p></div></div>
     </div>
     <div class="col-md-3 mb-2">
-        <div class="card text-white bg-success"><div class="card-body"><h5 class="card-title">{{ total_good }}</h5><p class="card-text">Годных деталей</p></div></div>
+        <div class="card text-white bg-success"><div class="card-body"><h5 class="card-title">{{ total_good }}</h5><p class="card-text">Годные (завершённые)</p></div></div>
     </div>
     <div class="col-md-3 mb-2">
-        <div class="card text-white bg-danger"><div class="card-body"><h5 class="card-title">{{ total_bad }}</h5><p class="card-text">Брак</p></div></div>
+        <div class="card text-white bg-danger"><div class="card-body"><h5 class="card-title">{{ total_bad }}</h5><p class="card-text">Брак (по операциям)</p></div></div>
     </div>
     <div class="col-md-3 mb-2">
-        <div class="card text-white bg-info"><div class="card-body"><h5 class="card-title">{{ in_main|add:in_inter }}</h5><p class="card-text">Принято на склад</p></div></div>
+        <div class="card text-white bg-info"><div class="card-body"><h5 class="card-title">{{ in_main|add:in_inter }}</h5><p class="card-text">Принято на склад (всего)</p></div></div>
     </div>
 </div>
 
@@ -44,7 +65,7 @@
 </div>
 
 <div class="card mb-4"><div class="card-header">По типам операций</div><div class="card-body table-responsive">
-    <table class="table table-bordered"><thead><tr><th>Тип операции</th><th>Кол-во</th><th>Годных</th><th>Брак</th></tr></thead><tbody>
+    <table class="table table-bordered"><thead><tr><th>Тип операции</th><th>Кол-во</th><th>Годных (завершённых)</th><th>Брак (по операциям)</th></tr></thead><tbody>
     {% for op in op_stats %}<tr><td><a href="{% url 'stats_operations' op.name %}?start={{ start_date }}&end={{ end_date }}">{{ op.name }}</a></td><td>{{ op.count }}</td><td>{{ op.good }}</td><td>{{ op.bad }}</td></tr>
     {% empty %}<tr><td colspan="4">Нет данных</td></tr>{% endfor %}
     </tbody></table>
@@ -64,4 +85,25 @@
     var opCounts = [{% for op in op_stats %}{{ op.count }},{% endfor %}];
     if (opLabels.length) new Chart(pieCtx, { type: 'pie', data: { labels: opLabels, datasets: [{ data: opCounts, backgroundColor: ['#007bff','#28a745','#ffc107','#dc3545','#17a2b8','#6f42c1','#fd7e14','#20c997','#e83e8c','#6c757d'] }] }, options: { responsive: true } });
 </script>
+
+<script>
+var ctx_warehouse = document.getElementById('warehouseChart').getContext('2d');
+new Chart(ctx_warehouse, {
+    type: 'pie',
+    data: {
+        labels: ['Основной склад', 'Межоперационный'],
+        datasets: [{
+            data: [{{ in_main }}, {{ in_inter }}],
+            backgroundColor: ['#0dcaf0', '#6c757d'],
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { position: 'bottom' }
+        }
+    }
+});
+</script>
+
 {% endblock %}

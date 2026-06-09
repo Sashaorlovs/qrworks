@@ -888,10 +888,19 @@ def statistics(request):
                 'bad': bad,
             })
 
-    # Складские движения
-    in_main = wh.filter(movement_type='in_main').aggregate(s=Sum('quantity'))['s'] or 0
-    in_inter = wh.filter(movement_type='in_intermediate').aggregate(s=Sum('quantity'))['s'] or 0
-    out_main = wh.filter(movement_type='out_main').aggregate(s=Sum('quantity'))['s'] or 0
+    # Складские движения: уникальные экземпляры, принятые на склад
+    # Основной склад: сумма quantity экземпляров, имеющих хотя бы один приход в периоде
+    main_instance_ids = wh.filter(movement_type='in_main').values_list('instance_id', flat=True).distinct()
+    completed_main_ids = ItemInstance.objects.filter(id__in=main_instance_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
+    in_main = ItemInstance.objects.filter(id__in=completed_main_ids).aggregate(s=Sum('quantity'))['s'] or 0
+    # Межоперационный: аналогично
+    inter_instance_ids = wh.filter(movement_type='in_intermediate').values_list('instance_id', flat=True).distinct()
+    completed_inter_ids = ItemInstance.objects.filter(id__in=inter_instance_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
+    in_inter = ItemInstance.objects.filter(id__in=completed_inter_ids).aggregate(s=Sum('quantity'))['s'] or 0
+    # Выдача со склада (количество уникальных выданных экземпляров)
+    out_main_ids = wh.filter(movement_type='out_main').values_list('instance_id', flat=True).distinct()
+    completed_out_ids = ItemInstance.objects.filter(id__in=out_main_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
+    out_main = ItemInstance.objects.filter(id__in=completed_out_ids).aggregate(s=Sum('quantity'))['s'] or 0
 
     # Для графика выпуска по дням (последние 30 дней)
     from_date = datetime.now() - timedelta(days=30)
@@ -1076,9 +1085,15 @@ def statistics_export(request):
     total_ops = ops.filter(status='completed').count()
     total_good = ops.filter(status='completed').aggregate(s=Sum('good_qty'))['s'] or 0
     total_bad = ops.filter(status='completed').aggregate(s=Sum('bad_qty'))['s'] or 0
-    in_main = wh.filter(movement_type='in_main').aggregate(s=Sum('quantity'))['s'] or 0
-    in_inter = wh.filter(movement_type='in_intermediate').aggregate(s=Sum('quantity'))['s'] or 0
-    out_main = wh.filter(movement_type='out_main').aggregate(s=Sum('quantity'))['s'] or 0
+    main_instance_ids = wh.filter(movement_type='in_main').values_list('instance_id', flat=True).distinct()
+    completed_main_ids = ItemInstance.objects.filter(id__in=main_instance_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
+    in_main = ItemInstance.objects.filter(id__in=completed_main_ids).aggregate(s=Sum('quantity'))['s'] or 0
+    inter_instance_ids = wh.filter(movement_type='in_intermediate').values_list('instance_id', flat=True).distinct()
+    completed_inter_ids = ItemInstance.objects.filter(id__in=inter_instance_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
+    in_inter = ItemInstance.objects.filter(id__in=completed_inter_ids).aggregate(s=Sum('quantity'))['s'] or 0
+    out_main_ids = wh.filter(movement_type='out_main').values_list('instance_id', flat=True).distinct()
+    completed_out_ids = ItemInstance.objects.filter(id__in=out_main_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
+    out_main = ItemInstance.objects.filter(id__in=completed_out_ids).aggregate(s=Sum('quantity'))['s'] or 0
 
     # По типам операций
     op_types = OperationType.objects.all()
@@ -1200,12 +1215,16 @@ def statistics_compare(request):
             end_dt = datetime.strptime(end, '%Y-%m-%d') + timedelta(days=1)
             ops = ops.filter(completed_at__lt=end_dt)
             wh = wh.filter(date__lt=end_dt)
+        main_ids = wh.filter(movement_type='in_main').values_list('instance_id', flat=True).distinct()
+        out_ids = wh.filter(movement_type='out_main').values_list('instance_id', flat=True).distinct()
+        completed_main_ids = ItemInstance.objects.filter(id__in=main_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
+        completed_out_ids = ItemInstance.objects.filter(id__in=out_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
         return {
             'total_ops': ops.count(),
             'total_good': ops.aggregate(s=Sum('good_qty'))['s'] or 0,
             'total_bad': ops.aggregate(s=Sum('bad_qty'))['s'] or 0,
-            'in_main': wh.filter(movement_type='in_main').aggregate(s=Sum('quantity'))['s'] or 0,
-            'out_main': wh.filter(movement_type='out_main').aggregate(s=Sum('quantity'))['s'] or 0,
+            'in_main': ItemInstance.objects.filter(id__in=completed_main_ids).aggregate(s=Sum('quantity'))['s'] or 0,
+            'out_main': ItemInstance.objects.filter(id__in=completed_out_ids).aggregate(s=Sum('quantity'))['s'] or 0,
         }
 
     stats_a = get_stats(start_a, end_a)
