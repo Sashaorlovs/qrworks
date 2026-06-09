@@ -16,9 +16,10 @@
             {% endif %}
         </td>
         <td>{{ item.item.name }}</td>
-        <td>
+        <td class="text-center align-middle">
             {% if forloop.first %}
-                {{ item.planned_quantity }}
+                Всего с учётом настройки: {{ inst.total_planned_quantity }}<br>
+                для сборки: {{ item.planned_quantity }}{% if inst.setup_quantity %}, настройка: {{ inst.setup_quantity }}{% endif %}
             {% else %}
                 {{ inst.quantity }}
             {% endif %}

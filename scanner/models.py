@@ -100,8 +100,12 @@ class Order(models.Model):
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items', verbose_name='Заказ')
     item = models.ForeignKey(Item, on_delete=models.CASCADE, verbose_name='Изделие')
-    quantity = models.PositiveIntegerField(default=1, verbose_name='Количество')
+    quantity = models.PositiveIntegerField(default=1, verbose_name='План на сборку')
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='children', verbose_name='Родительская позиция')
+
+    
+    def total_planned_quantity(self):
+        """Общий план производства: план на сборку + настроечные"""
 
     def planned_quantity(self):
         return self.quantity
@@ -116,11 +120,17 @@ class OrderItem(models.Model):
 class ItemInstance(models.Model):
     item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name='instances', verbose_name='Изделие')
     serial = models.CharField(max_length=200, unique=True, verbose_name='Серийный номер')
-    quantity = models.PositiveIntegerField(default=1, verbose_name='Количество')
+    quantity = models.PositiveIntegerField(default=1, verbose_name='План на сборку')
+    setup_quantity = models.PositiveIntegerField(default=0, verbose_name='Настроечные')
     order_item = models.ForeignKey(OrderItem, null=True, blank=True, on_delete=models.SET_NULL, related_name='instances', verbose_name='Позиция заказа')
     order = models.ForeignKey(Order, null=True, blank=True, on_delete=models.SET_NULL, related_name='instances', verbose_name='Договор')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата создания')
     due_date = models.DateField(null=True, blank=True, verbose_name='Дата отгрузки')
+
+    
+    def total_planned_quantity(self):
+        """Общий план производства: план на сборку + настроечные"""
+        return self.quantity + self.setup_quantity
 
     def planned_quantity(self):
         if self.order_item:
@@ -146,8 +156,18 @@ class ItemInstance(models.Model):
         # для деталей и готовых сборок считаем по операциям
         return int(self.good_produced() / planned * 100)
 
+    
+    def total_good_produced(self):
+        """Суммарный выпуск годных по всем экземплярам этой позиции заказа"""
+        if not self.order_item:
+            return self.good_produced()
+        total = 0
+        for inst in self.order_item.instances.all():
+            total += inst.good_produced()
+        return total
+
     def shortage(self):
-        return max(0, self.planned_quantity() - self.good_produced())
+        return max(0, self.planned_quantity() - self.total_good_produced())
 
     def all_components_ready(self):
         """Проверяет, что все дочерние позиции заказа имеют готовые экземпляры"""
@@ -291,7 +311,7 @@ class WarehouseRecord(models.Model):
     ]
     instance = models.ForeignKey(ItemInstance, on_delete=models.CASCADE, related_name='warehouse_records', verbose_name='Партия')
     movement_type = models.CharField(max_length=3, choices=MOVEMENT_TYPES, verbose_name='Тип операции')
-    quantity = models.PositiveIntegerField(verbose_name='Количество')
+    quantity = models.PositiveIntegerField(verbose_name='План на сборку')
     date = models.DateTimeField(default=timezone.now, verbose_name='Дата')
     employee = models.ForeignKey(Employee, null=True, blank=True, on_delete=models.SET_NULL, verbose_name='Сотрудник')
     recipient = models.CharField(max_length=200, blank=True, verbose_name='Получатель')

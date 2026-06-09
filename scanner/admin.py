@@ -102,7 +102,18 @@ class RouteOperationInline(admin.TabularInline):
     model = RouteOperation
     extra = 1
     fields = ('operation_type', 'planned_hours', 'status', 'good_qty', 'bad_qty', 'worker')
-    readonly_fields = ('good_qty', 'bad_qty')
+
+    def get_readonly_fields(self, request, obj=None):
+        # Разрешаем редактировать good_qty и bad_qty только администратору
+        if request.user.is_superuser:
+            return ()
+        # Проверяем роль через Employee
+        try:
+            if request.user.employee.role == 'admin':
+                return ()
+        except:
+            pass
+        return ('good_qty', 'bad_qty')
 
 @admin.register(RouteCard)
 class RouteCardAdmin(admin.ModelAdmin):

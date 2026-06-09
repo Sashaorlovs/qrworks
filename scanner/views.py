@@ -123,7 +123,7 @@ def instance_detail(request, item_number, serial):
             new_good = int(request.POST.get('good_qty', 0) or 0)
             new_bad = int(request.POST.get('bad_qty', 0) or 0)
 
-            planned = instance.planned_quantity()
+            planned = instance.total_planned_quantity()
             current_good = op.good_qty or 0
             current_bad = op.bad_qty or 0
 
@@ -146,7 +146,7 @@ def instance_detail(request, item_number, serial):
                 op.notes = notes
 
             # Проверяем, выполнена ли норма
-            planned = instance.planned_quantity()
+            planned = instance.total_planned_quantity()
             if (op.good_qty + op.bad_qty) >= planned or op.operation_type.name in (
                 'Прием на меж.операционный склад', 'Прием на склад',
                 'Контрольная', 'Контроль ОТК'
@@ -178,7 +178,7 @@ def instance_detail(request, item_number, serial):
 
     status_info = route_card.get_status()
     operations = route_card.operations.select_related('operation_type', 'worker').order_by('order')
-    planned = instance.planned_quantity()
+    planned = instance.total_planned_quantity()
     for op in operations:
         op.remaining = planned - (op.good_qty or 0)
         op.requires_location = op.operation_type.name in ('Прием на склад', 'Прием на меж.операционный склад')
@@ -215,7 +215,20 @@ def supplement_instance(request, instance_id):
             order=old.order,
             order_item=old.order_item
         )
-        RouteCard.objects.create(instance=new_inst)
+        new_card = RouteCard.objects.create(instance=new_inst)
+        # Копируем операции из исходной маршрутной карты
+        if hasattr(old, 'route_card') and old.route_card:
+            for op in old.route_card.operations.all():
+                RouteOperation.objects.create(
+                    route_card=new_card,
+                    operation_type=op.operation_type,
+                    order=op.order,
+                    planned_hours=op.planned_hours,
+                    status='pending',
+                    good_qty=0,
+                    bad_qty=0
+                )
+
     return redirect('instance_detail', item_number=old.item.item_number, serial=old.serial)
 
 @login_required
@@ -320,7 +333,7 @@ def route_card_print(request, route_card_id):
 
     # ---------- Количество (строка 5) ----------
     ws.merge_cells('B5:D5')
-    safe_write(ws, 5, 2, instance.planned_quantity(), center_wrap)
+    safe_write(ws, 5, 2, f"{instance.total_planned_quantity()} (план сборки: {instance.quantity}, настроечные: {instance.setup_quantity})", center_wrap)
     for c in range(1, 5):
         apply_border(ws, 5, c, thin_border)
 
@@ -358,7 +371,7 @@ def route_card_print(request, route_card_id):
     ws.merge_cells(f'B{8+offset}:D{8+offset}')
     blanks_qty = instance.item.blanks_per_item
     if not blanks_qty and instance.item.item_type == 'Сборочная единица':
-        blanks_qty = instance.planned_quantity()
+        blanks_qty = instance.total_planned_quantity()
     safe_write(ws, 8+offset, 2, blanks_qty if blanks_qty else 'не указан', center_wrap)
     for c in range(1, 5):
         apply_border(ws, 8+offset, c, thin_border)
@@ -560,6 +573,7 @@ def order_import(request, order_id):
             profile = row[6] if len(row) > 6 else None
             blank_size = row[7] if len(row) > 7 else None
             blanks_qty = row[8] if len(row) > 8 else None
+            setup_qty = row[9] if len(row) > 9 else 0  # Настроечные детали
 
             if not designation:
                 continue
@@ -606,6 +620,11 @@ def order_import(request, order_id):
                     item.blanks_per_item = int(blanks_qty)
                 except (ValueError, TypeError):
                     pass
+            # Настроечные (буфер)
+            try:
+                setup_qty = int(setup_qty) if setup_qty else 0
+            except (ValueError, TypeError):
+                setup_qty = 0
             item.save()
 
             # ----- Определяем родительскую позицию -----
@@ -642,6 +661,7 @@ def order_import(request, order_id):
                     item=item,
                     serial=serial,
                     quantity=oi.quantity,
+                    setup_quantity=setup_qty,
                     order=order,
                     order_item=oi
                 )

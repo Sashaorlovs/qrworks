@@ -2,7 +2,7 @@
 {% block title %}{{ instance }}{% endblock %}
 {% block content %}
 <h2>{{ instance.item.item_number }} – {{ instance.item.name }}</h2>
-<p>Партия: {{ instance.serial }} (план: {{ instance.planned_quantity }})</p>
+<p>Партия: {{ instance.serial }} (план сборки: {{ instance.quantity }}, настроечные: {{ instance.setup_quantity }}, всего к изготовлению: {{ instance.total_planned_quantity }})</p>
 
 {% if assembly_status %}
     <div class="alert alert-{% if assembly_status == 'Ожидает комплектации' %}warning{% elif assembly_status == 'Готово к комплектованию' %}success{% elif assembly_status == 'В работе' %}primary{% else %}secondary{% endif %}">
