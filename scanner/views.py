@@ -1,6 +1,6 @@
 from scanner.models import RouteCard
 from datetime import datetime, timedelta, date
-from django.db.models import Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Q
+from django.db.models import Q,  Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Q
 from django.conf import settings
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth import logout
@@ -737,12 +737,16 @@ def warehouse_dashboard(request):
     main_data.reverse()
     intermediate_data.reverse()
 
-    records = WarehouseRecord.objects.select_related('instance__item', 'employee').order_by('-date')[:200]
+        # Все записи журнала (без пагинации)
+    records = WarehouseRecord.objects.select_related('instance__item', 'employee').order_by('-date')
+
+    current_tab = request.GET.get('tab', 'main')
     context = {
         'main_data': main_data,
         'intermediate_data': intermediate_data,
         'records': records,
         'employee_list': employee_list,
+        'current_tab': current_tab,
     }
     user_role = request.user.employee.role if hasattr(request.user, 'employee') else ''
     for item in context['main_data']:
@@ -805,7 +809,7 @@ def warehouse_issue(request):
 # --- Статистика ---
 @login_required
 def statistics(request):
-    from django.db.models import Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum, Count, Q, Q, Q, Q
+    from django.db.models import Q,  Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum, Count, Q, Q, Q, Q
     from datetime import datetime, timedelta, date
 
     # Параметры фильтрации
@@ -900,7 +904,7 @@ def logout_view(request):
 
 @login_required
 def statistics_operations(request, type_name):
-    from django.db.models import Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum
+    from django.db.models import Q,  Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum
     from datetime import datetime, timedelta, date
 
     start_date = request.GET.get('start')
@@ -938,7 +942,7 @@ def statistics_operations_export(request, type_name):
     from openpyxl import Workbook
     from openpyxl.styles import Font, Border, Side, PatternFill
     from datetime import datetime, timedelta, date
-    from django.db.models import Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum
+    from django.db.models import Q,  Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum
 
     start_date = request.GET.get('start')
     end_date = request.GET.get('end')
@@ -1032,7 +1036,7 @@ def statistics_export(request):
     from openpyxl import Workbook
     from openpyxl.styles import Font, Border, Side, PatternFill, Alignment
     from datetime import datetime, timedelta, date
-    from django.db.models import Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum
+    from django.db.models import Q,  Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum
 
     start_date = request.GET.get('start')
     end_date = request.GET.get('end')
@@ -1158,7 +1162,7 @@ def statistics_export(request):
 
 @login_required
 def statistics_compare(request):
-    from django.db.models import Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum
+    from django.db.models import Q,  Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum
     from datetime import datetime, timedelta, date
 
     start_a = request.GET.get('start_a')
