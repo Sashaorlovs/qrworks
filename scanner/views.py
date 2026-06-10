@@ -212,6 +212,7 @@ def supplement_instance(request, instance_id):
             item=old.item,
             serial=new_serial,
             quantity=old.shortage(),
+            setup_quantity=old.setup_quantity,
             order=old.order,
             order_item=old.order_item
         )
@@ -690,6 +691,136 @@ def order_import(request, order_id):
 
     return redirect('order_tree', order_id=order.id)
 
+
+@login_required
+def warehouse_print_report(request):
+    """Экспорт остатков основного/межоперационного склада в Excel с учётом поиска"""
+    tab = request.GET.get('tab', 'main')
+    search = request.GET.get('search', '').strip()
+
+    instances = ItemInstance.objects.select_related('item', 'order').all()
+    data = []
+
+    for inst in instances:
+        # Вычисляем остатки
+        total_in_main = inst.warehouse_records.filter(movement_type='in_main').aggregate(s=models.Sum('quantity'))['s'] or 0
+        total_out_main = inst.warehouse_records.filter(movement_type='out_main').aggregate(s=models.Sum('quantity'))['s'] or 0
+        balance_main = total_in_main - total_out_main
+
+        total_in_inter = inst.warehouse_records.filter(movement_type='in_intermediate').aggregate(s=models.Sum('quantity'))['s'] or 0
+        total_out_inter = inst.warehouse_records.filter(movement_type='out_intermediate').aggregate(s=models.Sum('quantity'))['s'] or 0
+        balance_inter = total_in_inter - total_out_inter
+
+        order_number = inst.order.order_number if inst.order else ''
+
+        # Головная сборка и подсборка
+        root_name = ''
+        parent_name = ''
+        if inst.order_item:
+            current = inst.order_item
+            while current.parent:
+                current = current.parent
+            root_name = f"{current.item.item_number} – {current.item.name}"
+            if inst.order_item.parent:
+                p = inst.order_item.parent
+                parent_name = f"{p.item.item_number} – {p.item.name}"
+
+        # Место хранения
+        location_main = ''
+        for rec in inst.warehouse_records.filter(movement_type='in_main').order_by('-date'):
+            if rec.notes:
+                location_main = rec.notes
+                break
+
+        location_inter = ''
+        for rec in inst.warehouse_records.filter(movement_type='in_intermediate').order_by('-date'):
+            if rec.notes:
+                location_inter = rec.notes
+                break
+
+        if tab == 'main' and balance_main > 0:
+            entry = {
+                'designation': inst.item.item_number,
+                'name': inst.item.name,
+                'order': order_number,
+                'assembly': root_name,
+                'parent_assembly': parent_name,
+                'balance': balance_main,
+                'location': location_main,
+            }
+            data.append(entry)
+        elif tab == 'intermediate' and balance_inter > 0:
+            entry = {
+                'designation': inst.item.item_number,
+                'name': inst.item.name,
+                'order': order_number,
+                'assembly': root_name,
+                'parent_assembly': parent_name,
+                'balance': balance_inter,
+                'location': location_inter,
+            }
+            data.append(entry)
+
+    # Фильтрация по поиску (по всем текстовым полям)
+    if search:
+        data = [d for d in data if
+            search.lower() in (d['designation'] + d['name'] + d['order'] + d['assembly'] + d['parent_assembly'] + d['location']).lower()
+        ]
+
+    # Формируем Excel
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Border, Side, PatternFill
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Остатки на складе'
+
+    # Заголовок
+    ws.merge_cells('A1:G1')
+    ws['A1'] = f'Остатки на {"основном" if tab == "main" else "межоперационном"} складе'
+    ws['A1'].font = Font(bold=True, size=12)
+
+    headers = ['Обозначение', 'Наименование', 'Договор', 'Главная сборка', 'Подсборка', 'Остаток', 'Место']
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='00557A', end_color='00557A', fill_type='solid')
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=3, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = thin_border
+
+    for i, entry in enumerate(data, 4):
+        ws.cell(row=i, column=1, value=entry['designation']).border = thin_border
+        ws.cell(row=i, column=2, value=entry['name']).border = thin_border
+        ws.cell(row=i, column=3, value=entry['order']).border = thin_border
+        ws.cell(row=i, column=4, value=entry['assembly']).border = thin_border
+        ws.cell(row=i, column=5, value=entry['parent_assembly'] or '—').border = thin_border
+        ws.cell(row=i, column=6, value=entry['balance']).border = thin_border
+        ws.cell(row=i, column=7, value=entry['location'] or '—').border = thin_border
+
+    # Автоширина
+    for col_idx in range(1, len(headers) + 1):
+        max_length = 0
+        for row in ws.iter_rows(min_col=col_idx, max_col=col_idx, values_only=True):
+            for value in row:
+                if value and len(str(value)) > max_length:
+                    max_length = len(str(value))
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = (max_length + 2) * 1.2
+
+    from io import BytesIO
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    response = HttpResponse(output.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename="Остатки_на_складе.xlsx"'
+    return response
+
+
 @login_required
 def warehouse_dashboard(request):
     instances = ItemInstance.objects.select_related('item').all()
@@ -712,13 +843,18 @@ def warehouse_dashboard(request):
         total_out_inter = inst.warehouse_records.filter(movement_type='out_intermediate').aggregate(
             s=models.Sum('quantity'))['s'] or 0
         balance_inter = total_in_inter - total_out_inter
-        # Определяем головную сборку
+        # Определяем головную сборку и ближайшую подсборку
         root_name = ''
+        parent_name = ''
         if inst.order_item:
             current = inst.order_item
             while current.parent:
                 current = current.parent
             root_name = f"{current.item.item_number} – {current.item.name}"
+            # Ближайшая подсборка (родитель позиции заказа)
+            if inst.order_item.parent:
+                p = inst.order_item.parent
+                parent_name = f"{p.item.item_number} – {p.item.name}"
         # Место хранения (из последней записи прихода с непустым примечанием)
         location_main = ''
         for rec in inst.warehouse_records.filter(movement_type='in_main').order_by('-date'):
@@ -739,6 +875,7 @@ def warehouse_dashboard(request):
                 'assembly': root_name,
                 'order_number': order_number,
                 'location': location_main,
+                'parent_assembly': parent_name,
                 
                 
             })
@@ -749,6 +886,7 @@ def warehouse_dashboard(request):
                 'assembly': root_name,
                 'order_number': order_number,
                 'location': location_inter,
+                'parent_assembly': parent_name,
                 
                 
             })

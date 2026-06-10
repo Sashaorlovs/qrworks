@@ -1,5 +1,18 @@
 {% extends 'scanner/base.html' %}
-{% block title %}Склад{% endblock %}
+{% block title %}Склад
+<script>
+document.getElementById('printFilteredBtn').addEventListener('click', function() {
+    var search = document.getElementById('warehouseSearch').value;
+    var activeTab = document.querySelector('.nav-link.active').id;
+    var tab = 'main';
+    if (activeTab === 'intermediate-tab') tab = 'intermediate';
+    else if (activeTab === 'journal-tab') tab = 'journal';
+    var url = '/warehouse/print-report/?tab=' + tab + '&search=' + encodeURIComponent(search);
+    window.open(url, '_blank');
+});
+</script>
+
+{% endblock %}
 {% block content %}
 <h1>Склад</h1>
 
@@ -10,7 +23,10 @@
 {% endif %}
 
 <div class="mb-3">
-    <input type="text" id="warehouseSearch" class="form-control" placeholder="Поиск по всем вкладкам...">
+    <div class="input-group">
+            <input type="text" id="warehouseSearch" class="form-control" placeholder="Поиск по всем вкладкам...">
+            <button class="btn btn-outline-secondary" type="button" id="printFilteredBtn" title="Печать отфильтрованных остатков">🖨️ Печать</button>
+        </div>
 </div>
 
 <ul class="nav nav-tabs mb-3" id="warehouseTabs" role="tablist">
@@ -36,7 +52,7 @@
                 <th>Обозначение</th>
                 <th>Наименование</th>
                 <th>Договор</th>
-                <th>Сб. единица</th>
+                <th>Сб. единица</th><th>Подсборка</th>
                 <th>Остаток</th>
                 <th>Место</th>
                 <th>Действие</th>
@@ -48,7 +64,7 @@
                 <td>{{ entry.instance.item.item_number }}</td>
                 <td>{{ entry.instance.item.name }}</td>
                 <td>{{ entry.order_number }}</td>
-                <td>{{ entry.assembly }}</td>
+                <td>{{ entry.assembly }}</td><td>{{ entry.parent_assembly|default:"—" }}</td>
                 <td>{{ entry.balance }} шт.</td>
                 <td>{{ entry.location|default:"—" }}</td>
                 <td>
@@ -65,7 +81,7 @@
                 </td>
             </tr>
         {% empty %}
-            <tr><td colspan="7">Нет деталей на основном складе</td></tr>
+            <tr><td colspan="8">Нет деталей на основном складе</td></tr>
         {% endfor %}
         </tbody>
     </table>
@@ -80,7 +96,7 @@
                 <th>Обозначение</th>
                 <th>Наименование</th>
                 <th>Договор</th>
-                <th>Сб. единица</th>
+                <th>Сб. единица</th><th>Подсборка</th>
                 <th>Остаток</th>
                 <th>Место</th>
                 <th>Действие</th>
@@ -92,7 +108,7 @@
                 <td>{{ entry.instance.item.item_number }}</td>
                 <td>{{ entry.instance.item.name }}</td>
                 <td>{{ entry.order_number }}</td>
-                <td>{{ entry.assembly }}</td>
+                <td>{{ entry.assembly }}</td><td>{{ entry.parent_assembly|default:"—" }}</td>
                 <td>{{ entry.balance }} шт.</td>
                 <td>{{ entry.location|default:"—" }}</td>
                 <td>
@@ -109,7 +125,7 @@
                 </td>
             </tr>
         {% empty %}
-            <tr><td colspan="7">Нет деталей на меж.операционном складе</td></tr>
+            <tr><td colspan="8">Нет деталей на меж.операционном складе</td></tr>
         {% endfor %}
         </tbody>
     </table>
@@ -246,4 +262,17 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+
+<script>
+document.getElementById('printFilteredBtn').addEventListener('click', function() {
+    var search = document.getElementById('warehouseSearch').value;
+    var activeTab = document.querySelector('.nav-link.active').id;
+    var tab = 'main';
+    if (activeTab === 'intermediate-tab') tab = 'intermediate';
+    else if (activeTab === 'journal-tab') tab = 'journal';
+    var url = '/warehouse/print-report/?tab=' + tab + '&search=' + encodeURIComponent(search);
+    window.open(url, '_blank');
+});
+</script>
+
 {% endblock %}
