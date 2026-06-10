@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('order/<int:order_id>/material-report/', views.order_material_report, name='order_material_report'),
     path('warehouse/print-report/', views.warehouse_print_report, name='warehouse_print_report'),
     path('warehouse/report/', views.warehouse_report, name='warehouse_report'),
     path('order/<int:order_id>/tree/export/', views.order_tree_export, name='order_tree_export'),

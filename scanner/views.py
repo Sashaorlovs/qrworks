@@ -821,6 +821,126 @@ def warehouse_print_report(request):
     return response
 
 
+
+@login_required
+def order_material_report(request, order_id):
+    """Сводная ведомость материалов на списание по заказу"""
+    order = get_object_or_404(Order, pk=order_id)
+    
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Border, Side, PatternFill, Alignment
+    from io import BytesIO
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Списание материалов'
+    
+    # Заголовок
+    ws.merge_cells('A1:H1')
+    ws['A1'] = f'Ведомость материалов на списание — Заказ {order.order_number}'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+    
+    # Шапка таблицы
+    headers = ['Обозначение', 'Наименование', 'Кол-во деталей', 'Материал', 'Сортамент', 'Размер заготовки', 'Кол-во заготовок', 'Общая длина (мм)']
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+    header_fill = PatternFill(start_color='00557A', end_color='00557A', fill_type='solid')
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=3, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = thin_border
+        cell.alignment = Alignment(horizontal='center', wrap_text=True)
+    
+    # Собираем данные: все экземпляры заказа, у которых есть завершённая заготовительная операция
+    row = 4
+    rows_data = []
+    
+    for order_item in order.items.all():
+        for inst in order_item.instances.all():
+            if not hasattr(inst, 'route_card') or not inst.route_card:
+                continue
+            has_blank_op = inst.route_card.operations.filter(
+                operation_type__name='Заготовительная',
+                status='completed'
+            ).exists()
+            if not has_blank_op:
+                continue
+            
+            item = inst.item
+            material = item.material.name if item.material else '—'
+            profile = item.profile or '—'
+            blank_size = item.blank_size or '—'
+            blanks_per = item.blanks_per_item or 1
+            
+            rows_data.append({
+                'item_number': item.item_number,
+                'name': item.name,
+                'quantity': inst.planned_quantity(),
+                'material': material,
+                'profile': profile,
+                'blank_size': blank_size,
+                'blanks_per': blanks_per,
+            })
+    
+    # Сортируем по сортаменту
+    rows_data.sort(key=lambda x: x['profile'])
+    
+    for data in rows_data:
+            item_number = data['item_number']
+            name = data['name']
+            quantity = data['quantity']
+            material = data['material']
+            profile = data['profile']
+            blank_size = data['blank_size']
+            blanks_per = data['blanks_per']
+            
+            ws.cell(row=row, column=1, value=item_number).border = thin_border
+            ws.cell(row=row, column=2, value=name).border = thin_border
+            ws.cell(row=row, column=3, value=quantity).border = thin_border
+            ws.cell(row=row, column=4, value=material).border = thin_border
+            ws.cell(row=row, column=5, value=profile).border = thin_border
+            ws.cell(row=row, column=6, value=blank_size).border = thin_border
+            ws.cell(row=row, column=7, value=blanks_per).border = thin_border
+            
+            # Вычисляем общую длину, если размер — простое число
+            total_length = ''
+            try:
+                length = float(str(blank_size).replace(',', '.'))
+                total_length = length * blanks_per
+            except (ValueError, TypeError):
+                pass
+            
+            ws.cell(row=row, column=8, value=total_length if total_length else '—').border = thin_border
+            
+            row += 1
+    
+    # Автоширина
+    for col_idx in range(1, len(headers) + 1):
+        max_length = 0
+        for r in ws.iter_rows(min_col=col_idx, max_col=col_idx, values_only=True):
+            for value in r:
+                if value and len(str(value)) > max_length:
+                    max_length = len(str(value))
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = (max_length + 2) * 1.1
+    
+    # Итоговая строка
+    
+    
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    response = HttpResponse(output.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="Списание_материалов_{order.order_number}.xlsx"'
+    return response
+
+
 @login_required
 def warehouse_dashboard(request):
     instances = ItemInstance.objects.select_related('item').all()

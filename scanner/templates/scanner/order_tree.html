@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', function() {
 {% if user.is_staff %}
 <div class="mb-3">
     <a href="{% url 'download_all_ml' order.id %}" class="btn btn-outline-primary">📦 Скачать все МЛ</a>
+    <a href="{% url 'order_material_report' order.id %}" class="btn btn-outline-danger">📋 Списание материалов</a>
     <a href="{% url 'order_tree_export' order.id %}" class="btn btn-outline-success">📥 Скачать отчёт</a>
 </div>
 {% endif %}
