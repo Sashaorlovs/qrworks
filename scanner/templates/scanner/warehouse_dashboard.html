@@ -1,18 +1,5 @@
 {% extends 'scanner/base.html' %}
-{% block title %}Склад
-<script>
-document.getElementById('printFilteredBtn').addEventListener('click', function() {
-    var search = document.getElementById('warehouseSearch').value;
-    var activeTab = document.querySelector('.nav-link.active').id;
-    var tab = 'main';
-    if (activeTab === 'intermediate-tab') tab = 'intermediate';
-    else if (activeTab === 'journal-tab') tab = 'journal';
-    var url = '/warehouse/print-report/?tab=' + tab + '&search=' + encodeURIComponent(search);
-    window.open(url, '_blank');
-});
-</script>
-
-{% endblock %}
+{% block title %}Склад{% endblock %}
 {% block content %}
 <h1>Склад</h1>
 
