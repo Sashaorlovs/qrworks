@@ -1,5 +1,101 @@
 {% extends 'scanner/base.html' %}
-{% block title %}Склад{% endblock %}
+{% block title %}Склад
+<script>
+function bulkIssue() {
+    var activeTab = document.querySelector('.nav-link.active').id;
+    var tab = activeTab === 'intermediate-tab' ? 'intermediate' : 'main';
+    var prefix = tab === 'main' ? 'main-' : 'inter-';
+    var items = [];
+    
+    document.querySelectorAll('.' + prefix + 'check-item:checked').forEach(function(cb) {
+        var row = cb.closest('tr');
+        var qtyInput = row.querySelector('.' + prefix + 'qty');
+        var qty = qtyInput ? parseInt(qtyInput.value) || 0 : 0;
+        if (qty > 0) {
+            items.push({
+                instance_id: cb.value,
+                quantity: qty
+            });
+        }
+    });
+    
+    if (items.length === 0) {
+        alert('Выберите хотя бы одну позицию и укажите количество больше 0.');
+        return;
+    }
+    
+    document.getElementById('bulkItems').value = JSON.stringify(items);
+    document.getElementById('bulkTab').value = tab;
+    
+    // Автозаполнение основания из сборок выбранных позиций
+    var assemblies = [];
+    document.querySelectorAll('.' + prefix + 'check-item:checked').forEach(function(cb) {
+        var row = cb.closest('tr');
+        // Ищем ячейку с главной сборкой (четвёртая или пятая, зависит от структуры)
+        var cells = row.querySelectorAll('td');
+        if (cells.length >= 5) {
+            var assembly = cells[3]?.textContent?.trim(); // Сборка
+            var subAssembly = cells[4]?.textContent?.trim(); // Подсборка
+            if (subAssembly && subAssembly !== '—' && subAssembly !== '') {
+                assemblies.push(subAssembly);
+            } else if (assembly && assembly !== '—' && assembly !== '') {
+                assemblies.push(assembly);
+            }
+        }
+    });
+    if (assemblies.length > 0) {
+        document.getElementById('bulkBasis').value = [...new Set(assemblies)].join(', ');
+    }
+    
+    var modal = new bootstrap.Modal(document.getElementById('bulkIssueModal'));
+    modal.show();
+}
+</script>
+
+<div class="modal fade" id="bulkIssueModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'warehouse_bulk_issue' %}">
+                {% csrf_token %}
+                <input type="hidden" name="items" id="bulkItems">
+                <input type="hidden" name="tab" id="bulkTab">
+                <div class="modal-header">
+                    <h5 class="modal-title">Массовая выдача</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Получатель</label>
+                        <select name="recipient" class="form-select" required>
+                            <option value="">Выберите...</option>
+                            {% for emp in employee_list %}
+                                <option value="{{ emp.last_name }} {{ emp.first_name }}">{{ emp.last_name }} {{ emp.first_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Основание</label>
+                        <input type="text" name="basis" id="bulkBasis" class="form-control" required placeholder="Например: для сборки...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Примечание</label>
+                        <textarea name="notes" class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Выдал</label>
+                        <input type="text" class="form-control" value="{{ request.user.employee.last_name }} {{ request.user.employee.first_name }}" disabled>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Выдать и сформировать накладную</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
 {% block content %}
 <h1>Склад</h1>
 
@@ -12,6 +108,7 @@
 <div class="mb-3">
     <div class="input-group">
             <input type="text" id="warehouseSearch" class="form-control" placeholder="Поиск по всем вкладкам...">
+        <button class="btn btn-outline-primary ms-2" onclick="bulkIssue()">📦 Выдать выбранное</button>
             <button class="btn btn-outline-secondary" type="button" id="printFilteredBtn" title="Печать отфильтрованных остатков">🖨️ Печать</button>
         </div>
 </div>
@@ -36,7 +133,7 @@
     <table class="table table-bordered searchable">
         <thead class="table-dark">
             <tr>
-                <th>Обозначение</th>
+                <th>Выбрать</th><th>Обозначение</th>
                 <th>Наименование</th>
                 <th>Договор</th>
                 <th>Сб. единица</th><th>Подсборка</th>
@@ -48,11 +145,15 @@
         <tbody>
         {% for entry in main_data %}
             <tr>
+                <td><input type="checkbox" class="main-check-item check-item" value="{{ entry.instance.id }}"></td>
                 <td>{{ entry.instance.item.item_number }}</td>
                 <td>{{ entry.instance.item.name }}</td>
                 <td>{{ entry.order_number }}</td>
                 <td>{{ entry.assembly }}</td><td>{{ entry.parent_assembly|default:"—" }}</td>
-                <td>{{ entry.balance }} шт.</td>
+                <td>
+                    {{ entry.balance }} шт.
+                    <input type="number" class="main-qty qty-input form-control form-control-sm d-inline-block" style="width:80px;" value="0" min="0" max="{{ entry.balance }}" data-max="{{ entry.balance }}" placeholder="Кол-во">
+                </td>
                 <td>{{ entry.location|default:"—" }}</td>
                 <td>
                     {% if entry.can_issue %}
@@ -80,7 +181,7 @@
     <table class="table table-bordered searchable">
         <thead class="table-dark">
             <tr>
-                <th>Обозначение</th>
+                <th>Выбрать</th><th>Обозначение</th>
                 <th>Наименование</th>
                 <th>Договор</th>
                 <th>Сб. единица</th><th>Подсборка</th>
@@ -92,11 +193,15 @@
         <tbody>
         {% for entry in intermediate_data %}
             <tr>
+                <td><input type="checkbox" class="main-check-item check-item" value="{{ entry.instance.id }}"></td>
                 <td>{{ entry.instance.item.item_number }}</td>
                 <td>{{ entry.instance.item.name }}</td>
                 <td>{{ entry.order_number }}</td>
                 <td>{{ entry.assembly }}</td><td>{{ entry.parent_assembly|default:"—" }}</td>
-                <td>{{ entry.balance }} шт.</td>
+                <td>
+                    {{ entry.balance }} шт.
+                    <input type="number" class="main-qty qty-input form-control form-control-sm d-inline-block" style="width:80px;" value="0" min="0" max="{{ entry.balance }}" data-max="{{ entry.balance }}" placeholder="Кол-во">
+                </td>
                 <td>{{ entry.location|default:"—" }}</td>
                 <td>
                     {% if entry.can_issue %}
@@ -261,5 +366,101 @@ document.getElementById('printFilteredBtn').addEventListener('click', function()
     window.open(url, '_blank');
 });
 </script>
+
+
+<script>
+function bulkIssue() {
+    var activeTab = document.querySelector('.nav-link.active').id;
+    var tab = activeTab === 'intermediate-tab' ? 'intermediate' : 'main';
+    var prefix = tab === 'main' ? 'main-' : 'inter-';
+    var items = [];
+    
+    document.querySelectorAll('.' + prefix + 'check-item:checked').forEach(function(cb) {
+        var row = cb.closest('tr');
+        var qtyInput = row.querySelector('.' + prefix + 'qty');
+        var qty = qtyInput ? parseInt(qtyInput.value) || 0 : 0;
+        if (qty > 0) {
+            items.push({
+                instance_id: cb.value,
+                quantity: qty
+            });
+        }
+    });
+    
+    if (items.length === 0) {
+        alert('Выберите хотя бы одну позицию и укажите количество больше 0.');
+        return;
+    }
+    
+    document.getElementById('bulkItems').value = JSON.stringify(items);
+    document.getElementById('bulkTab').value = tab;
+    
+    // Автозаполнение основания из сборок выбранных позиций
+    var assemblies = [];
+    document.querySelectorAll('.' + prefix + 'check-item:checked').forEach(function(cb) {
+        var row = cb.closest('tr');
+        // Ищем ячейку с главной сборкой (четвёртая или пятая, зависит от структуры)
+        var cells = row.querySelectorAll('td');
+        if (cells.length >= 5) {
+            var assembly = cells[3]?.textContent?.trim(); // Сборка
+            var subAssembly = cells[4]?.textContent?.trim(); // Подсборка
+            if (subAssembly && subAssembly !== '—' && subAssembly !== '') {
+                assemblies.push(subAssembly);
+            } else if (assembly && assembly !== '—' && assembly !== '') {
+                assemblies.push(assembly);
+            }
+        }
+    });
+    if (assemblies.length > 0) {
+        document.getElementById('bulkBasis').value = [...new Set(assemblies)].join(', ');
+    }
+    
+    var modal = new bootstrap.Modal(document.getElementById('bulkIssueModal'));
+    modal.show();
+}
+</script>
+
+<div class="modal fade" id="bulkIssueModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'warehouse_bulk_issue' %}">
+                {% csrf_token %}
+                <input type="hidden" name="items" id="bulkItems">
+                <input type="hidden" name="tab" id="bulkTab">
+                <div class="modal-header">
+                    <h5 class="modal-title">Массовая выдача</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Получатель</label>
+                        <select name="recipient" class="form-select" required>
+                            <option value="">Выберите...</option>
+                            {% for emp in employee_list %}
+                                <option value="{{ emp.last_name }} {{ emp.first_name }}">{{ emp.last_name }} {{ emp.first_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Основание</label>
+                        <input type="text" name="basis" id="bulkBasis" class="form-control" required placeholder="Например: для сборки...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Примечание</label>
+                        <textarea name="notes" class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Выдал</label>
+                        <input type="text" class="form-control" value="{{ request.user.employee.last_name }} {{ request.user.employee.first_name }}" disabled>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Выдать и сформировать накладную</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 {% endblock %}

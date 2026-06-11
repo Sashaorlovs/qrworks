@@ -941,6 +941,181 @@ def order_material_report(request, order_id):
     return response
 
 
+
+@login_required
+def warehouse_bulk_issue(request):
+    """Массовая выдача со склада с формированием накладной"""
+    if request.method != 'POST':
+        return redirect('warehouse')
+    
+    import json
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Border, Side, PatternFill, Alignment
+    from io import BytesIO
+    
+    items_json = request.POST.get('items', '[]')
+    recipient = request.POST.get('recipient', '').strip()
+    basis = request.POST.get('basis', '').strip()
+    notes = request.POST.get('notes', '').strip()
+    tab = request.POST.get('tab', 'main')
+    
+    if not recipient:
+        messages.error(request, 'Укажите получателя.')
+        return redirect('warehouse')
+    
+    movement_type = 'out_main' if tab == 'main' else 'out_intermediate'
+    
+    try:
+        items = json.loads(items_json)
+    except json.JSONDecodeError:
+        messages.error(request, 'Некорректные данные.')
+        return redirect('warehouse')
+    
+    issued_items = []
+    errors = []
+    assemblies = set()
+    
+    for item in items:
+        instance_id = item.get('instance_id')
+        quantity = item.get('quantity', 0)
+        
+        try:
+            quantity = int(quantity)
+        except (ValueError, TypeError):
+            quantity = 0
+        
+        if quantity <= 0:
+            continue
+        
+        inst = ItemInstance.objects.filter(pk=instance_id).first()
+        if not inst:
+            errors.append(f'Экземпляр {instance_id} не найден')
+            continue
+        
+        # Проверяем остаток
+        if tab == 'main':
+            total_in = inst.warehouse_records.filter(movement_type='in_main').aggregate(s=models.Sum('quantity'))['s'] or 0
+            total_out = inst.warehouse_records.filter(movement_type='out_main').aggregate(s=models.Sum('quantity'))['s'] or 0
+            balance = total_in - total_out
+        else:
+            total_in = inst.warehouse_records.filter(movement_type='in_intermediate').aggregate(s=models.Sum('quantity'))['s'] or 0
+            total_out = inst.warehouse_records.filter(movement_type='out_intermediate').aggregate(s=models.Sum('quantity'))['s'] or 0
+            balance = total_in - total_out
+        
+        if quantity > balance:
+            errors.append(f'Недостаточно остатка для {inst.item.item_number} (остаток: {balance})')
+            continue
+        
+        # Создаём запись выдачи
+        WarehouseRecord.objects.create(
+            instance=inst,
+            movement_type=movement_type,
+            quantity=quantity,
+            recipient=recipient,
+            basis=basis,
+            notes=notes,
+            employee=request.user.employee if hasattr(request.user, 'employee') else None
+        )
+        
+        # Собираем информацию о сборке для накладной
+        root_name = ''
+        parent_name = ''
+        if inst.order_item:
+            current = inst.order_item
+            while current.parent:
+                current = current.parent
+            root_name = f"{current.item.item_number} – {current.item.name}"
+            if inst.order_item.parent:
+                p = inst.order_item.parent
+                parent_name = f"{p.item.item_number} – {p.item.name}"
+            assemblies.add(root_name)
+        
+        issued_items.append({
+            'designation': inst.item.item_number,
+            'name': inst.item.name,
+            'serial': inst.display_serial(),
+            'assembly': root_name,
+            'subassembly': parent_name,
+            'quantity': quantity
+        })
+    
+    if errors:
+        for err in errors:
+            messages.warning(request, err)
+    
+    if not issued_items:
+        messages.error(request, 'Нет позиций для выдачи.')
+        return redirect('warehouse')
+    
+    # Если основание не указано, подставляем сборки
+    if not basis and assemblies:
+        basis = ', '.join(sorted(assemblies))
+    
+    # Формируем Excel-накладную
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Накладная на выдачу'
+    
+    ws.merge_cells('A1:F1')
+    ws['A1'] = f'Накладная на выдачу со склада ({ "основной" if tab == "main" else "межоперационный" })'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+    
+    # Информация о выдаче
+    ws['A3'] = f'Получатель: {recipient}'
+    ws['A4'] = f'Основание: {basis}'
+    ws['A5'] = f'Примечание: {notes}'
+    
+    # Кто выдал
+    issued_by = request.user.get_full_name() or request.user.username
+    ws['A6'] = f'Выдал: {issued_by}'
+    # Дата и время с учётом МСК (+3)
+    msk_time = (timezone.now() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M")
+    ws['A7'] = f'Дата: {msk_time}'
+    
+    # Шапка таблицы
+    headers = ['Обозначение', 'Наименование', 'Партия', 'Главная сборка', 'Подсборка', 'Количество']
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='00557A', end_color='00557A', fill_type='solid')
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=9, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = thin_border
+    
+    for i, item in enumerate(issued_items, 10):
+        ws.cell(row=i, column=1, value=item['designation']).border = thin_border
+        ws.cell(row=i, column=2, value=item['name']).border = thin_border
+        ws.cell(row=i, column=3, value=item['serial']).border = thin_border
+        ws.cell(row=i, column=4, value=item['assembly']).border = thin_border
+        ws.cell(row=i, column=5, value=item['subassembly'] or '—').border = thin_border
+        ws.cell(row=i, column=6, value=item['quantity']).border = thin_border
+    
+    # Автоширина
+    for col_idx in range(1, 7):
+        max_length = 0
+        for row in ws.iter_rows(min_col=col_idx, max_col=col_idx, values_only=True):
+            for value in row:
+                if value and len(str(value)) > max_length:
+                    max_length = len(str(value))
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = (max_length + 2) * 1.2
+    
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    response = HttpResponse(output.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="Накладная_{recipient}_{timezone.now().strftime("%Y%m%d")}.xlsx"'
+    
+    messages.success(request, f'Выдано {len(issued_items)} позиций. Накладная сформирована.')
+    return response
+
+
 @login_required
 def warehouse_dashboard(request):
     instances = ItemInstance.objects.select_related('item').all()
