@@ -142,7 +142,7 @@ new Chart(ctx_warehouse, {
             <tbody>
                 {% for item in ready_for_assembly %}
                 <tr>
-                    <td><a href="{% url 'instance_detail' item_number=item.item_number serial=item.serial %}">{{ item.item_number }}</a></td>
+                    <td>{{ item.item_number }}</td>
                     <td>{{ item.name }}</td>
                     <td>{{ item.serial }}</td>
                     <td>{{ item.order_number }}</td>
