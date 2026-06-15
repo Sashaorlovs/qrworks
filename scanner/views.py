@@ -942,6 +942,9 @@ def order_material_report(request, order_id):
 
 
 
+
+
+
 @login_required
 def warehouse_bulk_issue(request):
     """Массовая выдача со склада с формированием накладной"""
@@ -978,12 +981,10 @@ def warehouse_bulk_issue(request):
     for item in items:
         instance_id = item.get('instance_id')
         quantity = item.get('quantity', 0)
-        
         try:
             quantity = int(quantity)
         except (ValueError, TypeError):
             quantity = 0
-        
         if quantity <= 0:
             continue
         
@@ -992,7 +993,6 @@ def warehouse_bulk_issue(request):
             errors.append(f'Экземпляр {instance_id} не найден')
             continue
         
-        # Проверяем остаток
         if tab == 'main':
             total_in = inst.warehouse_records.filter(movement_type='in_main').aggregate(s=models.Sum('quantity'))['s'] or 0
             total_out = inst.warehouse_records.filter(movement_type='out_main').aggregate(s=models.Sum('quantity'))['s'] or 0
@@ -1006,7 +1006,6 @@ def warehouse_bulk_issue(request):
             errors.append(f'Недостаточно остатка для {inst.item.item_number} (остаток: {balance})')
             continue
         
-        # Создаём запись выдачи
         WarehouseRecord.objects.create(
             instance=inst,
             movement_type=movement_type,
@@ -1017,7 +1016,6 @@ def warehouse_bulk_issue(request):
             employee=request.user.employee if hasattr(request.user, 'employee') else None
         )
         
-        # Собираем информацию о сборке для накладной
         root_name = ''
         parent_name = ''
         if inst.order_item:
@@ -1033,7 +1031,6 @@ def warehouse_bulk_issue(request):
         issued_items.append({
             'designation': inst.item.item_number,
             'name': inst.item.name,
-            'serial': inst.display_serial(),
             'assembly': root_name,
             'subassembly': parent_name,
             'quantity': quantity
@@ -1042,68 +1039,104 @@ def warehouse_bulk_issue(request):
     if errors:
         for err in errors:
             messages.warning(request, err)
-    
     if not issued_items:
         messages.error(request, 'Нет позиций для выдачи.')
         return redirect('warehouse')
     
-    # Если основание не указано, подставляем сборки
     if not basis and assemblies:
         basis = ', '.join(sorted(assemblies))
     
-    # Формируем Excel-накладную
+    # --- Формирование Excel ---
     wb = Workbook()
     ws = wb.active
     ws.title = 'Накладная на выдачу'
     
-    ws.merge_cells('A1:F1')
+    # Заголовок
+    ws.merge_cells('A1:E1')
     ws['A1'] = f'Накладная на выдачу со склада ({ "основной" if tab == "main" else "межоперационный" })'
     ws['A1'].font = Font(bold=True, size=14)
-    ws['A1'].alignment = Alignment(horizontal='center')
+    ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+    ws.row_dimensions[1].height = 30
     
-    # Информация о выдаче
-    ws['A3'] = f'Получатель: {recipient}'
-    ws['A4'] = f'Основание: {basis}'
-    ws['A5'] = f'Примечание: {notes}'
+    # Единый шрифт 10pt для всех данных
+    info_font = Font(size=10)
+    info_align = Alignment(vertical='center', wrap_text=True)
     
-    # Кто выдал
+    # Информационный блок
+    ws['A3'] = 'Получатель:'
+    ws['A3'].font = info_font; ws['A3'].alignment = info_align
+    ws['B3'] = recipient
+    ws['B3'].font = info_font; ws['B3'].alignment = info_align
+    ws.row_dimensions[3].height = 35
+    
+    ws['A4'] = 'Основание:'
+    ws['A4'].font = info_font; ws['A4'].alignment = info_align
+    ws['B4'] = basis
+    ws['B4'].font = info_font; ws['B4'].alignment = info_align
+    ws.row_dimensions[4].height = 35
+    
     issued_by = request.user.get_full_name() or request.user.username
-    ws['A6'] = f'Выдал: {issued_by}'
-    # Дата и время с учётом МСК (+3)
+    ws['A6'] = 'Выдал:'
+    ws['A6'].font = info_font; ws['A6'].alignment = info_align
+    ws['B6'] = issued_by
+    ws['B6'].font = info_font; ws['B6'].alignment = info_align
+    ws.row_dimensions[6].height = 35
+    
     msk_time = (timezone.now() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M")
-    ws['A7'] = f'Дата: {msk_time}'
+    ws['A7'] = 'Дата:'
+    ws['A7'].font = info_font; ws['A7'].alignment = info_align
+    ws['B7'] = msk_time
+    ws['B7'].font = info_font; ws['B7'].alignment = info_align
+    ws.row_dimensions[7].height = 35
     
     # Шапка таблицы
-    headers = ['Обозначение', 'Наименование', 'Партия', 'Главная сборка', 'Подсборка', 'Количество']
-    header_font = Font(bold=True, color='FFFFFF')
+    headers = ['Обозначение', 'Наименование', 'Главная сборка', 'Подсборка', 'Количество']
+    header_font = Font(bold=True, color='FFFFFF', size=10)
     header_fill = PatternFill(start_color='00557A', end_color='00557A', fill_type='solid')
     thin_border = Border(
         left=Side(style='thin'), right=Side(style='thin'),
         top=Side(style='thin'), bottom=Side(style='thin')
     )
+    data_align = Alignment(vertical='top', wrap_text=True)
     
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=9, column=col, value=header)
         cell.font = header_font
         cell.fill = header_fill
         cell.border = thin_border
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    ws.row_dimensions[9].height = 22
     
+    # Строки данных
     for i, item in enumerate(issued_items, 10):
         ws.cell(row=i, column=1, value=item['designation']).border = thin_border
         ws.cell(row=i, column=2, value=item['name']).border = thin_border
-        ws.cell(row=i, column=3, value=item['serial']).border = thin_border
-        ws.cell(row=i, column=4, value=item['assembly']).border = thin_border
-        ws.cell(row=i, column=5, value=item['subassembly'] or '—').border = thin_border
-        ws.cell(row=i, column=6, value=item['quantity']).border = thin_border
+        ws.cell(row=i, column=3, value=item['assembly']).border = thin_border
+        ws.cell(row=i, column=4, value=item['subassembly'] or '—').border = thin_border
+        ws.cell(row=i, column=5, value=item['quantity']).border = thin_border
+        for c in range(1, 6):
+            ws.cell(row=i, column=c).alignment = data_align
+            ws.cell(row=i, column=c).font = Font(size=10)
+        ws.row_dimensions[i].height = 35  # высота побольше для читаемости
     
-    # Автоширина
-    for col_idx in range(1, 7):
-        max_length = 0
-        for row in ws.iter_rows(min_col=col_idx, max_col=col_idx, values_only=True):
-            for value in row:
-                if value and len(str(value)) > max_length:
-                    max_length = len(str(value))
-        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = (max_length + 2) * 1.2
+    # Ширина столбцов
+    col_widths = {'A': 22, 'B': 32, 'C': 32, 'D': 26, 'E': 12}
+    for letter, width in col_widths.items():
+        ws.column_dimensions[letter].width = width
+    
+    # Параметры страницы
+    ws.page_setup.orientation = 'landscape'
+    ws.page_setup.paperSize = 9
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr = openpyxl.worksheet.properties.PageSetupProperties(fitToPage=True)
+    
+    # Подписи
+    row_num = 10 + len(issued_items) + 1
+    ws.cell(row=row_num, column=1, value='Выдал: _________________________').font = Font(size=10)
+    ws.cell(row=row_num + 1, column=1, value='(подпись, расшифровка)').font = Font(size=9, italic=True)
+    ws.cell(row=row_num, column=3, value='Получил: _________________________').font = Font(size=10)
+    ws.cell(row=row_num + 1, column=3, value='(подпись, расшифровка)').font = Font(size=9, italic=True)
     
     output = BytesIO()
     wb.save(output)
@@ -1111,7 +1144,6 @@ def warehouse_bulk_issue(request):
     
     response = HttpResponse(output.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     response['Content-Disposition'] = f'attachment; filename="Накладная_{recipient}_{timezone.now().strftime("%Y%m%d")}.xlsx"'
-    
     messages.success(request, f'Выдано {len(issued_items)} позиций. Накладная сформирована.')
     return response
 
