@@ -23,8 +23,8 @@
 {% if instance.item.material %}
 <div class="mb-2"><strong>Материал:</strong> {{ instance.item.material.name }}{% if instance.item.profile %} ({{ instance.item.profile }}){% endif %}</div>
 {% endif %}
-{% if instance.item.blank_size %}
-<div class="mb-2"><strong>Размер заготовки:</strong> {{ instance.item.blank_size }}{% if instance.item.blanks_per_item %} (Кол-во заготовок: {{ instance.item.blanks_per_item }}){% endif %}</div>
+{% if instance.get_blank_size %}
+<div class="mb-2"><strong>Размер заготовки:</strong> {{ instance.get_blank_size }}{% if instance.get_blanks_per_item %} (Кол-во заготовок: {{ instance.get_blanks_per_item }}){% endif %}</div>
 {% endif %}
 
 <div class="mb-3">

@@ -364,13 +364,13 @@ def route_card_print(request, route_card_id):
 
     # ---------- Размер заготовки ----------
     ws.merge_cells(f'B{7+offset}:D{7+offset}')
-    safe_write(ws, 7+offset, 2, (instance.item.blank_size if instance.item.blank_size else 'не указан'), center_wrap)
+    safe_write(ws, 7+offset, 2, (instance.get_blank_size() if instance.get_blank_size() else 'не указан'), center_wrap)
     for c in range(1, 5):
         apply_border(ws, 7+offset, c, thin_border)
 
     # ---------- Кол-во заготовок ----------
     ws.merge_cells(f'B{8+offset}:D{8+offset}')
-    blanks_qty = instance.item.blanks_per_item
+    blanks_qty = instance.get_blanks_per_item()
     if not blanks_qty and instance.item.item_type == 'Сборочная единица':
         blanks_qty = instance.total_planned_quantity()
     safe_write(ws, 8+offset, 2, blanks_qty if blanks_qty else 'не указан', center_wrap)

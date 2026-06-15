@@ -104,6 +104,7 @@ class OrderItem(models.Model):
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='children', verbose_name='Родительская позиция')
 
     
+
     def total_planned_quantity(self):
         """Общий план производства: план на сборку + настроечные"""
 
@@ -121,6 +122,8 @@ class ItemInstance(models.Model):
     item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name='instances', verbose_name='Изделие')
     serial = models.CharField(max_length=200, unique=True, verbose_name='Серийный номер')
     quantity = models.PositiveIntegerField(default=1, verbose_name='План на сборку')
+    blank_size = models.CharField(max_length=200, blank=True, default='', verbose_name='Размер заготовки (экз.)')
+    blanks_per_item = models.PositiveIntegerField(null=True, blank=True, verbose_name='Кол-во заготовок (экз.)')
     setup_quantity = models.PositiveIntegerField(default=0, verbose_name='Настроечные')
     order_item = models.ForeignKey(OrderItem, null=True, blank=True, on_delete=models.SET_NULL, related_name='instances', verbose_name='Позиция заказа')
     order = models.ForeignKey(Order, null=True, blank=True, on_delete=models.SET_NULL, related_name='instances', verbose_name='Договор')
@@ -128,6 +131,15 @@ class ItemInstance(models.Model):
     due_date = models.DateField(null=True, blank=True, verbose_name='Дата отгрузки')
 
     
+
+    def get_blank_size(self):
+        return self.blank_size or (self.item.blank_size if self.item else '')
+
+    def get_blanks_per_item(self):
+        if self.blanks_per_item is not None:
+            return self.blanks_per_item
+        return self.item.blanks_per_item if self.item else 1
+
     def total_planned_quantity(self):
         """Общий план производства: план на сборку + настроечные"""
         return self.quantity + self.setup_quantity
