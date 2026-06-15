@@ -20,6 +20,76 @@ new Chart(ctx_warehouse, {
 });
 </script>
 
+
+<!-- Простои -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-danger text-white">⏳ В работе > 24 часов</div>
+            <div class="card-body p-0"><div style="max-height: 300px; overflow-y: auto;">
+                <table class="table table-bordered table-sm mb-0">
+                    <thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;"><tr><th>Деталь</th><th>Операция</th><th>Начата</th><th>Исполнитель</th></tr></thead>
+                    <tbody>
+                        {% for op in stuck_in_progress %}
+                        <tr>
+                            <td><a href="{% url 'instance_detail' item_number=op.route_card.instance.item.item_number serial=op.route_card.instance.serial %}">{{ op.route_card.instance.item.item_number }}</a></td>
+                            <td>{{ op.operation_type.name }}</td>
+                            <td>{{ op.started_at|date:"d.m.Y H:i" }}</td>
+                            <td>{{ op.worker|default:"—" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4">Зависших операций нет</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div></div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-secondary text-white">⏸️ Ожидают > 48 часов</div>
+            <div class="card-body p-0"><div style="max-height: 300px; overflow-y: auto;">
+                <table class="table table-bordered table-sm mb-0">
+                    <thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;"><tr><th>Деталь</th><th>Операция</th><th>Создана</th></tr></thead>
+                    <tbody>
+                        {% for op in stuck_pending %}
+                        <tr>
+                            <td><a href="{% url 'instance_detail' item_number=op.route_card.instance.item.item_number serial=op.route_card.instance.serial %}">{{ op.route_card.instance.item.item_number }}</a></td>
+                            <td>{{ op.operation_type.name }}</td>
+                            <td>{{ op.route_card.instance.created_at|date:"d.m.Y" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3">Долгих ожиданий нет</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div></div>
+        </div>
+    </div>
+</div>
+
+<!-- Готово к сборке -->
+<div class="card mb-4">
+    <div class="card-header bg-success text-white">🧩 Готово к сборке</div>
+    <div class="card-body p-0"><div style="max-height: 300px; overflow-y: auto;">
+        <table class="table table-bordered table-sm mb-0">
+            <thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;"><tr><th>Обозначение</th><th>Наименование</th><th>Партия</th><th>Заказ</th></tr></thead>
+            <tbody>
+                {% for item in ready_for_assembly %}
+                <tr>
+                    <td><a href="{% url 'instance_detail' item_number=item.item_number serial=item.serial %}">{{ item.item_number }}</a></td>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.serial }}</td>
+                    <td>{{ item.order_number }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4">Нет сборочных единиц, готовых к сборке</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
 {% endblock %}
 {% block content %}
 <h1>Статистика производства</h1>
@@ -105,5 +175,75 @@ new Chart(ctx_warehouse, {
     }
 });
 </script>
+
+
+<!-- Простои -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-danger text-white">⏳ В работе > 24 часов</div>
+            <div class="card-body p-0"><div style="max-height: 300px; overflow-y: auto;">
+                <table class="table table-bordered table-sm mb-0">
+                    <thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;"><tr><th>Деталь</th><th>Операция</th><th>Начата</th><th>Исполнитель</th></tr></thead>
+                    <tbody>
+                        {% for op in stuck_in_progress %}
+                        <tr>
+                            <td><a href="{% url 'instance_detail' item_number=op.route_card.instance.item.item_number serial=op.route_card.instance.serial %}">{{ op.route_card.instance.item.item_number }}</a></td>
+                            <td>{{ op.operation_type.name }}</td>
+                            <td>{{ op.started_at|date:"d.m.Y H:i" }}</td>
+                            <td>{{ op.worker|default:"—" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4">Зависших операций нет</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div></div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-secondary text-white">⏸️ Ожидают > 48 часов</div>
+            <div class="card-body p-0"><div style="max-height: 300px; overflow-y: auto;">
+                <table class="table table-bordered table-sm mb-0">
+                    <thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;"><tr><th>Деталь</th><th>Операция</th><th>Создана</th></tr></thead>
+                    <tbody>
+                        {% for op in stuck_pending %}
+                        <tr>
+                            <td><a href="{% url 'instance_detail' item_number=op.route_card.instance.item.item_number serial=op.route_card.instance.serial %}">{{ op.route_card.instance.item.item_number }}</a></td>
+                            <td>{{ op.operation_type.name }}</td>
+                            <td>{{ op.route_card.instance.created_at|date:"d.m.Y" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3">Долгих ожиданий нет</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div></div>
+        </div>
+    </div>
+</div>
+
+<!-- Готово к сборке -->
+<div class="card mb-4">
+    <div class="card-header bg-success text-white">🧩 Готово к сборке</div>
+    <div class="card-body p-0"><div style="max-height: 300px; overflow-y: auto;">
+        <table class="table table-bordered table-sm mb-0">
+            <thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;"><tr><th>Обозначение</th><th>Наименование</th><th>Партия</th><th>Заказ</th></tr></thead>
+            <tbody>
+                {% for item in ready_for_assembly %}
+                <tr>
+                    <td><a href="{% url 'instance_detail' item_number=item.item_number serial=item.serial %}">{{ item.item_number }}</a></td>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.serial }}</td>
+                    <td>{{ item.order_number }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4">Нет сборочных единиц, готовых к сборке</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
 
 {% endblock %}

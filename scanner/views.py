@@ -1388,6 +1388,57 @@ def statistics(request):
         'daily_ops': list(daily_ops),
         'op_types_json': [{'name': s['name'], 'count': s['count']} for s in op_stats],
     }
+
+    # --- Простои ---
+    # Зависшие операции: одна запись на деталь (самая ранняя зависшая)
+    stuck_in_progress_raw = RouteOperation.objects.filter(
+        status='in_progress',
+        started_at__lt=timezone.now() - timedelta(hours=24)
+    ).select_related('route_card__instance__item', 'worker').order_by('started_at')
+    
+    # Группируем по экземпляру, оставляем самую раннюю операцию
+    stuck_in_progress = []
+    seen_instances = set()
+    for op in stuck_in_progress_raw:
+        inst_id = op.route_card.instance_id
+        if inst_id not in seen_instances:
+            seen_instances.add(inst_id)
+            stuck_in_progress.append(op)
+    
+    # Долгое ожидание: одна запись на деталь
+    stuck_pending_raw = RouteOperation.objects.filter(
+        status='pending',
+        route_card__instance__created_at__lt=timezone.now() - timedelta(hours=48)
+    ).exclude(
+        operation_type__name='Комплектование'
+    ).select_related('route_card__instance__item').order_by('route_card__instance__created_at')
+    
+    stuck_pending = []
+    seen_instances_p = set()
+    for op in stuck_pending_raw:
+        inst_id = op.route_card.instance_id
+        if inst_id not in seen_instances_p:
+            seen_instances_p.add(inst_id)
+            stuck_pending.append(op)
+    
+    # --- Готово к сборке ---
+    ready_for_assembly = []
+    for inst in ItemInstance.objects.filter(
+        item__item_type='Сборочная единица',
+        route_card__isnull=False
+    ).select_related('item', 'order', 'route_card'):
+        if inst.all_components_ready() and inst.assembly_status() == 'Готово к комплектованию':
+            ready_for_assembly.append({
+                'item_number': inst.item.item_number,
+                'name': inst.item.name,
+                'serial': inst.display_serial(),
+                'order_number': inst.order.order_number if inst.order else '',
+            })
+    
+    context['stuck_in_progress'] = stuck_in_progress
+    context['stuck_pending'] = stuck_pending
+    context['ready_for_assembly'] = ready_for_assembly
+
     return render(request, 'scanner/statistics.html', context)
 
 
