@@ -1,0 +1,67 @@
+
+{% extends 'scanner/base.html' %}
+{% block title %}Журнал действий{% endblock %}
+{% block content %}
+<h1>Журнал действий пользователей</h1>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <select name="action" class="form-select form-select-sm">
+            <option value="">Все действия</option>
+            {% for value, label in action_choices %}
+            <option value="{{ value }}" {% if action_filter == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <input type="text" name="user" class="form-control form-control-sm" placeholder="Пользователь" value="{{ user_filter }}">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-primary">Фильтр</button>
+        <a href="{% url 'activity_log' %}" class="btn btn-sm btn-outline-secondary">Сбросить</a>
+    </div>
+</form>
+
+<div class="table-responsive">
+    <table class="table table-bordered table-sm table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Дата/время</th>
+                <th>Пользователь</th>
+                <th>Действие</th>
+                <th>Описание</th>
+                <th>IP</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in logs %}
+            <tr>
+                <td>{{ log.timestamp|date:"d.m.Y H:i:s" }}</td>
+                <td>{{ log.user.username|default:"—" }}</td>
+                <td>{{ log.get_action_display }}</td>
+                <td>{{ log.description|default:"—" }}</td>
+                <td>{{ log.ip_address|default:"—" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5">Нет записей</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if logs.paginator.num_pages > 1 %}
+<nav>
+    <ul class="pagination pagination-sm justify-content-center">
+        {% if logs.has_previous %}
+        <li class="page-item"><a class="page-link" href="?page={{ logs.previous_page_number }}&action={{ action_filter }}&user={{ user_filter }}">←</a></li>
+        {% endif %}
+        {% for num in logs.paginator.page_range %}
+        <li class="page-item {% if num == logs.number %}active{% endif %}"><a class="page-link" href="?page={{ num }}&action={{ action_filter }}&user={{ user_filter }}">{{ num }}</a></li>
+        {% endfor %}
+        {% if logs.has_next %}
+        <li class="page-item"><a class="page-link" href="?page={{ logs.next_page_number }}&action={{ action_filter }}&user={{ user_filter }}">→</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

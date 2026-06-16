@@ -1376,10 +1376,10 @@ def statistics(request):
     ops = RouteOperation.objects.select_related('operation_type', 'worker')
     wh = WarehouseRecord.objects.select_related('instance__item', 'employee')
 
-    if start_date:
+    if start_date and start_date != 'None':
         ops = ops.filter(completed_at__gte=start_date)
         wh = wh.filter(date__gte=start_date)
-    if end_date:
+    if end_date and end_date != 'None':
         # end_date включительно до конца дня
         end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
         ops = ops.filter(completed_at__lt=end_dt)
@@ -1387,23 +1387,28 @@ def statistics(request):
 
     # Суммарные показатели
     total_ops = ops.filter(status='completed').count()
-    # Годные = сумма плановых количеств экземпляров, у которых все операции завершены
-    # Фильтр по дате завершения последней операции применяется, если заданы параметры
-    completed_cards = RouteCard.objects.annotate(
-        total_ops=Count('operations'),
-        completed_ops=Count('operations', filter=Q(operations__status='completed')),
-        last_completed=Max('operations__completed_at')
-    ).filter(
-        total_ops=F('completed_ops')
-    )
-    if start_date:
+    # Определяем start_dt и end_dt для складских расчётов
+    if start_date and start_date != 'None':
         start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-        completed_cards = completed_cards.filter(last_completed__gte=start_dt)
-    if end_date:
-        # end_date включительно до конца дня
+    else:
+        start_dt = None
+    if end_date and end_date != 'None':
         end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
-        completed_cards = completed_cards.filter(last_completed__lt=end_dt)
-    total_good = completed_cards.aggregate(total=Sum('instance__quantity'))['total'] or 0
+    else:
+        end_dt = None
+
+    # Годные = сумма good_qty по всем завершённым операциям (аналогично браку)
+    total_good = ops.filter(status='completed').aggregate(s=Sum('good_qty'))['s'] or 0
+    
+    # Деталей в работе (партии с незавершёнными операциями)
+    instances_in_progress = ItemInstance.objects.filter(
+        route_card__operations__status__in=['in_progress', 'pending']
+    ).distinct().count()
+
+    # Деталей в работе (партии с незавершёнными операциями)
+    instances_in_progress = ItemInstance.objects.filter(
+        route_card__operations__status__in=['in_progress', 'pending']
+    ).distinct().count()
 
     # Брак = сумма бракованных деталей по всем завершённым операциям в периоде
     total_bad = ops.filter(status='completed').aggregate(s=Sum('bad_qty'))['s'] or 0
@@ -1424,19 +1429,32 @@ def statistics(request):
                 'bad': bad,
             })
 
-    # Складские движения: уникальные экземпляры, принятые на склад
-    # Основной склад: сумма quantity экземпляров, имеющих хотя бы один приход в периоде
-    main_instance_ids = wh.filter(movement_type='in_main').values_list('instance_id', flat=True).distinct()
-    completed_main_ids = ItemInstance.objects.filter(id__in=main_instance_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
-    in_main = ItemInstance.objects.filter(id__in=completed_main_ids).aggregate(s=Sum('quantity'))['s'] or 0
-    # Межоперационный: аналогично
-    inter_instance_ids = wh.filter(movement_type='in_intermediate').values_list('instance_id', flat=True).distinct()
-    completed_inter_ids = ItemInstance.objects.filter(id__in=inter_instance_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
-    in_inter = ItemInstance.objects.filter(id__in=completed_inter_ids).aggregate(s=Sum('quantity'))['s'] or 0
-    # Выдача со склада (количество уникальных выданных экземпляров)
-    out_main_ids = wh.filter(movement_type='out_main').values_list('instance_id', flat=True).distinct()
-    completed_out_ids = ItemInstance.objects.filter(id__in=out_main_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
-    out_main = ItemInstance.objects.filter(id__in=completed_out_ids).aggregate(s=Sum('quantity'))['s'] or 0
+    # Складские показатели: фактический выпуск годных по завершённым экземплярам, прошедшим через склад
+    in_main = 0
+    in_inter = 0
+    out_main = 0
+    out_inter = 0
+    for inst in ItemInstance.objects.prefetch_related('warehouse_records', 'route_card__operations').all():
+        # Проверяем, завершён ли маршрут
+        if not hasattr(inst, 'route_card') or not inst.route_card:
+            continue
+        ops = inst.route_card.operations.all()
+        if not ops.exists() or any(op.status != 'completed' for op in ops):
+            continue
+        
+        good = inst.good_produced()  # фактический выпуск годных
+        
+        # Проверяем, был ли приход/расход в выбранном периоде
+        wh_records = inst.warehouse_records.filter(date__gte=start_dt, date__lt=end_dt) if start_date or end_date else inst.warehouse_records.all()
+        
+        if wh_records.filter(movement_type='in_main').exists():
+            in_main += good
+        if wh_records.filter(movement_type='in_intermediate').exists():
+            in_inter += good
+        if wh_records.filter(movement_type='out_main').exists():
+            out_main += good
+        if wh_records.filter(movement_type='out_intermediate').exists():
+            out_inter += good
 
     # Для графика выпуска по дням (последние 30 дней)
     from_date = datetime.now() - timedelta(days=30)
@@ -1450,6 +1468,7 @@ def statistics(request):
         'start_date': start_date,
         'end_date': end_date,
         'total_ops': total_ops,
+        'instances_in_progress': instances_in_progress,
         'total_good': total_good,
         'total_bad': total_bad,
         'op_stats': op_stats,
@@ -1562,7 +1581,7 @@ def operations_planning(request):
     for inst in instances:
         if not inst.route_card:
             continue
-        ops = inst.route_card.operations.select_related('operation_type', 'worker').order_by('order')
+        ops = inst.route_card.operations.select_related('operation_type', 'worker__employee').order_by('order')
         if not ops.exists():
             continue
         
@@ -1614,6 +1633,63 @@ def operations_planning(request):
     }
     
     return render(request, 'scanner/operations_planning.html', context)
+
+
+
+@login_required
+def statistics_bad_operations(request):
+    """Список операций с браком за период"""
+    from django.core.paginator import Paginator
+    from datetime import datetime, timedelta
+
+    start_date = request.GET.get('start', '')
+    end_date = request.GET.get('end', '')
+    order_id = request.GET.get('order', '')
+    type_name = request.GET.get('type', '')
+
+    ops = RouteOperation.objects.filter(status='completed', bad_qty__gt=0)\
+        .select_related('operation_type', 'worker__employee', 'route_card__instance__item', 'route_card__instance__order')
+
+    if start_date and start_date != 'None':
+        ops = ops.filter(completed_at__gte=start_date)
+    if end_date and end_date != 'None':
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+        ops = ops.filter(completed_at__lt=end_dt)
+    if order_id:
+        ops = ops.filter(route_card__instance__order_id=order_id)
+    if type_name:
+        ops = ops.filter(operation_type__name=type_name)
+
+    ops = ops.order_by('-completed_at')
+
+    # Убираем дубли (один экземпляр – одна запись с суммой брака?)
+    # Группируем по операции и экземпляру
+    seen = set()
+    unique_ops = []
+    for op in ops:
+        key = (op.route_card.instance_id, op.operation_type_id)
+        if key not in seen:
+            seen.add(key)
+            unique_ops.append(op)
+
+    paginator = Paginator(unique_ops, 50)
+    page = request.GET.get('page', 1)
+    ops_page = paginator.get_page(page)
+
+    orders = Order.objects.filter(status__in=['draft', 'in_progress', 'paused', 'completed', 'shipped']).order_by('order_number')
+    op_types = OperationType.objects.all().order_by('name')
+
+    context = {
+        'ops': ops_page,
+        'start_date': start_date,
+        'end_date': end_date,
+        'selected_order': order_id,
+        'selected_type': type_name,
+        'orders': orders,
+        'op_types': op_types,
+        'total_bad': sum(op.bad_qty for op in unique_ops),
+    }
+    return render(request, 'scanner/statistics_bad_operations.html', context)
 
 
 @login_required
@@ -1779,6 +1855,17 @@ def statistics_export(request):
     out_main_ids = wh.filter(movement_type='out_main').values_list('instance_id', flat=True).distinct()
     completed_out_ids = ItemInstance.objects.filter(id__in=out_main_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
     out_main = ItemInstance.objects.filter(id__in=completed_out_ids).aggregate(s=Sum('quantity'))['s'] or 0
+
+    # Выдача с межоперационного склада (уникальные завершённые экземпляры)
+    out_inter_ids = wh.filter(movement_type='out_intermediate').values_list('instance_id', flat=True).distinct()
+    completed_out_inter_ids = ItemInstance.objects.filter(
+        id__in=out_inter_ids,
+        route_card__operations__status='completed'
+    ).annotate(
+        total_ops=Count('route_card__operations'),
+        completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))
+    ).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
+    out_inter = ItemInstance.objects.filter(id__in=completed_out_inter_ids).aggregate(s=Sum('quantity'))['s'] or 0
 
     # По типам операций
     op_types = OperationType.objects.all()

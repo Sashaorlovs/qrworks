@@ -1,0 +1,92 @@
+
+{% extends 'scanner/base.html' %}
+{% block title %}Операции с браком{% endblock %}
+{% block content %}
+<h1>Операции с браком</h1>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <label class="form-label">С даты:</label>
+        <input type="date" name="start" class="form-control form-control-sm" value="{{ start_date }}">
+    </div>
+    <div class="col-auto">
+        <label class="form-label">По дату:</label>
+        <input type="date" name="end" class="form-control form-control-sm" value="{{ end_date }}">
+    </div>
+    <div class="col-auto">
+        <label class="form-label">Заказ:</label>
+        <select name="order" class="form-select form-select-sm">
+            <option value="">Все</option>
+            {% for o in orders %}
+            <option value="{{ o.id }}" {% if selected_order == o.id|stringformat:"s" %}selected{% endif %}>{{ o.order_number }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label">Тип операции:</label>
+        <select name="type" class="form-select form-select-sm">
+            <option value="">Все</option>
+            {% for ot in op_types %}
+            <option value="{{ ot.name }}" {% if selected_type == ot.name %}selected{% endif %}>{{ ot.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto align-self-end">
+        <button type="submit" class="btn btn-sm btn-outline-primary">Показать</button>
+        <a href="{% url 'statistics_bad_operations' %}" class="btn btn-sm btn-outline-secondary">Сбросить</a>
+    </div>
+</form>
+
+<p><strong>Всего брака:</strong> {{ total_bad }}</p>
+
+<div class="table-responsive">
+    <table class="table table-bordered table-sm table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Дата</th>
+                <th>Заказ</th>
+                <th>Деталь</th>
+                <th>Партия</th>
+                <th>Тип операции</th>
+                <th>Брак</th>
+                <th>Исполнитель</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for op in ops %}
+            <tr>
+                <td>{{ op.completed_at|date:"d.m.Y H:i" }}</td>
+                <td>{{ op.route_card.instance.order.order_number|default:"—" }}</td>
+                <td>
+                    <a href="{% url 'instance_detail' item_number=op.route_card.instance.item.item_number serial=op.route_card.instance.serial %}">
+                        {{ op.route_card.instance.item.item_number }}
+                    </a>
+                </td>
+                <td>{{ op.route_card.instance.display_serial }}</td>
+                <td>{{ op.operation_type.name }}</td>
+                <td>{{ op.bad_qty }}</td>
+                <td>{{ op.worker.employee|default:op.worker|default:"—" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7">Нет операций с браком</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if ops.paginator.num_pages > 1 %}
+<nav>
+    <ul class="pagination pagination-sm justify-content-center">
+        {% if ops.has_previous %}
+        <li class="page-item"><a class="page-link" href="?page={{ ops.previous_page_number }}&start={{ start_date }}&end={{ end_date }}&order={{ selected_order }}&type={{ selected_type }}">←</a></li>
+        {% endif %}
+        {% for num in ops.paginator.page_range %}
+        <li class="page-item {% if num == ops.number %}active{% endif %}"><a class="page-link" href="?page={{ num }}&start={{ start_date }}&end={{ end_date }}&order={{ selected_order }}&type={{ selected_type }}">{{ num }}</a></li>
+        {% endfor %}
+        {% if ops.has_next %}
+        <li class="page-item"><a class="page-link" href="?page={{ ops.next_page_number }}&start={{ start_date }}&end={{ end_date }}&order={{ selected_order }}&type={{ selected_type }}">→</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

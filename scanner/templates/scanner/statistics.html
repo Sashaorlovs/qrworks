@@ -20,17 +20,31 @@
 </form>
 
 <div class="row mb-4">
-    <div class="col-md-3 mb-2">
-        <div class="card text-white bg-primary"><div class="card-body"><h5 class="card-title">{{ total_ops }}</h5><p class="card-text">Выполнено операций</p></div></div>
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-primary h-100"><div class="card-body text-center"><h5 class="card-title">{{ total_ops }}</h5><p class="card-text">Выполнено операций</p></div></div>
     </div>
-    <div class="col-md-3 mb-2">
-        <div class="card text-white bg-success"><div class="card-body"><h5 class="card-title">{{ total_good }}</h5><p class="card-text">Годные (завершённые)</p></div></div>
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-success h-100"><div class="card-body text-center"><h5 class="card-title">{{ total_good }}</h5><p class="card-text">Годные (по операциям)</p></div></div>
     </div>
-    <div class="col-md-3 mb-2">
-        <div class="card text-white bg-danger"><div class="card-body"><h5 class="card-title">{{ total_bad }}</h5><p class="card-text">Брак (по операциям)</p></div></div>
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-danger h-100"><div class="card-body text-center"><h5 class="card-title">{{ total_bad }}</h5><p class="card-text"><a href="{% url 'statistics_bad_operations' %}?{% if start_date and start_date != 'None' %}start={{ start_date }}&{% endif %}{% if end_date and end_date != 'None' %}end={{ end_date }}{% endif %}" class="text-white text-decoration-none">Брак (по операциям)</a></p></div></div>
     </div>
-    <div class="col-md-3 mb-2">
-        <div class="card text-white bg-info"><div class="card-body"><h5 class="card-title">{{ in_main|add:in_inter }}</h5><p class="card-text">Принято на склад (всего)</p></div></div>
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-warning h-100"><div class="card-body text-center"><h5 class="card-title">{{ instances_in_progress }}</h5><p class="card-text">Деталей в работе</p></div></div>
+    </div>
+</div>
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-info h-100"><div class="card-body text-center"><h5 class="card-title">{{ in_main }}</h5><p class="card-text">Принято годных на осн. склад</p></div></div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-secondary h-100"><div class="card-body text-center"><h5 class="card-title">{{ in_inter }}</h5><p class="card-text">Принято годных на меж.оп.</p></div></div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-success h-100"><div class="card-body text-center"><h5 class="card-title">{{ out_main }}</h5><p class="card-text">Выдано годных с осн. склада</p></div></div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-warning h-100"><div class="card-body text-center"><h5 class="card-title">{{ out_inter }}</h5><p class="card-text">Выдано годных с меж.оп.</p></div></div>
     </div>
 </div>
 
@@ -44,7 +58,7 @@
 </div>
 
 <div class="card mb-4"><div class="card-header">По типам операций</div><div class="card-body table-responsive">
-    <table class="table table-bordered"><thead><tr><th>Тип операции</th><th>Кол-во</th><th>Годных (завершённых)</th><th>Брак (по операциям)</th></tr></thead><tbody>
+    <table class="table table-bordered"><thead><tr><th>Тип операции</th><th>Кол-во</th><th>Годных (завершённых)</th><th><a href="{% url 'statistics_bad_operations' %}?{% if start_date and start_date != 'None' %}start={{ start_date }}&{% endif %}{% if end_date and end_date != 'None' %}end={{ end_date }}{% endif %}" class="text-white text-decoration-none">Брак (по операциям)</a></th></tr></thead><tbody>
     {% for op in op_stats %}<tr><td><a href="{% url 'stats_operations' op.name %}?start={{ start_date }}&end={{ end_date }}">{{ op.name }}</a></td><td>{{ op.count }}</td><td>{{ op.good }}</td><td>{{ op.bad }}</td></tr>
     {% empty %}<tr><td colspan="4">Нет данных</td></tr>{% endfor %}
     </tbody></table>
