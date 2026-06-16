@@ -1,0 +1,77 @@
+
+{% extends 'scanner/base.html' %}
+{% block title %}Планирование операций{% endblock %}
+{% block content %}
+<h1>Планирование операций</h1>
+
+<!-- Фильтры -->
+<form method="get" class="row g-2 mb-4">
+    <div class="col-auto">
+        <select name="order" class="form-select form-select-sm">
+            <option value="">Все заказы</option>
+            {% for o in orders %}
+            <option value="{{ o.id }}" {% if selected_order == o.id|stringformat:"s" %}selected{% endif %}>{{ o.order_number }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <select name="status" class="form-select form-select-sm">
+            <option value="">Все статусы</option>
+            <option value="in_progress" {% if selected_status == 'in_progress' %}selected{% endif %}>В работе</option>
+            <option value="pending" {% if selected_status == 'pending' %}selected{% endif %}>Ожидает</option>
+        </select>
+    </div>
+    <div class="col-auto">
+        <select name="type" class="form-select form-select-sm">
+            <option value="">Все типы операций</option>
+            {% for ot in op_types %}
+            <option value="{{ ot.name }}" {% if selected_type == ot.name %}selected{% endif %}>{{ ot.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-primary">Применить</button>
+        <a href="{% url 'operations_planning' %}" class="btn btn-sm btn-outline-secondary">Сбросить</a>
+    </div>
+</form>
+
+<!-- Таблица -->
+<div class="table-responsive">
+    <table class="table table-bordered table-sm table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Заказ</th>
+                <th>Деталь</th>
+                <th>Текущая операция</th>
+                <th>Следующая операция</th>
+                <th>Исполнитель</th>
+                <th>Статус</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in planning_data %}
+            <tr>
+                <td>{{ item.instance.order.order_number|default:"—" }}</td>
+                <td>
+                    <a href="{% url 'instance_detail' item_number=item.instance.item.item_number serial=item.instance.serial %}">
+                        {{ item.instance.item.item_number }} – {{ item.instance.item.name }}
+                    </a>
+                </td>
+                <td>{{ item.current_op.operation_type.name }}</td>
+                <td>{{ item.next_op.operation_type.name|default:"—" }}</td>
+                <td>{{ item.current_op.worker|default:"—" }}</td>
+                <td>
+                    {% if item.current_op.status == 'in_progress' %}
+                        <span class="badge bg-primary">В работе</span>
+                    {% else %}
+                        <span class="badge bg-secondary">Ожидает</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6">Нет данных по выбранным фильтрам</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

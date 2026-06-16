@@ -60,12 +60,14 @@
                 </td>
                 <td>
                     {{ entry.location|default:"—" }}
+                    {% if entry.can_edit_location %}
                     <button class="btn btn-sm btn-outline-secondary ms-1" 
                             data-bs-toggle="modal" data-bs-target="#editLocationModal"
                             data-instance-id="{{ entry.instance.id }}"
                             data-location="{{ entry.location }}"
                             data-tab="main"
                             title="Изменить место">✏️</button>
+                    {% endif %}
                 </td>
                 <td>
                     {% if entry.can_issue %}
@@ -116,12 +118,14 @@
                 </td>
                 <td>
                     {{ entry.location|default:"—" }}
+                    {% if entry.can_edit_location %}
                     <button class="btn btn-sm btn-outline-secondary ms-1" 
                             data-bs-toggle="modal" data-bs-target="#editLocationModal"
                             data-instance-id="{{ entry.instance.id }}"
                             data-location="{{ entry.location }}"
                             data-tab="main"
                             title="Изменить место">✏️</button>
+                    {% endif %}
                 </td>
                 <td>
                     {% if entry.can_issue %}

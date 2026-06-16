@@ -1269,8 +1269,10 @@ def warehouse_dashboard(request):
     user_role = request.user.employee.role if hasattr(request.user, 'employee') else ''
     for item in context['main_data']:
         item['can_issue'] = user_role in ['admin', 'storekeeper', 'master', 'dispatcher']
+        item['can_edit_location'] = item['can_issue']  # те же права
     for item in context['intermediate_data']:
         item['can_issue'] = user_role in ['admin', 'storekeeper', 'master', 'dispatcher']
+        item['can_edit_location'] = item['can_issue']  # те же права
     return render(request, 'scanner/warehouse_dashboard.html', context)
 
 
@@ -1532,6 +1534,86 @@ def statistics(request):
 def logout_view(request):
     logout(request)
     return redirect('/accounts/login/')
+
+
+
+@login_required
+def operations_planning(request):
+    from scanner.models import Order, OperationType
+    """Планирование операций: текущие и следующие операции по всем заказам"""
+    from django.db.models import Min, Q
+    
+    # Фильтры из GET-параметров
+    order_id = request.GET.get('order', '')
+    status_filter = request.GET.get('status', '')
+    type_filter = request.GET.get('type', '')
+    
+    # Все экземпляры с маршрутными картами
+    instances = ItemInstance.objects.filter(
+        route_card__isnull=False
+    ).select_related('item', 'order', 'route_card').prefetch_related('route_card__operations__operation_type')
+    
+    # Применяем фильтры
+    if order_id:
+        instances = instances.filter(order_id=order_id)
+    
+    planning_data = []
+    
+    for inst in instances:
+        if not inst.route_card:
+            continue
+        ops = inst.route_card.operations.select_related('operation_type', 'worker').order_by('order')
+        if not ops.exists():
+            continue
+        
+        # Находим текущую операцию (в работе или первую ожидающую)
+        current_op = None
+        next_op = None
+        found_current = False
+        
+        for op in ops:
+            if op.status == 'in_progress':
+                current_op = op
+                found_current = True
+            elif op.status == 'pending' and not found_current:
+                current_op = op
+                found_current = True
+            elif found_current and op.status == 'pending' and next_op is None:
+                next_op = op
+                break
+        
+        if not current_op:
+            continue
+        
+        # Фильтр по статусу текущей операции
+        if status_filter and current_op.status != status_filter:
+            continue
+        
+        # Фильтр по типу операции
+        if type_filter and current_op.operation_type.name != type_filter:
+            continue
+        
+        planning_data.append({
+            'instance': inst,
+            'current_op': current_op,
+            'next_op': next_op,
+        })
+    
+    # Список заказов для фильтра
+    orders = Order.objects.filter(status__in=['draft', 'in_progress', 'paused']).order_by('order_number')
+    # Список типов операций для фильтра
+    op_types = OperationType.objects.all().order_by('name')
+    
+    context = {
+        'planning_data': planning_data,
+        'orders': orders,
+        'op_types': op_types,
+        'selected_order': order_id,
+        'selected_status': status_filter,
+        'selected_type': type_filter,
+    }
+    
+    return render(request, 'scanner/operations_planning.html', context)
 
 
 @login_required

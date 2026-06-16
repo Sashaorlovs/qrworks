@@ -21,6 +21,13 @@
         text-shadow: 0 0 2px rgba(255,255,255,0.6);
     }
 </style>
+
+<style>
+    .navbar-nav .nav-link {
+        white-space: nowrap;
+    }
+</style>
+
 </head>
 <body>
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-3">
@@ -30,11 +37,14 @@
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="mainNav">
-            <ul class="navbar-nav me-auto">
+            <ul class="navbar-nav align-items-center align-items-center me-auto">
                 <li class="nav-item"><a class="nav-link" href="{% url 'order_list' %}">Заказы</a></li>
                 {% if user.is_authenticated and user.employee %}
                     {% with user.employee.role as role %}
                         {% if role in 'admin,dispatcher,master,technologist,supervisor' %}
+                            {% if request.user.employee.role in 'admin,dispatcher,master,supervisor' %}
+                            <li class="nav-item"><a class="nav-link" href="{% url 'operations_planning' %}">Планирование</a></li>
+                            {% endif %}
                             <li class="nav-item"><a class="nav-link" href="{% url 'stats' %}">Статистика</a></li>
                         {% endif %}
                         <li class="nav-item"><a class="nav-link" href="{% url 'warehouse' %}">Склад</a></li>
