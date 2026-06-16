@@ -59,7 +59,7 @@
                 </td>
                 <td>{{ item.current_op.operation_type.name }}</td>
                 <td>{{ item.next_op.operation_type.name|default:"—" }}</td>
-                <td>{{ item.current_op.worker|default:"—" }}</td>
+                <td>{{ item.current_op.worker.employee|default:item.current_op.worker|default:"—" }}</td>
                 <td>
                     {% if item.current_op.status == 'in_progress' %}
                         <span class="badge bg-primary">В работе</span>
