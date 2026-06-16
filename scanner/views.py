@@ -1148,6 +1148,39 @@ def warehouse_bulk_issue(request):
     return response
 
 
+
+@login_required
+def update_storage_location(request):
+    """Обновление места хранения на складе"""
+    if request.method != 'POST':
+        return redirect('warehouse')
+    
+    instance_id = request.POST.get('instance_id')
+    location = request.POST.get('location', '').strip()
+    tab = request.POST.get('tab', 'main')
+    movement_type = 'in_main' if tab == 'main' else 'in_intermediate'
+    
+    if not instance_id:
+        messages.error(request, 'Экземпляр не указан')
+        return redirect('warehouse')
+    
+    inst = ItemInstance.objects.filter(pk=instance_id).first()
+    if not inst:
+        messages.error(request, 'Экземпляр не найден')
+        return redirect('warehouse')
+    
+    # Создаём новую запись в журнале для изменения места
+    WarehouseRecord.objects.create(
+        instance=inst,
+        movement_type=movement_type,
+        quantity=0,
+        notes=f'Изменение места хранения: {location}',
+        employee=request.user.employee if hasattr(request.user, 'employee') else None
+    )
+    messages.success(request, f'Место хранения обновлено для {inst.item.item_number}')
+    return redirect('warehouse')
+
+
 @login_required
 def warehouse_dashboard(request):
     instances = ItemInstance.objects.select_related('item').all()
