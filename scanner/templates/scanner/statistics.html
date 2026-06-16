@@ -58,7 +58,7 @@
 </div>
 
 <div class="card mb-4"><div class="card-header">По типам операций</div><div class="card-body table-responsive">
-    <table class="table table-bordered"><thead><tr><th>Тип операции</th><th>Кол-во</th><th>Годных (завершённых)</th><th><a href="{% url 'statistics_bad_operations' %}?{% if start_date and start_date != 'None' %}start={{ start_date }}&{% endif %}{% if end_date and end_date != 'None' %}end={{ end_date }}{% endif %}" class="text-white text-decoration-none">Брак (по операциям)</a></th></tr></thead><tbody>
+    <table class="table table-bordered"><thead><tr><th>Тип операции</th><th>Кол-во</th><th>Годных (завершённых)</th><th>Брак</th></tr></thead><tbody>
     {% for op in op_stats %}<tr><td><a href="{% url 'stats_operations' op.name %}?start={{ start_date }}&end={{ end_date }}">{{ op.name }}</a></td><td>{{ op.count }}</td><td>{{ op.good }}</td><td>{{ op.bad }}</td></tr>
     {% empty %}<tr><td colspan="4">Нет данных</td></tr>{% endfor %}
     </tbody></table>
