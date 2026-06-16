@@ -94,6 +94,29 @@ class ItemAdmin(admin.ModelAdmin):
 
 @admin.register(ItemInstance)
 class ItemInstanceAdmin(admin.ModelAdmin):
+
+    def has_change_permission(self, request, obj=None):
+        if not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser:
+            return True
+        try:
+            role = request.user.employee.role
+            if role in ('admin', 'dispatcher'):
+                return True
+        except:
+            pass
+        return False
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_change_permission(request, obj)
+
+    def has_add_permission(self, request):
+        return self.has_change_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return self.has_change_permission(request, obj)
+
     list_display = ('serial', 'item', 'quantity', 'order', 'created_at')
     list_filter = ('order',)
     search_fields = ('serial', 'item__item_number', 'item__name')

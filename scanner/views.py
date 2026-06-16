@@ -1325,6 +1325,42 @@ def warehouse_issue(request):
 
 
 # --- Статистика ---
+
+def get_working_hours(start_dt, end_dt):
+    """Расчёт рабочих часов между двумя датами (пн-пт, 7:00–23:30)"""
+    from datetime import timedelta, datetime
+    if not start_dt or not end_dt:
+        return 0
+    if start_dt >= end_dt:
+        return 0
+    
+    work_start_hour = 7
+    work_end_hour = 23.5  # 23:30
+    
+    total_hours = 0
+    current = start_dt
+    
+    while current < end_dt:
+        # Проверяем, рабочий ли день (пн-пт)
+        if current.weekday() < 5:  # 0=пн, 4=пт
+            # Определяем начало и конец рабочего дня для текущей даты
+            day_start = current.replace(hour=work_start_hour, minute=0, second=0, microsecond=0)
+            day_end = current.replace(hour=int(work_end_hour), minute=30, second=0, microsecond=0)
+            
+            # Определяем фактическое начало работы для этой даты
+            actual_start = max(current, day_start)
+            actual_end = min(end_dt, day_end)
+            
+            if actual_start < actual_end:
+                delta = (actual_end - actual_start).total_seconds() / 3600
+                total_hours += delta
+        
+        # Переходим к следующему дню (на начало следующих суток)
+        current = (current + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    return total_hours
+
+
 @login_required
 def statistics(request):
     from django.db.models import Q,  Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum, Count, Q, Q, Q, Q
@@ -1424,10 +1460,19 @@ def statistics(request):
 
     # --- Простои ---
     # Зависшие операции: одна запись на деталь (самая ранняя зависшая)
-    stuck_in_progress_raw = RouteOperation.objects.filter(
-        status='in_progress',
-        started_at__lt=timezone.now() - timedelta(hours=24)
+    # Все операции в статусе "в работе"
+    all_in_progress = RouteOperation.objects.filter(
+        status='in_progress'
     ).select_related('route_card__instance__item', 'worker').order_by('started_at')
+    
+    # Фильтруем по рабочим часам
+    stuck_in_progress_raw = []
+    now = timezone.now()
+    for op in all_in_progress:
+        if op.started_at:
+            working_hours = get_working_hours(op.started_at, now)
+            if working_hours > 24:
+                stuck_in_progress_raw.append(op)
     
     # Группируем по экземпляру, оставляем самую раннюю операцию
     stuck_in_progress = []
@@ -1439,12 +1484,21 @@ def statistics(request):
             stuck_in_progress.append(op)
     
     # Долгое ожидание: одна запись на деталь
-    stuck_pending_raw = RouteOperation.objects.filter(
-        status='pending',
-        route_card__instance__created_at__lt=timezone.now() - timedelta(hours=48)
+    # Все операции в статусе "ожидает" (кроме Комплектование)
+    all_pending = RouteOperation.objects.filter(
+        status='pending'
     ).exclude(
         operation_type__name='Комплектование'
     ).select_related('route_card__instance__item').order_by('route_card__instance__created_at')
+    
+    # Фильтруем по рабочим часам с момента создания экземпляра
+    stuck_pending_raw = []
+    now = timezone.now()
+    for op in all_pending:
+        if op.route_card.instance.created_at:
+            working_hours = get_working_hours(op.route_card.instance.created_at, now)
+            if working_hours > 48:
+                stuck_pending_raw.append(op)
     
     stuck_pending = []
     seen_instances_p = set()
