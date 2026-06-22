@@ -107,14 +107,14 @@
         <tbody>
         {% for entry in intermediate_data %}
             <tr>
-                <td><input type="checkbox" class="main-check-item check-item" value="{{ entry.instance.id }}"></td>
+                <td><input type="checkbox" class="inter-check-item check-item" value="{{ entry.instance.id }}"></td>
                 <td>{{ entry.instance.item.item_number }}</td>
                 <td>{{ entry.instance.item.name }}</td>
                 <td>{{ entry.order_number }}</td>
                 <td>{{ entry.assembly }}</td><td>{{ entry.parent_assembly|default:"—" }}</td>
                 <td>
                     {{ entry.balance }} шт.
-                    <input type="number" class="main-qty qty-input form-control form-control-sm d-inline-block" style="width:80px;" value="0" min="0" max="{{ entry.balance }}" data-max="{{ entry.balance }}" placeholder="Кол-во">
+                    <input type="number" class="inter-qty qty-input form-control form-control-sm d-inline-block" style="width:80px;" value="0" min="0" max="{{ entry.balance }}" data-max="{{ entry.balance }}" placeholder="Кол-во">
                 </td>
                 <td>
                     {{ entry.location|default:"—" }}
