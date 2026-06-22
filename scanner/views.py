@@ -913,12 +913,12 @@ def order_material_report(request, order_id):
             material = item.material.name if item.material else '—'
             profile = item.profile or '—'
             blank_size = item.blank_size or '—'
-            blanks_per = item.blanks_per_item or 1
+            blanks_per = inst.get_blanks_per_item()
             
             rows_data.append({
                 'item_number': item.item_number,
                 'name': item.name,
-                'quantity': inst.planned_quantity(),
+                'quantity': inst.quantity,
                 'material': material,
                 'profile': profile,
                 'blank_size': blank_size,
