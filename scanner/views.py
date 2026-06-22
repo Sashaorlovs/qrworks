@@ -854,7 +854,7 @@ def warehouse_print_report(request):
     output.seek(0)
 
     response = HttpResponse(output.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition'] = 'attachment; filename="Остатки_на_складе.xlsx"'
+    response['Content-Disposition'] = 'attachment; filename="Остатки_склада.xlsx"'
     return response
 
 
@@ -976,7 +976,7 @@ def order_material_report(request, order_id):
     output.seek(0)
     
     response = HttpResponse(output.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition'] = f'attachment; filename="Списание_материалов_{order.order_number}.xlsx"'
+    response['Content-Disposition'] = f'attachment; filename="Списание_материалов_Заказ_{order.order_number}.xlsx"'
     return response
 
 
@@ -1182,7 +1182,7 @@ def warehouse_bulk_issue(request):
     output.seek(0)
     
     response = HttpResponse(output.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition'] = f'attachment; filename="Накладная_{recipient}_{timezone.now().strftime("%Y%m%d")}.xlsx"'
+    response['Content-Disposition'] = f'attachment; filename="Накладная_{recipient}_{timezone.now().strftime("%Y%m%d_%H%M")}.xlsx"'
     messages.success(request, f'Выдано {len(issued_items)} позиций. Накладная сформирована.')
     return response
 
