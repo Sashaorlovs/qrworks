@@ -1,0 +1,134 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Заказы{% endblock %}
+{% block content %}
+<h1>Заказы</h1>
+
+<div class="d-flex justify-content-between mb-3">
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createOrderModal">+ Новый заказ</button>
+    <div class="form-check form-switch d-flex align-items-center">
+        <input class="form-check-input me-2" type="checkbox" id="groupToggle" {% if group_mode %}checked{% endif %} onchange="toggleGroupMode()">
+        <label class="form-check-label" for="groupToggle">Группировать по проектам</label>
+    </div>
+</div>
+
+<form method="get" class="row g-2 mb-3" id="filterForm" onsubmit="return false;">
+    <input type="hidden" name="group" value="{{ group_mode|yesno:'1,0' }}" id="groupHidden">
+    
+    <div class="col-auto">
+        <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Поиск по таблице..." onkeyup="filterOrders()">
+    </div>
+</form>
+
+{% if group_mode %}
+    {% for project, project_orders in groups %}
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center" style="cursor: pointer; background-color: #f8f9fa;" data-bs-toggle="collapse" data-bs-target="#project-{{ forloop.counter }}">
+            <div>
+                <strong>{{ project }}</strong>
+                <span class="badge bg-secondary ms-2">{{ project_orders|length }} заказ(ов)</span>
+            </div>
+            <i class="bi bi-chevron-down"></i>
+        </div>
+        <div id="project-{{ forloop.counter }}" class="collapse show">
+            <div class="card-body p-0">
+<table class="table searchable align-middle">
+    <thead><tr><th>Номер договора</th><th>Наименование</th><th>Создан</th><th>Отгрузка</th><th>Статус</th><th></th></tr></thead>
+    <tbody>
+    {% for order in project_orders %}
+    <tr class="{% if order.status == 'draft' %}table-secondary{% elif order.status == 'in_progress' %}table-primary{% elif order.status == 'paused' %}table-warning{% elif order.status == 'completed' %}table-success{% elif order.status == 'shipped' %}table-info{% elif order.status == 'closed' %}table-light{% endif %}">
+        <td>{{ order.order_number }}</td>
+        <td>
+                    {{ order.full_name }}
+                    <span style="display: inline-block; width: 32px; height: 32px; background: linear-gradient(to bottom, {{ order.color1 }} 50%, {{ order.color2 }} 50%); border: 1px solid #ccc; vertical-align: middle; margin-left: 6px;"></span>
+                </td>
+        <td>{{ order.created_at|date:"d.m.Y" }}</td>
+        <td>{{ order.due_date|date:"d.m.Y"|default:"—" }}</td>
+        <td>{{ order.get_status_display }}</td>
+        <td>
+            <a href="{% url 'order_detail' order.id %}" class="btn btn-sm btn-outline-primary">Изменить</a>
+            <a href="{% url 'order_tree' order.id %}" class="btn btn-sm btn-primary">Подробнее</a>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="alert alert-info">Нет заказов</div>
+    {% endfor %}
+{% else %}
+<table class="table searchable align-middle">
+    <thead><tr><th>Номер договора</th><th>Наименование</th><th>Создан</th><th>Отгрузка</th><th>Статус</th><th></th></tr></thead>
+    <tbody>
+    {% for order in orders %}
+    <tr class="{% if order.status == 'draft' %}table-secondary{% elif order.status == 'in_progress' %}table-primary{% elif order.status == 'paused' %}table-warning{% elif order.status == 'completed' %}table-success{% elif order.status == 'shipped' %}table-info{% elif order.status == 'closed' %}table-light{% endif %}">
+        <td>{{ order.order_number }}</td>
+        <td>
+                    {{ order.full_name }}
+                    <span style="display: inline-block; width: 32px; height: 32px; background: linear-gradient(to bottom, {{ order.color1 }} 50%, {{ order.color2 }} 50%); border: 1px solid #ccc; vertical-align: middle; margin-left: 6px;"></span>
+                </td>
+        <td>{{ order.created_at|date:"d.m.Y" }}</td>
+        <td>{{ order.due_date|date:"d.m.Y"|default:"—" }}</td>
+        <td>{{ order.get_status_display }}</td>
+        <td>
+            <a href="{% url 'order_detail' order.id %}" class="btn btn-sm btn-outline-primary">Изменить</a>
+            <a href="{% url 'order_tree' order.id %}" class="btn btn-sm btn-primary">Подробнее</a>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<div class="modal fade" id="createOrderModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Новый заказ</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <form method="post" action="{% url 'order_create' %}">
+        {% csrf_token %}
+        <div class="modal-body">
+            <div class="mb-3"><label class="form-label">Номер договора</label><input type="text" name="order_number" class="form-control" required></div>
+            <div class="mb-3"><label class="form-label">Наименование</label><input type="text" name="full_name" class="form-control"></div>
+            <div class="mb-3"><label class="form-label">Дата отгрузки</label><input type="date" name="due_date" class="form-control"></div>
+        </div>
+        <div class="modal-footer"><button type="submit" class="btn btn-primary">Создать</button></div>
+      </form>
+    </div>
+  </div>
+<
+
+<script>
+function toggleGroupMode() {
+    var isGrouped = document.getElementById('groupToggle').checked ? '1' : '0';
+    var currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set('group', isGrouped);
+    window.location.href = currentUrl.toString();
+}
+</script>
+
+<script>
+function toggleGroupMode() {
+    var isGrouped = document.getElementById('groupToggle').checked ? '1' : '0';
+    var currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set('group', isGrouped);
+    window.location.href = currentUrl.toString();
+}
+
+function filterOrders() {
+    var input = document.getElementById('searchInput');
+    var filter = input.value.toUpperCase();
+    var tables = document.querySelectorAll('table');
+    tables.forEach(function(table) {
+        var rows = table.getElementsByTagName('tr');
+        for (var i = 1; i < rows.length; i++) {
+            var row = rows[i];
+            var text = row.textContent || row.innerText;
+            row.style.display = text.toUpperCase().indexOf(filter) > -1 ? '' : 'none';
+        }
+    });
+}
+</script>
+
+{% endblock %}

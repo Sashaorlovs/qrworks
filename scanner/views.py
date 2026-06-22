@@ -25,7 +25,31 @@ def dashboard(request):
 
 @login_required
 def order_list(request):
-    return dashboard(request)
+    from collections import defaultdict
+    
+    orders = Order.objects.all().order_by('-created_at')
+    contract = request.GET.get('contract', '')
+    if contract:
+        orders = orders.filter(order_number=contract)
+    
+    group_mode = request.GET.get('group') == '1'
+    
+    if group_mode:
+        groups = defaultdict(list)
+        for order in orders:
+            project = order.project.strip() if order.project else 'Без проекта'
+            groups[project].append(order)
+        sorted_groups = sorted(groups.items(), key=lambda x: (x[0] == 'Без проекта', -len(x[1])))
+    else:
+        sorted_groups = None
+    
+    return render(request, 'scanner/order_list.html', {
+        'orders': orders,
+        'groups': sorted_groups,
+        'group_mode': group_mode,
+        'contracts': Order.objects.values_list('order_number', flat=True).distinct(),
+        'selected_contract': contract,
+    })
 
 @login_required
 def order_detail(request, order_id):
@@ -545,6 +569,17 @@ def route_card_create(request, instance_id):
     if not hasattr(instance, 'route_card'):
         RouteCard.objects.create(instance=instance)
     return redirect('instance_detail', item_number=instance.item.item_number, serial=instance.serial)
+
+
+@login_required
+def update_order_project(request, order_id):
+    if request.method == 'POST':
+        order = get_object_or_404(Order, pk=order_id)
+        project = request.POST.get('project', '').strip()
+        order.project = project
+        order.save()
+    return redirect('order_tree', order_id=order_id)
+
 
 @login_required
 def order_import(request, order_id):

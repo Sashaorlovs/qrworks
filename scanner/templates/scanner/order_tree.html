@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', function() {
 {% endblock %}
 {% block content %}
 <h1>Заказ {{ order.order_number }}</h1>
+<p><strong>Проект:</strong> <span id="orderProject">{{ order.project|default:"не задан" }}</span> <button class="btn btn-sm btn-outline-secondary" onclick="editProject()">✏️</button></p>
 
 {% if user.is_staff %}
 <div class="mb-3">

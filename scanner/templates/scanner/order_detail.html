@@ -2,6 +2,16 @@
 {% block title %}{{ order }}{% endblock %}
 {% block content %}
 <h1>Заказ {{ order.order_number }}</h1>
+<p><strong>Проект:</strong> <span id="orderProject">{{ order.project|default:"не задан" }}</span> <button class="btn btn-sm btn-outline-secondary" onclick="
+    var newProject = prompt('Введите название проекта:', document.getElementById('orderProject').innerText.trim());
+    if (newProject !== null) {
+        fetch('{% url 'update_order_project' order.id %}', {
+            method: 'POST',
+            headers: {'X-CSRFToken': '{{ csrf_token }}'},
+            body: new URLSearchParams({project: newProject})
+        }).then(function() { location.reload(); });
+    }
+">✏️</button></p>
 <p>{{ order.full_name }}</p>
 
 <div class="mb-3">

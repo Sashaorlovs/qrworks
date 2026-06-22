@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('order/<int:order_id>/update-project/', views.update_order_project, name='update_order_project'),
     path('stats/bad-operations/', views.statistics_bad_operations, name='statistics_bad_operations'),
     path('stats/operations-planning/', views.operations_planning, name='operations_planning'),
     path('warehouse/update-location/', views.update_storage_location, name='update_storage_location'),
@@ -23,7 +24,7 @@ urlpatterns = [
     path('stats/operations/<str:type_name>/export/', views.statistics_operations_export, name='stats_operations_export'),
     path('stats/operations/<str:type_name>/', views.statistics_operations, name='stats_operations'),
     path('stats/', views.statistics, name='stats'),
-    path('', views.dashboard, name='home'),
+    path('', views.order_list, name='home'),
     path('orders/', views.order_list, name='order_list'),
     path('order/<int:order_id>/', views.order_detail, name='order_detail'),
     path('order/<int:order_id>/tree/', views.order_tree, name='order_tree'),

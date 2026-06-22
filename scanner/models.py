@@ -84,6 +84,7 @@ class Order(models.Model):
     full_name = models.CharField(max_length=500, unique=True, null=True, blank=True, verbose_name='Полное наименование')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата создания')
     due_date = models.DateField(null=True, blank=True, verbose_name='Дата отгрузки')
+    project = models.CharField(max_length=200, blank=True, verbose_name='Проект')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft', verbose_name='Статус')
 
     def __str__(self):
@@ -129,6 +130,7 @@ class ItemInstance(models.Model):
     order = models.ForeignKey(Order, null=True, blank=True, on_delete=models.SET_NULL, related_name='instances', verbose_name='Договор')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата создания')
     due_date = models.DateField(null=True, blank=True, verbose_name='Дата отгрузки')
+    project = models.CharField(max_length=200, blank=True, verbose_name='Проект')
 
     
 
