@@ -159,16 +159,13 @@ class ItemInstance(models.Model):
         return 0
 
     def completion_percent(self):
-        planned = self.planned_quantity()
-        if planned == 0:
-            return 0
-        # Для сборок, если ещё не все компоненты готовы, возвращаем 0 (или процент компонентов)
-        if self.item.item_type == 'Сборочная единица':
-            if not self.all_components_ready():
-                # можно вернуть процент готовых компонентов, но пока 0
-                return 0
-        # для деталей и готовых сборок считаем по операциям
-        return int(self.good_produced() / planned * 100)
+        # Считаем процент завершённых операций
+        if hasattr(self, 'route_card') and self.route_card:
+            ops = self.route_card.operations.all()
+            if ops:
+                completed = ops.filter(status='completed').count()
+                return int(completed / ops.count() * 100)
+        return 0
 
     
     def total_good_produced(self):

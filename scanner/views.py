@@ -902,11 +902,13 @@ def order_material_report(request, order_id):
         for inst in order_item.instances.all():
             if not hasattr(inst, 'route_card') or not inst.route_card:
                 continue
-            has_blank_op = inst.route_card.operations.filter(
-                operation_type__name='Заготовительная',
+            # Проверяем наличие завершённой операции раскроя/заготовки
+            material_ops = ['Заготовительная', 'Плазменная резка', 'Лазерная резка', 'Гибка']
+            has_material_op = inst.route_card.operations.filter(
+                operation_type__name__in=material_ops,
                 status='completed'
             ).exists()
-            if not has_blank_op:
+            if not has_material_op:
                 continue
             
             item = inst.item
