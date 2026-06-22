@@ -32,6 +32,10 @@
 <div class="tab-content" id="warehouseTabsContent">
 
   <!-- Основной склад -->
+    <div class="alert alert-info py-1 mb-2" id="mainTotals">
+        <strong>Общее количество деталей:</strong> {{ main_total_qty }}<br>
+        <strong>Уникальных позиций:</strong> {{ main_unique_items }}
+    </div>
   <div class="tab-pane fade show active" id="main" role="tabpanel">
 
     <table class="table table-bordered searchable">
@@ -90,6 +94,10 @@
   </div>
 
   <!-- Меж.операционный склад -->
+    <div class="alert alert-secondary py-1 mb-2" id="intermediateTotals" style="display: none;">
+        <strong>Общее количество деталей:</strong> {{ inter_total_qty }}<br>
+        <strong>Уникальных позиций:</strong> {{ inter_unique_items }}
+    </div>
   <div class="tab-pane fade" id="intermediate" role="tabpanel">
 
     <table class="table table-bordered searchable">
@@ -428,6 +436,68 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('editLocationInput').value = location || '';
         document.getElementById('editLocationTab').value = tab;
     });
+});
+</script>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var mainTab = document.getElementById('main-tab');
+    var interTab = document.getElementById('intermediate-tab');
+    var journalTab = document.getElementById('journal-tab');
+    var mainTotals = document.getElementById('mainTotals');
+    var interTotals = document.getElementById('intermediateTotals');
+    
+    if (mainTab && interTab && journalTab) {
+        mainTab.addEventListener('click', function() {
+            mainTotals.style.display = '';
+            interTotals.style.display = 'none';
+        });
+        interTab.addEventListener('click', function() {
+            mainTotals.style.display = 'none';
+            interTotals.style.display = '';
+        });
+        journalTab.addEventListener('click', function() {
+            mainTotals.style.display = 'none';
+            interTotals.style.display = 'none';
+        });
+        // Инициализация при загрузке: если активна вкладка inter, показать её итоги
+        if (interTab.classList.contains('active')) {
+            mainTotals.style.display = 'none';
+            interTotals.style.display = '';
+        }
+    }
+});
+</script>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var mainTab = document.getElementById('main-tab');
+    var interTab = document.getElementById('intermediate-tab');
+    var journalTab = document.getElementById('journal-tab');
+    var mainTotals = document.getElementById('mainTotals');
+    var interTotals = document.getElementById('intermediateTotals');
+    
+    if (mainTab && interTab && journalTab) {
+        mainTab.addEventListener('click', function() {
+            mainTotals.style.display = '';
+            interTotals.style.display = 'none';
+        });
+        interTab.addEventListener('click', function() {
+            mainTotals.style.display = 'none';
+            interTotals.style.display = '';
+        });
+        journalTab.addEventListener('click', function() {
+            mainTotals.style.display = 'none';
+            interTotals.style.display = 'none';
+        });
+        // Инициализация при загрузке: если активна вкладка inter, показать её итоги
+        if (interTab.classList.contains('active')) {
+            mainTotals.style.display = 'none';
+            interTotals.style.display = '';
+        }
+    }
 });
 </script>
 

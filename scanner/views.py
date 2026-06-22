@@ -212,7 +212,9 @@ def instance_detail(request, item_number, serial):
 
     assembly_status = instance.assembly_status() if instance.item.item_type == 'Сборочная единица' else None
 
+
     context = {
+
         'instance': instance,
         'route_card': route_card,
         'status_info': status_info,
@@ -1294,11 +1296,23 @@ def warehouse_dashboard(request):
     records = WarehouseRecord.objects.select_related('instance__item', 'employee').order_by('-date')
 
     current_tab = request.GET.get('tab', 'main')
+
+    # Итоги по складам
+    main_total_qty = sum(item['balance'] for item in main_data)
+    main_unique_items = len(set(item['instance'].item_id for item in main_data))
+    inter_total_qty = sum(item['balance'] for item in intermediate_data)
+    inter_unique_items = len(set(item['instance'].item_id for item in intermediate_data))
+
     context = {
+
         'main_data': main_data,
         'intermediate_data': intermediate_data,
         'records': records,
         'employee_list': employee_list,
+        'main_total_qty': main_total_qty,
+        'main_unique_items': main_unique_items,
+        'inter_total_qty': inter_total_qty,
+        'inter_unique_items': inter_unique_items,
         'current_tab': current_tab,
     }
     user_role = request.user.employee.role if hasattr(request.user, 'employee') else ''
@@ -1478,7 +1492,9 @@ def statistics(request):
         good=Sum('good_qty'), bad=Sum('bad_qty'), count=Count('id')
     ).order_by('day')
 
+
     context = {
+
         'start_date': start_date,
         'end_date': end_date,
         'total_ops': total_ops,
@@ -1638,7 +1654,9 @@ def operations_planning(request):
     # Список типов операций для фильтра
     op_types = OperationType.objects.all().order_by('name')
     
+
     context = {
+
         'planning_data': planning_data,
         'orders': orders,
         'op_types': op_types,
@@ -1694,7 +1712,9 @@ def statistics_bad_operations(request):
     orders = Order.objects.filter(status__in=['draft', 'in_progress', 'paused', 'completed', 'shipped']).order_by('order_number')
     op_types = OperationType.objects.all().order_by('name')
 
+
     context = {
+
         'ops': ops_page,
         'start_date': start_date,
         'end_date': end_date,
@@ -1730,7 +1750,9 @@ def statistics_operations(request, type_name):
     total_good = ops.aggregate(s=Sum('good_qty'))['s'] or 0
     total_bad = ops.aggregate(s=Sum('bad_qty'))['s'] or 0
 
+
     context = {
+
         'type_name': type_name,
         'start_date': start_date,
         'end_date': end_date,
@@ -2033,7 +2055,9 @@ def statistics_compare(request):
             'percent': percent,
         })
 
+
     context = {
+
         'start_a': start_a,
         'end_a': end_a,
         'start_b': start_b,
