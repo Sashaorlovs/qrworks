@@ -1464,32 +1464,11 @@ def statistics(request):
                 'bad': bad,
             })
 
-    # Складские показатели: фактический выпуск годных по завершённым экземплярам, прошедшим через склад
-    in_main = 0
-    in_inter = 0
-    out_main = 0
-    out_inter = 0
-    for inst in ItemInstance.objects.prefetch_related('warehouse_records', 'route_card__operations').all():
-        # Проверяем, завершён ли маршрут
-        if not hasattr(inst, 'route_card') or not inst.route_card:
-            continue
-        ops = inst.route_card.operations.all()
-        if not ops.exists() or any(op.status != 'completed' for op in ops):
-            continue
-        
-        good = inst.good_produced()  # фактический выпуск годных
-        
-        # Проверяем, был ли приход/расход в выбранном периоде
-        wh_records = inst.warehouse_records.filter(date__gte=start_dt, date__lt=end_dt) if start_date or end_date else inst.warehouse_records.all()
-        
-        if wh_records.filter(movement_type='in_main').exists():
-            in_main += good
-        if wh_records.filter(movement_type='in_intermediate').exists():
-            in_inter += good
-        if wh_records.filter(movement_type='out_main').exists():
-            out_main += good
-        if wh_records.filter(movement_type='out_intermediate').exists():
-            out_inter += good
+    # Складские показатели: простая сумма quantity по всем записям за период
+    in_main = wh.filter(movement_type='in_main').aggregate(s=Sum('quantity'))['s'] or 0
+    in_inter = wh.filter(movement_type='in_intermediate').aggregate(s=Sum('quantity'))['s'] or 0
+    out_main = wh.filter(movement_type='out_main').aggregate(s=Sum('quantity'))['s'] or 0
+    out_inter = wh.filter(movement_type='out_intermediate').aggregate(s=Sum('quantity'))['s'] or 0
 
     # Для графика выпуска по дням (последние 30 дней)
     from_date = datetime.now() - timedelta(days=30)
@@ -1510,6 +1489,7 @@ def statistics(request):
         'in_main': in_main,
         'in_inter': in_inter,
         'out_main': out_main,
+        'out_inter': out_inter,
         'daily_ops': list(daily_ops),
         'op_types_json': [{'name': s['name'], 'count': s['count']} for s in op_stats],
     }
@@ -1891,16 +1871,7 @@ def statistics_export(request):
     completed_out_ids = ItemInstance.objects.filter(id__in=out_main_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
     out_main = ItemInstance.objects.filter(id__in=completed_out_ids).aggregate(s=Sum('quantity'))['s'] or 0
 
-    # Выдача с межоперационного склада (уникальные завершённые экземпляры)
-    out_inter_ids = wh.filter(movement_type='out_intermediate').values_list('instance_id', flat=True).distinct()
-    completed_out_inter_ids = ItemInstance.objects.filter(
-        id__in=out_inter_ids,
-        route_card__operations__status='completed'
-    ).annotate(
-        total_ops=Count('route_card__operations'),
-        completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))
-    ).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
-    out_inter = ItemInstance.objects.filter(id__in=completed_out_inter_ids).aggregate(s=Sum('quantity'))['s'] or 0
+
 
     # По типам операций
     op_types = OperationType.objects.all()
