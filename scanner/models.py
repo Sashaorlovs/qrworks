@@ -286,6 +286,7 @@ class RouteOperation(models.Model):
     started_at = models.DateTimeField(null=True, blank=True, verbose_name='Начало')
     completed_at = models.DateTimeField(null=True, blank=True, verbose_name='Завершение')
     worker = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, verbose_name='Исполнитель')
+    worker_log = models.TextField(blank=True, verbose_name='История исполнителей')
     good_qty = models.PositiveIntegerField(default=0, verbose_name='Годных')
     bad_qty = models.PositiveIntegerField(default=0, verbose_name='Брак')
     notes = models.TextField(blank=True, verbose_name='Примечания')

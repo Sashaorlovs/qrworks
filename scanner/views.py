@@ -165,6 +165,15 @@ def instance_detail(request, item_number, serial):
             # накапливаем годные и брак
             op.good_qty = current_good + new_good
             op.bad_qty = current_bad + new_bad
+            # Дописываем исполнителя в историю
+            worker_name = f"{request.user.employee.last_name} {request.user.employee.first_name}" if hasattr(request.user, 'employee') else request.user.username
+            timestamp = (timezone.now() + timedelta(hours=3)).strftime('%d.%m.%Y %H:%M')
+            new_log_entry = f"{timestamp} — {worker_name} (+{new_good} годных, +{new_bad} брак)"
+            op.worker_log = (op.worker_log + '\n' + new_log_entry) if op.worker_log else new_log_entry
+            # Обновляем текущего исполнителя
+            op.worker = request.user
+            # Обновляем исполнителя на того, кто фактически выполнил работу
+            op.worker = request.user
             notes = request.POST.get('notes', '')
             if notes:
                 op.notes = notes

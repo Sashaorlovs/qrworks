@@ -1,5 +1,37 @@
 {% extends 'scanner/base.html' %}
-{% block title %}{{ instance }}{% endblock %}
+{% block title %}{{ instance }}
+<!-- Модальное окно для истории исполнителей -->
+<div class="modal fade" id="workerLogModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">История исполнителей</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="workerLogContent" style="white-space: pre-line;">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Хранилище логов (заполняется из Django-шаблона)
+var workerLogs = {};
+{% for op in operations %}
+{% if op.worker_log %}
+workerLogs['{{ op.id }}'] = '{{ op.worker_log|escapejs }}';
+{% endif %}
+{% endfor %}
+
+function showWorkerLog(opId) {
+    var log = workerLogs[opId] || 'Нет данных';
+    document.getElementById('workerLogContent').innerText = log;
+    var modal = new bootstrap.Modal(document.getElementById('workerLogModal'));
+    modal.show();
+}
+</script>
+
+{% endblock %}
 {% block content %}
 <h2>{{ instance.item.item_number }} – {{ instance.item.name }}</h2>
 <p>Партия: {{ instance.serial }} (план сборки: {{ instance.quantity }}, настроечные: {{ instance.setup_quantity }}, всего к изготовлению: {{ instance.total_planned_quantity }})</p>
@@ -51,6 +83,11 @@
             <div class="card-body">
                 <p>Норма: {{ op.planned_hours }} ч</p>
                 {% if op.worker %}<p>Исполнитель: {{ op.worker.get_full_name }}</p>{% endif %}
+                {% if op.worker_log %}
+                <p>
+                    <button class="btn btn-sm btn-outline-info" onclick="showWorkerLog('{{ op.id }}')">👥 Кто выполнял</button>
+                </p>
+                {% endif %}
                 {% if op.started_at %}<p>Начало: {{ op.started_at|date:"d.m.Y H:i" }}</p>{% endif %}
                 {% if op.completed_at %}<p>Завершено: {{ op.completed_at|date:"d.m.Y H:i" }}</p>{% endif %}
                 {% if op.duration %}<p>Длительность: {{ op.duration }}</p>{% endif %}
@@ -107,4 +144,36 @@
 {% endif %}
 
 <a href="javascript:history.back()" class="btn btn-outline-secondary mt-3">← Назад</a>
+
+<!-- Модальное окно для истории исполнителей -->
+<div class="modal fade" id="workerLogModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">История исполнителей</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="workerLogContent" style="white-space: pre-line;">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Хранилище логов (заполняется из Django-шаблона)
+var workerLogs = {};
+{% for op in operations %}
+{% if op.worker_log %}
+workerLogs['{{ op.id }}'] = '{{ op.worker_log|escapejs }}';
+{% endif %}
+{% endfor %}
+
+function showWorkerLog(opId) {
+    var log = workerLogs[opId] || 'Нет данных';
+    document.getElementById('workerLogContent').innerText = log;
+    var modal = new bootstrap.Modal(document.getElementById('workerLogModal'));
+    modal.show();
+}
+</script>
+
 {% endblock %}
