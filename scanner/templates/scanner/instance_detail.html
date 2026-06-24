@@ -31,6 +31,7 @@
     {% if instance.route_card %}
         <a href="{% url 'route_card_print' instance.route_card.id %}" class="btn btn-sm btn-outline-secondary">📄 Сформировать МЛ</a>
         <a href="/admin/scanner/routecard/{{ instance.route_card.id }}/change/" class="btn btn-sm btn-outline-primary" target="_blank">✏️ Редактировать</a>
+        <a href="/admin/scanner/routeoperation/?route_card__id={{ instance.route_card.id }}" class="btn btn-sm btn-outline-danger" target="_blank">🗑️ Удалить операции</a>
     {% else %}
         <a href="{% url 'route_card_create' instance.id %}" class="btn btn-sm btn-outline-warning">➕ Создать маршрутную карту</a>
     {% endif %}
