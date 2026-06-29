@@ -121,10 +121,10 @@ LOGIN_REDIRECT_URL = '/'
 LOGIN_URL = '/accounts/login/'
 
 JAZZMIN_SETTINGS = {
+    "custom_css": "admin/css/custom_admin.css",
     "usermenu_links": [
         {"name": "Главная", "url": "/", "icon": "fas fa-home"},
     ],
-    "custom_css": "admin/css/custom_admin.css",
     "site_title": "QR Производство",
     "site_header": "Управление производством",
     "site_brand": "QR Factory",
@@ -146,9 +146,9 @@ JAZZMIN_UI_TWEAKS = {
     "footer_small_text": False,
     "body_small_text": False,
     "brand_small_text": False,
-    "brand_colour": "navbar-dark",
+    "brand_colour": "navbar-light",
     "accent": "accent-primary",
-    "navbar": "navbar-dark",
+    "navbar": "navbar-light",
     "no_navbar_border": False,
     "navbar_fixed": True,
     "layout_boxed": False,

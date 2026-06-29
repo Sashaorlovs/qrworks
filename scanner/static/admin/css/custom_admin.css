@@ -1,40 +1,73 @@
-/* ----- ВЕРХНЯЯ ПАНЕЛЬ ----- */
-body.sidebar-collapse .main-header.navbar.navbar-dark,
-body:not(.sidebar-collapse) .main-header.navbar.navbar-dark,
-.main-header.navbar.navbar-dark {
-    background-color: #dee2e6 !important;
+/* Возвращаем синий цвет ссылок */
+a, a:link, a:visited, a:hover, a:active {
+    color: #00557A !important;
 }
 
-.main-header.navbar.navbar-dark .navbar-brand,
-.main-header.navbar.navbar-dark .navbar-nav .nav-link,
-.main-header.navbar.navbar-dark .nav-link {
+/* Белая боковая панель */
+.main-sidebar, .main-sidebar .sidebar, .brand-link {
+    background-color: #FFFFFF !important;
     color: #212529 !important;
 }
 
-/* Убираем возможное белое наслоение от Jazzmin */
-.navbar-white {
-    background-color: #dee2e6 !important;
+.main-sidebar .nav-link, 
+.main-sidebar .nav-header,
+.main-sidebar .brand-text,
+.brand-link .brand-text {
+    color: #212529 !important;
 }
 
-/* Кнопки */
-.btn-primary {
-    background-color: #00557A !important;
-    border-color: #004466 !important;
-    color: #FFFFFF !important;
-}
-.btn-primary:hover {
-    background-color: #003d5c !important;
-    border-color: #002e44 !important;
-}
-
-/* Активные элементы бокового меню */
-.sidebar-dark-primary .nav-sidebar > .nav-item > .nav-link.active,
-.sidebar-light-primary .nav-sidebar > .nav-item > .nav-link.active {
-    background-color: #00557A !important;
-    color: #FFFFFF !important;
-}
-
-/* Ссылки */
-.content-wrapper a {
+.main-sidebar .nav-link:hover {
+    background-color: #f0f0f0 !important;
     color: #00557A !important;
+}
+
+.main-sidebar .nav-link.active {
+    background-color: #00557A !important;
+    color: #FFFFFF !important;
+}
+
+.main-sidebar .user-panel .info {
+    color: #212529 !important;
+}
+
+/* Принудительно белый сайдбар */
+.main-sidebar,
+.main-sidebar .sidebar,
+.main-sidebar .nav-sidebar,
+.main-sidebar .nav-treeview,
+.sidebar-dark-primary .nav-sidebar > .nav-item > .nav-link.active,
+.sidebar-dark-primary .nav-sidebar > .nav-item > .nav-link,
+.nav-sidebar .nav-link,
+.nav-sidebar .nav-item,
+.nav-treeview .nav-link,
+.nav-treeview .nav-item,
+.sidebar,
+.layout-navbar-fixed .wrapper .main-sidebar,
+[class*="sidebar-dark"] {
+    background-color: #FFFFFF !important;
+    color: #212529 !important;
+}
+
+/* Текст в сайдбаре */
+.main-sidebar .nav-link,
+.main-sidebar .nav-link p,
+.main-sidebar .nav-header,
+.main-sidebar .brand-text,
+.main-sidebar .brand-link .brand-text,
+.nav-sidebar .nav-link p {
+    color: #212529 !important;
+}
+
+/* При наведении */
+.main-sidebar .nav-link:hover,
+.nav-sidebar .nav-link:hover {
+    background-color: #F0F0F0 !important;
+    color: #00557A !important;
+}
+
+/* Активный пункт */
+.main-sidebar .nav-link.active,
+.nav-sidebar > .nav-item > .nav-link.active {
+    background-color: #00557A !important;
+    color: #FFFFFF !important;
 }
