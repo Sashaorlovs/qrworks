@@ -1,0 +1,47 @@
+
+{% extends 'scanner/base.html' %}
+{% block title %}Сотрудники{% endblock %}
+{% block content %}
+<h1>Сотрудники</h1>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <label class="form-label">С даты:</label>
+        <input type="date" name="start" class="form-control form-control-sm" value="{{ start_date }}">
+    </div>
+    <div class="col-auto">
+        <label class="form-label">По дату:</label>
+        <input type="date" name="end" class="form-control form-control-sm" value="{{ end_date }}">
+    </div>
+    <div class="col-auto align-self-end">
+        <button type="submit" class="btn btn-sm btn-outline-primary">Показать</button>
+    </div>
+</form>
+
+<div class="table-responsive">
+    <table class="table table-bordered table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Сотрудник</th>
+                <th>Операций</th>
+                <th>Годных</th>
+                <th>Брак</th>
+                <th>Часов</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for w in worker_stats %}
+            <tr>
+                <td>{{ w.full_name }}</td>
+                <td>{{ w.total_ops }}</td>
+                <td>{{ w.good_qty }}</td>
+                <td>{{ w.bad_qty }}</td>
+                <td>{{ w.hours }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5">Нет данных</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

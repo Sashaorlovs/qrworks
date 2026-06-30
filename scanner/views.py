@@ -1526,7 +1526,7 @@ def statistics(request):
     # Все операции в статусе "в работе"
     all_in_progress = RouteOperation.objects.filter(
         status='in_progress'
-    ).select_related('route_card__instance__item', 'worker').order_by('started_at')
+    ).select_related('route_card__instance__item', 'worker__employee').order_by('started_at')
     
     # Фильтруем по рабочим часам
     stuck_in_progress_raw = []
@@ -1745,6 +1745,70 @@ def statistics_bad_operations(request):
         'total_bad': sum(op.bad_qty for op in unique_ops),
     }
     return render(request, 'scanner/statistics_bad_operations.html', context)
+
+
+
+@login_required
+def worker_stats(request):
+    """Статистика по сотрудникам (только для администратора)"""
+    if not request.user.is_superuser and (not hasattr(request.user, 'employee') or request.user.employee.role != 'admin'):
+        messages.error(request, 'Доступ запрещён.')
+        return redirect('home')
+    
+    from django.db.models import Count, Sum, Q
+    from datetime import timedelta
+    
+    # Фильтр по датам
+    start_date = request.GET.get('start', '')
+    end_date = request.GET.get('end', '')
+    
+    ops = RouteOperation.objects.filter(status='completed', worker__isnull=False)
+    
+    if start_date:
+        ops = ops.filter(completed_at__gte=start_date)
+    if end_date:
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+        ops = ops.filter(completed_at__lt=end_dt)
+    
+    # Группировка по сотруднику
+    stats = ops.values('worker__username', 'worker__first_name', 'worker__last_name').annotate(
+        total_ops=Count('id'),
+        good_qty=Sum('good_qty'),
+        bad_qty=Sum('bad_qty'),
+    ).order_by('-total_ops')
+    
+    # Добавляем ФИО и время работы
+    worker_stats = []
+    for s in stats:
+        worker_ops = ops.filter(worker__username=s['worker__username'])
+        total_seconds = 0
+        for op in worker_ops:
+            if op.started_at and op.completed_at:
+                total_seconds += (op.completed_at - op.started_at).total_seconds()
+        hours = round(total_seconds / 3600, 1)
+        
+        # Получаем ФИО из Employee
+        try:
+            from scanner.models import Employee
+            emp = Employee.objects.filter(user__username=s['worker__username']).first()
+            full_name = str(emp) if emp else (f"{s['worker__last_name']} {s['worker__first_name']}".strip() or s['worker__username'])
+        except:
+            full_name = f"{s['worker__last_name']} {s['worker__first_name']}".strip() or s['worker__username']
+        
+        worker_stats.append({
+            'username': s['worker__username'],
+            'full_name': full_name,
+            'total_ops': s['total_ops'],
+            'good_qty': s['good_qty'] or 0,
+            'bad_qty': s['bad_qty'] or 0,
+            'hours': hours,
+        })
+    
+    return render(request, 'scanner/worker_stats.html', {
+        'worker_stats': worker_stats,
+        'start_date': start_date,
+        'end_date': end_date,
+    })
 
 
 @login_required

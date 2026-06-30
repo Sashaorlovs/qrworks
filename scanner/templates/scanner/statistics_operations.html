@@ -51,7 +51,7 @@
     {% for op in operations %}
         <tr>
             <td>{{ op.completed_at|date:"d.m.Y H:i" }}</td>
-            <td>{{ op.worker.get_full_name|default:"—" }}</td>
+            <td>{{ op.worker.employee|default:op.worker|default:"—" }}</td>
             <td>
                 <a href="{% url 'instance_detail' item_number=op.route_card.instance.item.item_number serial=op.route_card.instance.serial %}">
                     {{ op.route_card.instance.item.item_number }} – {{ op.route_card.instance.item.name }}

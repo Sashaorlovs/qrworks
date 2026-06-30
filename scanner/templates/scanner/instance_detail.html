@@ -82,7 +82,7 @@ function showWorkerLog(opId) {
             </div>
             <div class="card-body">
                 <p>Норма: {{ op.planned_hours }} ч</p>
-                {% if op.worker %}<p>Исполнитель: {{ op.worker.get_full_name }}</p>{% endif %}
+                {% if op.worker %}<p>Исполнитель: {{ op.worker.employee|default:op.worker }}</p>{% endif %}
                 {% if op.worker_log %}
                 <p>
                     <button class="btn btn-sm btn-outline-info" onclick="showWorkerLog('{{ op.id }}')">👥 Кто выполнял</button>
