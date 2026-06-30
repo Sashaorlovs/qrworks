@@ -1576,12 +1576,21 @@ def statistics(request):
     for inst in ItemInstance.objects.filter(
         item__item_type='Сборочная единица',
         route_card__isnull=False
-    ).select_related('item', 'order', 'route_card'):
+    ).select_related('item', 'order', 'order_item__parent__item'):
         if inst.all_components_ready() and inst.assembly_status() == 'Готово к комплектованию':
+            # Определяем главную сборку
+            root_name = ''
+            if inst.order_item:
+                current = inst.order_item
+                while current.parent:
+                    current = current.parent
+                root_name = f"{current.item.item_number} – {current.item.name}"
+            
             ready_for_assembly.append({
                 'item_number': inst.item.item_number,
                 'name': inst.item.name,
-                'serial': inst.display_serial(),
+                'serial': inst.serial,  # полный серийный номер
+                'assembly': root_name,  # главная сборка
                 'order_number': inst.order.order_number if inst.order else '',
             })
     
