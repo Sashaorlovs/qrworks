@@ -6,3 +6,4 @@ cp "$DB_FILE" "$BACKUP_DIR/db_$TIMESTAMP.sqlite3"
 
 # Удаляем бэкапы старше 7 дней
 find "$BACKUP_DIR" -name "db_*.sqlite3" -mtime +7 -delete
+find /opt/qr_simple/backups/ -name "db_*.sqlite3" -mtime +14 -delete

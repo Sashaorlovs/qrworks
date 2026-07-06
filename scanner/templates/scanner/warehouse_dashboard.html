@@ -47,7 +47,7 @@
                 <th>Сб. единица</th><th>Подсборка</th>
                 <th>Остаток</th>
                 <th>Место</th>
-                <th>Действие</th>
+                
             </tr>
         </thead>
         <tbody>
@@ -73,21 +73,10 @@
                             title="Изменить место">✏️</button>
                     {% endif %}
                 </td>
-                <td>
-                    {% if entry.can_issue %}
-                    <button class="btn btn-sm btn-outline-primary btn-issue-main"
-                            data-instance-id="{{ entry.instance.id }}"
-                            data-label="{{ entry.assembly }}"
-                            data-balance="{{ entry.balance }}"
-                            data-location="{{ entry.location }}"
-                            data-assembly="{{ entry.assembly }}">
-                        Выдать
-                    </button>
-                    {% endif %}
-                </td>
+                
             </tr>
         {% empty %}
-            <tr><td colspan="8">Нет деталей на основном складе</td></tr>
+            <tr><td colspan="7">Нет деталей на основном складе</td></tr>
         {% endfor %}
         </tbody>
     </table>
@@ -109,7 +98,7 @@
                 <th>Сб. единица</th><th>Подсборка</th>
                 <th>Остаток</th>
                 <th>Место</th>
-                <th>Действие</th>
+                
             </tr>
         </thead>
         <tbody>
@@ -135,21 +124,10 @@
                             title="Изменить место">✏️</button>
                     {% endif %}
                 </td>
-                <td>
-                    {% if entry.can_issue %}
-                    <button class="btn btn-sm btn-outline-primary btn-issue-intermediate"
-                            data-instance-id="{{ entry.instance.id }}"
-                            data-label="{{ entry.assembly }}"
-                            data-balance="{{ entry.balance }}"
-                            data-location="{{ entry.location }}"
-                            data-assembly="{{ entry.assembly }}">
-                        Выдать
-                    </button>
-                    {% endif %}
-                </td>
+                
             </tr>
         {% empty %}
-            <tr><td colspan="8">Нет деталей на меж.операционном складе</td></tr>
+            <tr><td colspan="7">Нет деталей на меж.операционном складе</td></tr>
         {% endfor %}
         </tbody>
     </table>
@@ -183,7 +161,7 @@
                 <td>{{ rec.notes|default:"—" }}</td>
             </tr>
         {% empty %}
-            <tr><td colspan="8">Нет записей</td></tr>
+            <tr><td colspan="7">Нет записей</td></tr>
         {% endfor %}
         </tbody>
     </table>
