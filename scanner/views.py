@@ -68,7 +68,7 @@ def order_tree(request, order_id):
         for inst in item.instances.all():
             if hasattr(inst, 'route_card') and inst.route_card:
                 if inst.route_card.operations.filter(
-                    operation_type__name__in=['Гальваника', 'Расточная']
+                    operation_type__name__in=['Гальваника', 'Расточная', 'Кооперация']
                 ).exists():
                     priority_ids.add(inst.id)
     return render(request, 'scanner/order_tree.html', {
