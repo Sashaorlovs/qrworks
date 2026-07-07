@@ -52,6 +52,14 @@ def order_list(request):
     })
 
 @login_required
+
+@login_required
+
+
+
+
+
+
 def order_detail(request, order_id):
     order = get_object_or_404(Order, pk=order_id)
     return render(request, 'scanner/order_detail.html', {'order': order})

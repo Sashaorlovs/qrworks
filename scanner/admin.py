@@ -72,7 +72,7 @@ class OperationTypeAdmin(admin.ModelAdmin):
 
 class OrderItemAdmin(admin.ModelAdmin):
     list_display = ('id', 'order', 'item', 'quantity', 'parent')
-    list_filter = ('order',)
+    list_filter = ('order')
     search_fields = ('item__item_number', 'item__name')
 
 class OrderItemInline(admin.TabularInline):
@@ -83,6 +83,7 @@ class OrderItemInline(admin.TabularInline):
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display = ('order_number', 'full_name', 'status', 'created_at')
+    list_editable = ('full_name', 'status')
     list_filter = ('status',)
     search_fields = ('order_number', 'full_name')
     inlines = [OrderItemInline]
@@ -118,7 +119,7 @@ class ItemInstanceAdmin(admin.ModelAdmin):
         return self.has_change_permission(request, obj)
 
     list_display = ('serial', 'item', 'quantity', 'order', 'created_at')
-    list_filter = ('order',)
+    list_filter = ('order')
     search_fields = ('serial', 'item__item_number', 'item__name')
 
 class RouteOperationInline(admin.TabularInline):
@@ -159,7 +160,7 @@ class RouteCardAdmin(admin.ModelAdmin):
 class RouteOperationAdmin(admin.ModelAdmin):
     list_display = ('route_card_link', 'operation_type', 'order', 'status', 'good_qty', 'bad_qty', 'notes')
     list_filter = ('status',)
-    search_fields = ('route_card__instance__serial',)
+    search_fields = ('route_card__instance__serial')
 
     @admin.display(description='Маршрутная карта')
     def route_card_link(self, obj):
