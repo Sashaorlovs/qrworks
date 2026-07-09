@@ -1678,7 +1678,7 @@ def operations_planning(request):
         })
     
     # Список заказов для фильтра
-    orders = Order.objects.filter(status__in=['draft', 'in_progress', 'paused']).order_by('order_number')
+    orders = Order.objects.filter(status__in=['draft', 'in_progress', 'paused']).order_by('full_name', 'order_number')
     # Список типов операций для фильтра
     op_types = OperationType.objects.all().order_by('name')
     

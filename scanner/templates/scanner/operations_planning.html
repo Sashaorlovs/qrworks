@@ -10,7 +10,7 @@
         <select name="order" class="form-select form-select-sm">
             <option value="">Все заказы</option>
             {% for o in orders %}
-            <option value="{{ o.id }}" {% if selected_order == o.id|stringformat:"s" %}selected{% endif %}>{{ o.order_number }}</option>
+            <option value="{{ o.id }}" {% if selected_order == o.id|stringformat:"s" %}selected{% endif %}>{{ o.full_name|default:o.order_number }}</option>
             {% endfor %}
         </select>
     </div>
@@ -51,7 +51,7 @@
         <tbody>
             {% for item in planning_data %}
             <tr>
-                <td>{{ item.instance.order.order_number|default:"—" }}</td>
+                <td>{{ item.instance.order.full_name|default:item.instance.order.order_number|default:"—" }}</td>
                 <td>
                     <a href="{% url 'instance_detail' item_number=item.instance.item.item_number serial=item.instance.serial %}">
                         {{ item.instance.item.item_number }} – {{ item.instance.item.name }}
