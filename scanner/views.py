@@ -712,11 +712,20 @@ def order_import(request, order_id):
                     serial = f"{base_serial}-{counter}"
                     counter += 1
                 # Создаём экземпляр
+                # Сохраняем размер заготовки и количество заготовок в экземпляр
+                inst_blank_size = str(blank_size).strip() if blank_size else ''
+                try:
+                    inst_blanks_qty = int(blanks_qty) if blanks_qty else 1
+                except (ValueError, TypeError):
+                    inst_blanks_qty = 1
+
                 inst = ItemInstance.objects.create(
                     item=item,
                     serial=serial,
                     quantity=oi.quantity,
                     setup_quantity=setup_qty,
+                    blank_size=inst_blank_size,
+                    blanks_per_item=inst_blanks_qty,
                     order=order,
                     order_item=oi
                 )
@@ -931,7 +940,7 @@ def order_material_report(request, order_id):
             item = inst.item
             material = item.material.name if item.material else '—'
             profile = item.profile or '—'
-            blank_size = item.blank_size or '—'
+            blank_size = inst.get_blank_size() or '—'
             blanks_per = inst.get_blanks_per_item()
             
             rows_data.append({

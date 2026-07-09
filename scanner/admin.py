@@ -72,7 +72,7 @@ class OperationTypeAdmin(admin.ModelAdmin):
 
 class OrderItemAdmin(admin.ModelAdmin):
     list_display = ('id', 'order', 'item', 'quantity', 'parent')
-    list_filter = ('order')
+    list_filter = ('order',)
     search_fields = ('item__item_number', 'item__name')
 
 class OrderItemInline(admin.TabularInline):
@@ -119,7 +119,7 @@ class ItemInstanceAdmin(admin.ModelAdmin):
         return self.has_change_permission(request, obj)
 
     list_display = ('serial', 'item', 'quantity', 'order', 'created_at')
-    list_filter = ('order')
+    list_filter = ('order',)
     search_fields = ('serial', 'item__item_number', 'item__name')
 
 class RouteOperationInline(admin.TabularInline):
