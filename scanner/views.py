@@ -1654,8 +1654,14 @@ def operations_planning(request):
                 current_op = op
                 found_current = True
             elif op.status == 'pending' and not found_current:
-                current_op = op
-                found_current = True
+                # Для операции "Комплектование" проверяем готовность компонентов
+                if op.operation_type.name == 'Комплектование' and not inst.all_components_ready():
+                    # Если компоненты не готовы, пропускаем эту сборку
+                    current_op = None
+                    found_current = True
+                else:
+                    current_op = op
+                    found_current = True
             elif found_current and op.status == 'pending' and next_op is None:
                 next_op = op
                 break
