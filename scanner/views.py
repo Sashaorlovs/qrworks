@@ -889,6 +889,11 @@ def warehouse_print_report(request):
 def order_material_report(request, order_id):
     """Сводная ведомость материалов на списание по заказу"""
     order = get_object_or_404(Order, pk=order_id)
+    from datetime import datetime, timedelta
+    
+    # Параметры фильтрации по датам
+    start_date = request.GET.get('start', '')
+    end_date = request.GET.get('end', '')
     
     from openpyxl import Workbook
     from openpyxl.styles import Font, Border, Side, PatternFill, Alignment
@@ -930,11 +935,18 @@ def order_material_report(request, order_id):
                 continue
             # Проверяем наличие завершённой операции раскроя/заготовки
             material_ops = ['Заготовительная', 'Плазменная резка', 'Лазерная резка', 'Гибка']
-            has_material_op = inst.route_card.operations.filter(
+            ops_filter = inst.route_card.operations.filter(
                 operation_type__name__in=material_ops,
                 status='completed'
-            ).exists()
-            if not has_material_op:
+            )
+            # Применяем фильтр по датам, если заданы
+            if start_date:
+                ops_filter = ops_filter.filter(completed_at__gte=start_date)
+            if end_date:
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+                ops_filter = ops_filter.filter(completed_at__lt=end_dt)
+            
+            if not ops_filter.exists():
                 continue
             
             item = inst.item

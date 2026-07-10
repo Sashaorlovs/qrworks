@@ -25,6 +25,20 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
+
+<script>
+function downloadMaterialReport(orderId) {
+    var start = document.getElementById('mat_start').value;
+    var end = document.getElementById('mat_end').value;
+    var url = '/order/' + orderId + '/material-report/';
+    var params = [];
+    if (start) params.push('start=' + start);
+    if (end) params.push('end=' + end);
+    if (params.length) url += '?' + params.join('&');
+    window.location.href = url;
+}
+</script>
+
 {% endblock %}
 {% block content %}
 <h1>Заказ {{ order.order_number }}</h1>
@@ -33,7 +47,13 @@ document.addEventListener('DOMContentLoaded', function() {
 {% if user.is_staff %}
 <div class="mb-3">
     <a href="{% url 'download_all_ml' order.id %}" class="btn btn-outline-primary">📦 Скачать все МЛ</a>
-    <a href="{% url 'order_material_report' order.id %}" class="btn btn-outline-danger">📋 Списание материалов</a>
+    <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+        <label class="mb-0 small">С даты:</label>
+        <input type="date" id="mat_start" class="form-control form-control-sm" style="width: 140px;">
+        <label class="mb-0 small">По дату:</label>
+        <input type="date" id="mat_end" class="form-control form-control-sm" style="width: 140px;">
+        <a href="#" class="btn btn-outline-danger btn-sm ms-2" onclick="downloadMaterialReport({{ order.id }})">📋 Списание материалов</a>
+    </div>
     <a href="{% url 'order_tree_export' order.id %}" class="btn btn-outline-success">📥 Скачать отчёт</a>
 </div>
 {% endif %}
@@ -81,6 +101,20 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+</script>
+
+
+<script>
+function downloadMaterialReport(orderId) {
+    var start = document.getElementById('mat_start').value;
+    var end = document.getElementById('mat_end').value;
+    var url = '/order/' + orderId + '/material-report/';
+    var params = [];
+    if (start) params.push('start=' + start);
+    if (end) params.push('end=' + end);
+    if (params.length) url += '?' + params.join('&');
+    window.location.href = url;
+}
 </script>
 
 {% endblock %}
