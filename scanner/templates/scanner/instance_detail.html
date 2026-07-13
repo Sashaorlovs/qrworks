@@ -17,6 +17,9 @@
 <script>
 // Хранилище логов (заполняется из Django-шаблона)
 var workerLogs = {};
+{% if instance.order %}
+    <a href="{% url 'order_tree' instance.order.id %}" target="_blank" class="btn btn-sm btn-outline-secondary mb-2">← К дереву заказа</a>
+{% endif %}
 {% for op in operations %}
 {% if op.worker_log %}
 workerLogs['{{ op.id }}'] = '{{ op.worker_log|escapejs }}';
@@ -74,7 +77,10 @@ function showWorkerLog(opId) {
         {{ status_info.label }}
     </div>
 
-    {% for op in operations %}
+    {% if instance.order %}
+    <a href="{% url 'order_tree' instance.order.id %}" target="_blank" class="btn btn-sm btn-outline-secondary mb-2">← К дереву заказа</a>
+{% endif %}
+{% for op in operations %}
         <div class="card mb-2 border-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">
             <div class="card-header d-flex justify-content-between">
                 <span>{{ forloop.counter }}. {{ op.operation_type.name }}</span>
@@ -143,7 +149,7 @@ function showWorkerLog(opId) {
     {% endfor %}
 {% endif %}
 
-<a href="javascript:history.back()" class="btn btn-outline-secondary mt-3">← Назад</a>
+
 
 <!-- Модальное окно для истории исполнителей -->
 <div class="modal fade" id="workerLogModal" tabindex="-1">
@@ -162,6 +168,9 @@ function showWorkerLog(opId) {
 <script>
 // Хранилище логов (заполняется из Django-шаблона)
 var workerLogs = {};
+{% if instance.order %}
+    <a href="{% url 'order_tree' instance.order.id %}" target="_blank" class="btn btn-sm btn-outline-secondary mb-2">← К дереву заказа</a>
+{% endif %}
 {% for op in operations %}
 {% if op.worker_log %}
 workerLogs['{{ op.id }}'] = '{{ op.worker_log|escapejs }}';
