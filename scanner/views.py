@@ -107,17 +107,17 @@ def instance_detail(request, item_number, serial):
                 pass  # admin, master, dispatcher могут всё
             elif role == 'storekeeper' and not is_warehouse:
                 messages.error(request, 'Кладовщик выполняет только складские операции.')
-                return redirect('instance_detail', item_number=item_number, serial=serial)
+                anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
             elif role == 'controller' and not is_control:
                 messages.error(request, 'Контролёр выполняет только контрольные операции.')
-                return redirect('instance_detail', item_number=item_number, serial=serial)
+                anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
             elif role == 'worker' and (is_warehouse or is_control):
                 messages.error(request, 'Рабочий не выполняет складские и контрольные операции.')
-                return redirect('instance_detail', item_number=item_number, serial=serial)
+                anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
             elif role in ('supervisor', 'technologist'):
                 msg = 'Руководитель' if role == 'supervisor' else 'Технолог'
                 messages.error(request, f'{msg} не выполняет производственные операции.')
-                return redirect('instance_detail', item_number=item_number, serial=serial)
+                anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
 
         if action == 'start' and op.status == 'pending':
             if instance.item.item_type == 'Сборочная единица' and not instance.all_components_ready():
@@ -140,17 +140,17 @@ def instance_detail(request, item_number, serial):
                     pass  # admin, master, dispatcher могут всё
                 elif role == 'storekeeper' and not is_warehouse:
                     messages.error(request, 'Кладовщик выполняет только складские операции.')
-                    return redirect('instance_detail', item_number=item_number, serial=serial)
+                    anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
                 elif role == 'controller' and not is_control:
                     messages.error(request, 'Контролёр выполняет только контрольные операции.')
-                    return redirect('instance_detail', item_number=item_number, serial=serial)
+                    anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
                 elif role == 'worker' and (is_warehouse or is_control):
                     messages.error(request, 'Рабочий не выполняет складские и контрольные операции.')
-                    return redirect('instance_detail', item_number=item_number, serial=serial)
+                    anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
                 elif role in ('supervisor', 'technologist'):
                     msg = 'Руководитель' if role == 'supervisor' else 'Технолог'
                     messages.error(request, f'{msg} не выполняет производственные операции.')
-                    return redirect('instance_detail', item_number=item_number, serial=serial)
+                    anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
 
             new_good = int(request.POST.get('good_qty', 0) or 0)
             new_bad = int(request.POST.get('bad_qty', 0) or 0)
@@ -162,13 +162,13 @@ def instance_detail(request, item_number, serial):
             # Проверки на превышение плана
             if new_good > planned:
                 messages.error(request, f'Количество годных не может превышать план ({planned} шт.).')
-                return redirect('instance_detail', item_number=item_number, serial=serial)
+                anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
             if new_bad > planned:
                 messages.error(request, f'Количество брака не может превышать план ({planned} шт.).')
-                return redirect('instance_detail', item_number=item_number, serial=serial)
+                anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
             if (current_good + current_bad + new_good + new_bad) > planned:
                 messages.error(request, f'Сумма годных и брака не может превышать план ({planned} шт.).')
-                return redirect('instance_detail', item_number=item_number, serial=serial)
+                anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
 
             # накапливаем годные и брак
             op.good_qty = current_good + new_good
@@ -226,7 +226,7 @@ def instance_detail(request, item_number, serial):
                 # операция остаётся в работе
                 op.save()
 
-        return redirect('instance_detail', item_number=item_number, serial=serial)
+        anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
 
     status_info = route_card.get_status()
     operations = route_card.operations.select_related('operation_type', 'worker').order_by('order')

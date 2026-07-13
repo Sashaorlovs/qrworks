@@ -96,7 +96,7 @@ function showWorkerLog(opId) {
     <a href="{% url 'order_tree' instance.order.id %}" target="_blank" class="btn btn-sm btn-outline-secondary mb-2">← К дереву заказа</a>
 {% endif %}
 {% for op in operations %}
-        <div class="card mb-2 border-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">
+        <div id="operation-{{ op.id }}" class="card mb-2 border-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">
             <div class="card-header d-flex justify-content-between">
                 <span>{{ forloop.counter }}. {{ op.operation_type.name }}</span>
                 <span class="badge bg-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">{{ op.get_status_display }}</span>
