@@ -188,23 +188,34 @@ def instance_detail(request, item_number, serial):
 
             # Проверяем, выполнена ли норма
             planned = instance.total_planned_quantity()
-            if (op.good_qty + op.bad_qty) >= planned or op.operation_type.name in (
-                'Прием на меж.операционный склад', 'Прием на склад',
-                'Контрольная', 'Контроль ОТК'
-            ):
+            is_warehouse = op.operation_type.name in ('Прием на меж.операционный склад', 'Прием на склад')
+            is_control = op.operation_type.name in ('Контрольная', 'Контроль ОТК')
+            
+            # Для складских и контрольных операций: завершаем только при достижении плана
+            if is_warehouse or is_control:
+                if (op.good_qty + op.bad_qty) >= planned:
+                    op.status = 'completed'
+                    op.completed_at = timezone.now()
+                # если план не достигнут — остаётся in_progress
+            elif (op.good_qty + op.bad_qty) >= planned:
+                # Для обычных операций — завершаем при достижении плана
                 op.status = 'completed'
                 op.completed_at = timezone.now()
-                op.save()
+            
+            op.save()
 
-                # складской приход только при окончательном завершении
-                if op.operation_type.name in ('Прием на меж.операционный склад', 'Прием на склад'):
-                    movement = 'in_main' if op.operation_type.name == 'Прием на склад' else 'in_intermediate'
+            # Складской приход создаём при каждом частичном завершении
+            if is_warehouse:
+                movement = 'in_main' if op.operation_type.name == 'Прием на склад' else 'in_intermediate'
+                # Важно: фиксируем только новое количество, а не общее
+                new_quantity = new_good  # количество, которое ввели сейчас
+                if new_quantity > 0:
                     WarehouseRecord.objects.create(
                         instance=instance,
                         movement_type=movement,
-                        quantity=op.good_qty,
+                        quantity=new_quantity,
                         employee=request.user.employee if hasattr(request.user, 'employee') else None,
-                        basis=f'Завершение операции «{op.operation_type.name}»',
+                        basis=f'Завершение операции «{op.operation_type.name}» (частичное)',
                         notes=(op.notes if op.notes else '')
                     )
                 # активируем следующую операцию
