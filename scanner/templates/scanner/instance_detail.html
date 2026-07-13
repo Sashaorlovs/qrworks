@@ -1,17 +1,7 @@
 {% extends 'scanner/base.html' %}
 {% block title %}{{ instance }}
 <!-- Модальное окно для истории исполнителей -->
-<div class="modal fade" id="workerLogModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">История исполнителей</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="workerLogContent" style="white-space: pre-line;">
-            </div>
-        </div>
-    </div>
+
 </div>
 
 <script>
@@ -20,6 +10,31 @@ var workerLogs = {};
 {% if instance.order %}
     <a href="{% url 'order_tree' instance.order.id %}" target="_blank" class="btn btn-sm btn-outline-secondary mb-2">← К дереву заказа</a>
 {% endif %}
+{% for op in operations %}
+{% if op.worker_log %}
+workerLogs['{{ op.id }}'] = '{{ op.worker_log|escapejs }}';
+{% endif %}
+{% endfor %}
+
+
+</script>
+
+
+<!-- Модальное окно истории исполнителей -->
+<div class="modal fade" id="workerLogModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">История исполнителей</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="workerLogContent" style="white-space: pre-line;"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+var workerLogs = {};
 {% for op in operations %}
 {% if op.worker_log %}
 workerLogs['{{ op.id }}'] = '{{ op.worker_log|escapejs }}';
@@ -94,6 +109,7 @@ function showWorkerLog(opId) {
                     <button class="btn btn-sm btn-outline-info" onclick="showWorkerLog('{{ op.id }}')">👥 Кто выполнял</button>
                 </p>
                 {% endif %}
+                
                 {% if op.started_at %}<p>Начало: {{ op.started_at|date:"d.m.Y H:i" }}</p>{% endif %}
                 {% if op.completed_at %}<p>Завершено: {{ op.completed_at|date:"d.m.Y H:i" }}</p>{% endif %}
                 {% if op.duration %}<p>Длительность: {{ op.duration }}</p>{% endif %}
@@ -152,17 +168,7 @@ function showWorkerLog(opId) {
 
 
 <!-- Модальное окно для истории исполнителей -->
-<div class="modal fade" id="workerLogModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">История исполнителей</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="workerLogContent" style="white-space: pre-line;">
-            </div>
-        </div>
-    </div>
+
 </div>
 
 <script>
@@ -171,6 +177,31 @@ var workerLogs = {};
 {% if instance.order %}
     <a href="{% url 'order_tree' instance.order.id %}" target="_blank" class="btn btn-sm btn-outline-secondary mb-2">← К дереву заказа</a>
 {% endif %}
+{% for op in operations %}
+{% if op.worker_log %}
+workerLogs['{{ op.id }}'] = '{{ op.worker_log|escapejs }}';
+{% endif %}
+{% endfor %}
+
+
+</script>
+
+
+<!-- Модальное окно истории исполнителей -->
+<div class="modal fade" id="workerLogModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">История исполнителей</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="workerLogContent" style="white-space: pre-line;"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+var workerLogs = {};
 {% for op in operations %}
 {% if op.worker_log %}
 workerLogs['{{ op.id }}'] = '{{ op.worker_log|escapejs }}';
