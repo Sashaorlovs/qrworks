@@ -178,7 +178,7 @@ class ItemInstance(models.Model):
         return total
 
     def shortage(self):
-        return max(0, self.planned_quantity() - self.total_good_produced())
+        return max(0, self.quantity - self.good_produced())
 
     def all_components_ready(self):
         """Проверяет, что все дочерние позиции заказа имеют готовые экземпляры"""

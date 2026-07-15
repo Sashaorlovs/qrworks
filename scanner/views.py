@@ -1517,8 +1517,8 @@ def statistics(request):
     op_types = OperationType.objects.all()
     op_stats = []
     for ot in op_types:
-        qs = ops.filter(operation_type=ot, status='completed')
-        cnt = qs.count()
+        qs = ops.filter(operation_type=ot)
+        cnt = qs.filter(status='completed').count()
         good = qs.aggregate(s=Sum('good_qty'))['s'] or 0
         bad = qs.aggregate(s=Sum('bad_qty'))['s'] or 0
         if cnt > 0:
@@ -2011,8 +2011,9 @@ def statistics_export(request):
         wh = wh.filter(date__lt=end_dt)
 
     total_ops = ops.filter(status='completed').count()
-    total_good = ops.filter(status='completed').aggregate(s=Sum('good_qty'))['s'] or 0
-    total_bad = ops.filter(status='completed').aggregate(s=Sum('bad_qty'))['s'] or 0
+    # Годные и брак — по всем операциям (включая незавершённые)
+    total_good = ops.aggregate(s=Sum('good_qty'))['s'] or 0
+    total_bad = ops.aggregate(s=Sum('bad_qty'))['s'] or 0
     main_instance_ids = wh.filter(movement_type='in_main').values_list('instance_id', flat=True).distinct()
     completed_main_ids = ItemInstance.objects.filter(id__in=main_instance_ids, route_card__operations__status='completed').annotate(total_ops=Count('route_card__operations'), completed_ops=Count('route_card__operations', filter=Q(route_card__operations__status='completed'))).filter(total_ops=F('completed_ops')).values_list('id', flat=True).distinct()
     in_main = ItemInstance.objects.filter(id__in=completed_main_ids).aggregate(s=Sum('quantity'))['s'] or 0
@@ -2029,8 +2030,8 @@ def statistics_export(request):
     op_types = OperationType.objects.all()
     op_stats = []
     for ot in op_types:
-        qs = ops.filter(operation_type=ot, status='completed')
-        cnt = qs.count()
+        qs = ops.filter(operation_type=ot)
+        cnt = qs.filter(status='completed').count()
         good = qs.aggregate(s=Sum('good_qty'))['s'] or 0
         bad = qs.aggregate(s=Sum('bad_qty'))['s'] or 0
         if cnt > 0:
