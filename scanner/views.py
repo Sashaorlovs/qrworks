@@ -1867,8 +1867,8 @@ def statistics_operations(request, type_name):
 
     ops = RouteOperation.objects.select_related('operation_type', 'worker', 'route_card__instance__item', 'route_card__instance__order').filter(
         operation_type__name=type_name,
-        status='completed'
-    ).order_by('-completed_at')
+        status__in=['in_progress', 'completed']
+    ).extra(select={'sort_date': "COALESCE(completed_at, started_at)"}).order_by('-sort_date')
 
     if start_date and start_date != 'None':
         ops = ops.filter(completed_at__gte=start_date)
