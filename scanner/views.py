@@ -1746,7 +1746,7 @@ def statistics_bad_operations(request):
     order_id = request.GET.get('order', '')
     type_name = request.GET.get('type', '')
 
-    ops = RouteOperation.objects.filter(status='completed', bad_qty__gt=0)\
+    ops = RouteOperation.objects.filter(bad_qty__gt=0)\
         .select_related('operation_type', 'worker__employee', 'route_card__instance__item', 'route_card__instance__order')
 
     if start_date and start_date != 'None':
@@ -1759,7 +1759,7 @@ def statistics_bad_operations(request):
     if type_name:
         ops = ops.filter(operation_type__name=type_name)
 
-    ops = ops.order_by('-completed_at')
+    ops = ops.extra(select={'sort_date': "COALESCE(completed_at, started_at)"}).order_by('-sort_date')
 
     # Убираем дубли (один экземпляр – одна запись с суммой брака?)
     # Группируем по операции и экземпляру

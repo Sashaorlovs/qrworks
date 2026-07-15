@@ -55,7 +55,7 @@
         <tbody>
             {% for op in ops %}
             <tr>
-                <td>{{ op.completed_at|date:"d.m.Y H:i" }}</td>
+                <td>{{ op.completed_at|default:op.started_at|date:"d.m.Y H:i" }}</td>
                 <td>{{ op.route_card.instance.order.order_number|default:"—" }}</td>
                 <td>
                     <a href="{% url 'instance_detail' item_number=op.route_card.instance.item.item_number serial=op.route_card.instance.serial %}">
