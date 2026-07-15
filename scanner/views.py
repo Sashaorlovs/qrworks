@@ -1511,7 +1511,7 @@ def statistics(request):
     ).distinct().count()
 
     # Брак = сумма бракованных деталей по всем завершённым операциям в периоде
-    total_bad = ops.filter(status='completed').aggregate(s=Sum('bad_qty'))['s'] or 0
+    total_bad = ops.aggregate(s=Sum('bad_qty'))['s'] or 0
 
     # По типам операций
     op_types = OperationType.objects.all()
