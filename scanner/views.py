@@ -467,16 +467,16 @@ def route_card_print(request, route_card_id):
         safe_write(ws, row, 2, float(op.planned_hours), center_wrap)
         safe_write(ws, row, 3, op.worker.get_full_name() if op.worker else '', left_wrap)
         safe_write(ws, row, 4, f"{op.good_qty}/{op.bad_qty}", center_wrap)
-        safe_write(ws, row, 5, (op.notes if op.notes else ''), left_wrap)
+        pass  # Примечание скрыто
         for c in range(1, 6):
             apply_border(ws, row, c, thin_border)
 
     # ---------- Ширина столбцов ----------
-    col_widths = {1: 25, 2: 12, 3: 18, 4: 16, 5: 20}
+    col_widths = {1: 25, 2: 12, 3: 18, 4: 16, 5: 0}  # Примечание скрыто
     for col_idx, w in col_widths.items():
         ws.column_dimensions[get_column_letter(col_idx)].width = w
     for col_letter in ['F', 'G']:
-        ws.column_dimensions[col_letter].width = 2
+        ws.column_dimensions[col_letter].width = 0  # Скрыто
     for r in range(1, 11 + offset + len(ops)):
         for c in ['F', 'G']:
             cell = ws[f'{c}{r}']
