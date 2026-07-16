@@ -190,8 +190,9 @@ class ItemInstance(models.Model):
         for child in children:
             # для типов 'Деталь', 'Сборочная единица' нужен экземпляр
             if child.item.item_type in ('Деталь', 'Сборочная единица'):
-                inst = child.instances.first()
-                if not inst or inst.good_produced() < child.planned_quantity():
+                # Суммируем выпуск по всем экземплярам (включая дозапуски)
+                total_good = sum(inst.good_produced() for inst in child.instances.all())
+                if total_good < child.planned_quantity():
                     return False
             # для стандартных/покупных считаем, что они всегда есть на складе
         return True
