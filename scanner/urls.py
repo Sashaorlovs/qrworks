@@ -38,5 +38,4 @@ urlpatterns = [
     path('route-card/create/<int:instance_id>/', views.route_card_create, name='route_card_create'),
 
     path('warehouse/', views.warehouse_dashboard, name='warehouse'),
-    path('warehouse/issue/', views.warehouse_issue, name='warehouse_issue'),
 ]

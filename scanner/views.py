@@ -67,22 +67,36 @@ def order_detail(request, order_id):
 @login_required
 def order_tree(request, order_id):
     order = get_object_or_404(Order, pk=order_id)
-    root_items = order.items.filter(parent__isnull=True).prefetch_related(
-        'instances__route_card__operations__operation_type'
+    
+    from django.core.paginator import Paginator
+    
+    # Все позиции верхнего уровня
+    all_root_items = order.items.filter(parent__isnull=True).order_by('item__item_number')
+    
+    # Пагинация: 100 позиций на странице
+    paginator = Paginator(all_root_items, 100)
+    page_number = request.GET.get('page', 1)
+    root_items_page = paginator.get_page(page_number)
+    
+    # Загружаем связанные данные только для отображаемых позиций
+    root_items = root_items_page.object_list.prefetch_related(
+        'instances__route_card__operations__operation_type',
+        'children__instances__route_card__operations__operation_type'
+    ).select_related('item')
+    
+    # Приоритетные операции (для всего заказа, чтобы фильтр работал)
+    priority_ids = set(
+        RouteOperation.objects.filter(
+            route_card__instance__order=order,
+            operation_type__name__in=['Гальваника', 'Расточная', 'Кооперация']
+        ).values_list('route_card__instance_id', flat=True).distinct()
     )
-    # ID экземпляров, у которых есть приоритетные операции
-    priority_ids = set()
-    for item in order.items.all():
-        for inst in item.instances.all():
-            if hasattr(inst, 'route_card') and inst.route_card:
-                if inst.route_card.operations.filter(
-                    operation_type__name__in=['Гальваника', 'Расточная', 'Кооперация']
-                ).exists():
-                    priority_ids.add(inst.id)
     return render(request, 'scanner/order_tree.html', {
         'order': order,
         'root_items': root_items,
         'priority_ids': priority_ids,
+        'is_paginated': paginator.num_pages > 1,
+        'page_obj': root_items_page,
     })
 
 
@@ -1271,27 +1285,47 @@ def update_storage_location(request):
 
 @login_required
 def warehouse_dashboard(request):
-    instances = ItemInstance.objects.select_related('item').all()
+    # Оптимизированная версия: агрегируем остатки и места одним запросом
+    from django.db.models import Sum, Q, OuterRef, Subquery
+
+    # Агрегация остатков и мест хранения
+    instances_with_balance = ItemInstance.objects.annotate(
+        total_in_main=Sum('warehouse_records__quantity',
+                         filter=Q(warehouse_records__movement_type='in_main')),
+        total_out_main=Sum('warehouse_records__quantity',
+                          filter=Q(warehouse_records__movement_type='out_main')),
+        total_in_inter=Sum('warehouse_records__quantity',
+                          filter=Q(warehouse_records__movement_type='in_intermediate')),
+        total_out_inter=Sum('warehouse_records__quantity',
+                           filter=Q(warehouse_records__movement_type='out_intermediate')),
+        latest_main_note=Subquery(
+            WarehouseRecord.objects.filter(
+                instance=OuterRef('pk'),
+                movement_type='in_main',
+                notes__gt=''
+            ).order_by('-date').values('notes')[:1]
+        ),
+        latest_inter_note=Subquery(
+            WarehouseRecord.objects.filter(
+                instance=OuterRef('pk'),
+                movement_type='in_intermediate',
+                notes__gt=''
+            ).order_by('-date').values('notes')[:1]
+        )
+    ).select_related('item', 'order', 'order_item__parent__item')
+
     main_data = []
     intermediate_data = []
     employee_list = Employee.objects.filter(is_active=True)
-    for inst in instances:
+
+    for inst in instances_with_balance:
+        balance_main = (inst.total_in_main or 0) - (inst.total_out_main or 0)
+        balance_inter = (inst.total_in_inter or 0) - (inst.total_out_inter or 0)
+
+        if balance_main <= 0 and balance_inter <= 0:
+            continue
+
         order_number = inst.order.order_number if inst.order else ''
-        receipt_date_main = ''
-        receipt_date_inter = ''
-        # Основной склад (in_main - out_main)
-        total_in_main = inst.warehouse_records.filter(movement_type='in_main').aggregate(
-            s=models.Sum('quantity'))['s'] or 0
-        total_out_main = inst.warehouse_records.filter(movement_type='out_main').aggregate(
-            s=models.Sum('quantity'))['s'] or 0
-        balance_main = total_in_main - total_out_main
-        # Меж.операционный склад (in_intermediate - out_intermediate)
-        total_in_inter = inst.warehouse_records.filter(movement_type='in_intermediate').aggregate(
-            s=models.Sum('quantity'))['s'] or 0
-        total_out_inter = inst.warehouse_records.filter(movement_type='out_intermediate').aggregate(
-            s=models.Sum('quantity'))['s'] or 0
-        balance_inter = total_in_inter - total_out_inter
-        # Определяем головную сборку и ближайшую подсборку
         root_name = ''
         parent_name = ''
         if inst.order_item:
@@ -1299,22 +1333,12 @@ def warehouse_dashboard(request):
             while current.parent:
                 current = current.parent
             root_name = f"{current.item.item_number} – {current.item.name}"
-            # Ближайшая подсборка (родитель позиции заказа)
             if inst.order_item.parent:
                 p = inst.order_item.parent
                 parent_name = f"{p.item.item_number} – {p.item.name}"
-        # Место хранения (из последней записи прихода с непустым примечанием)
-        location_main = ''
-        for rec in inst.warehouse_records.filter(movement_type='in_main').order_by('-date'):
-            if rec.notes:
-                location_main = rec.notes
-                break
-        # Для меж.операционного аналогично
-        location_inter = ''
-        for rec in inst.warehouse_records.filter(movement_type='in_intermediate').order_by('-date'):
-            if rec.notes:
-                location_inter = rec.notes
-                break
+
+        location_main = inst.latest_main_note or ''
+        location_inter = inst.latest_inter_note or ''
 
         if balance_main > 0:
             main_data.append({
@@ -1324,8 +1348,6 @@ def warehouse_dashboard(request):
                 'order_number': order_number,
                 'location': location_main,
                 'parent_assembly': parent_name,
-                
-                
             })
         if balance_inter > 0:
             intermediate_data.append({
@@ -1335,27 +1357,22 @@ def warehouse_dashboard(request):
                 'order_number': order_number,
                 'location': location_inter,
                 'parent_assembly': parent_name,
-                
-                
             })
 
     # Новые поступления — сверху
     main_data.reverse()
     intermediate_data.reverse()
 
-        # Все записи журнала (без пагинации)
-    records = WarehouseRecord.objects.select_related('instance__item', 'employee').order_by('-date')
+    # Журнал (без пагинации)
+    records = WarehouseRecord.objects.select_related('instance__item', 'employee').order_by('-date')[:200]
 
-    current_tab = request.GET.get('tab', 'main')
-
-    # Итоги по складам
+    # Итоги
     main_total_qty = sum(item['balance'] for item in main_data)
     main_unique_items = len(set(item['instance'].item_id for item in main_data))
     inter_total_qty = sum(item['balance'] for item in intermediate_data)
     inter_unique_items = len(set(item['instance'].item_id for item in intermediate_data))
 
     context = {
-
         'main_data': main_data,
         'intermediate_data': intermediate_data,
         'records': records,
@@ -1364,68 +1381,17 @@ def warehouse_dashboard(request):
         'main_unique_items': main_unique_items,
         'inter_total_qty': inter_total_qty,
         'inter_unique_items': inter_unique_items,
-        'current_tab': current_tab,
     }
+
     user_role = request.user.employee.role if hasattr(request.user, 'employee') else ''
     for item in context['main_data']:
         item['can_issue'] = user_role in ['admin', 'storekeeper', 'master', 'dispatcher']
-        item['can_edit_location'] = item['can_issue']  # те же права
+        item['can_edit_location'] = item['can_issue']
     for item in context['intermediate_data']:
         item['can_issue'] = user_role in ['admin', 'storekeeper', 'master', 'dispatcher']
-        item['can_edit_location'] = item['can_issue']  # те же права
+        item['can_edit_location'] = item['can_issue']
+
     return render(request, 'scanner/warehouse_dashboard.html', context)
-
-
-def warehouse_issue(request):
-    if request.method == 'POST':
-        inst_id = request.POST.get('instance_id')
-        qty = int(request.POST.get('quantity', 0))
-        recipient_val = request.POST.get('recipient', '')
-        basis = request.POST.get('basis', '')
-        notes = request.POST.get('notes', '')
-        inst = get_object_or_404(ItemInstance, pk=inst_id)
-        warehouse_type = request.POST.get('warehouse_type', 'main')
-        if warehouse_type == 'intermediate':
-            in_filter = ['in_intermediate', 'in']
-            out_filter = ['out_intermediate', 'out']
-            movement_out = 'out_intermediate'
-            if not request.POST.get('notes', '').strip():
-                messages.error(request, 'Необходимо указать примечание (куда направлена деталь).')
-                return redirect('warehouse')
-        else:
-            in_filter = ['in_main', 'in']
-            out_filter = ['out_main', 'out']
-            movement_out = 'out_main'
-
-        total_in = inst.warehouse_records.filter(
-            movement_type__in=in_filter
-        ).aggregate(s=models.Sum('quantity'))['s'] or 0
-        total_out = inst.warehouse_records.filter(
-            movement_type__in=out_filter
-        ).aggregate(s=models.Sum('quantity'))['s'] or 0
-        balance = total_in - total_out
-        if qty <= 0 or qty > balance:
-            messages.error(request, f'Можно выдать не более {balance} шт. Вы запросили {qty}.')
-        else:
-            recipient_str = ''
-            if recipient_val:
-                try:
-                    emp_id = int(recipient_val)
-                    emp = Employee.objects.get(pk=emp_id)
-                    recipient_str = f"{emp.last_name} {emp.first_name} {emp.middle_name or ''}".strip()
-                except (ValueError, Employee.DoesNotExist):
-                    recipient_str = str(recipient_val).strip()
-            WarehouseRecord.objects.create(
-                instance=inst, movement_type=movement_out, quantity=qty,
-                employee=request.user.employee if hasattr(request.user, 'employee') else None,
-                recipient=recipient_str, basis=basis,
-                notes=notes
-            )
-            messages.success(request, f'Выдано {qty} шт. со склада.')
-        return redirect('warehouse')
-    return redirect('warehouse')
-
-
 # --- Статистика ---
 
 def get_working_hours(start_dt, end_dt):
@@ -1665,10 +1631,13 @@ def operations_planning(request):
     status_filter = request.GET.get('status', '')
     type_filter = request.GET.get('type', '')
     
-    # Все экземпляры с маршрутными картами
+    # Все экземпляры с маршрутными картами (оптимизировано)
     instances = ItemInstance.objects.filter(
         route_card__isnull=False
-    ).select_related('item', 'order', 'route_card').prefetch_related('route_card__operations__operation_type')
+    ).select_related('item', 'order', 'route_card').prefetch_related(
+        'route_card__operations__operation_type',
+        'route_card__operations__worker__employee'
+    )
     
     # Применяем фильтры
     if order_id:
