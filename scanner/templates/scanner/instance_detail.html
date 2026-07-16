@@ -66,6 +66,22 @@ function showWorkerLog(opId) {
     </div>
 </div>
 
+{% if instance.order_item %}
+    <p class="text-muted small mb-2">
+        Входит в:
+        {% with parent=instance.order_item.parent %}
+            {% if parent %}
+                {% if parent.parent %}
+                    {{ parent.parent.item.item_number }} – {{ parent.parent.item.name }} &rarr;
+                {% endif %}
+                {{ parent.item.item_number }} – {{ parent.item.name }} &rarr;
+            {% endif %}
+        {% endwith %}
+        {{ instance.item.item_number }} – {{ instance.item.name }}
+        {% if instance.order %} | Заказ: {{ instance.order.order_number }}{% endif %}
+    </p>
+{% endif %}
+
 {% if instance.shortage > 0 %}
     <a href="{% url 'supplement_instance' instance.id %}" class="btn btn-sm btn-outline-danger mb-3">Дозапустить (нехватка {{ instance.shortage }})</a>
 {% endif %}
@@ -97,6 +113,7 @@ function showWorkerLog(opId) {
 {% endif %}
 {% for op in operations %}
         <div id="operation-{{ op.id }}" class="card mb-2 border-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">
+            {% if op.notes.strip %}<div class="alert alert-success small py-1 mb-0"><strong>📌 {{ op.notes }}</strong></div>{% endif %}
             <div class="card-header d-flex justify-content-between">
                 <span>{{ forloop.counter }}. {{ op.operation_type.name }}</span>
                 <span class="badge bg-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">{{ op.get_status_display }}</span>
