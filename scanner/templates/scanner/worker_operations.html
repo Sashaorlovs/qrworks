@@ -1,0 +1,69 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Операции {{ worker.get_full_name }}{% endblock %}
+{% block content %}
+<h1>Операции сотрудника: {{ worker.get_full_name }}</h1>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <label class="form-label">С даты:</label>
+        <input type="date" name="start" class="form-control form-control-sm" value="{{ start_date }}">
+    </div>
+    <div class="col-auto">
+        <label class="form-label">По дату:</label>
+        <input type="date" name="end" class="form-control form-control-sm" value="{{ end_date }}">
+    </div>
+    <div class="col-auto align-self-end">
+        <button type="submit" class="btn btn-sm btn-outline-primary">Показать</button>
+        <a href="{% url 'worker_operations' username=worker.username %}" class="btn btn-sm btn-outline-secondary">Сбросить</a>
+    </div>
+</form>
+
+<p><strong>Всего годных:</strong> {{ total_good }} | <strong>Брак:</strong> {{ total_bad }}</p>
+
+<div class="table-responsive">
+    <table class="table table-bordered table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Дата завершения</th>
+                <th>Деталь</th>
+                <th>Тип операции</th>
+                <th>Статус</th>
+                <th>Годных</th>
+                <th>Брак</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for op in ops %}
+            <tr>
+                <td>{{ op.completed_at|date:"d.m.Y H:i" }}</td>
+                <td><a href="{% url 'instance_detail' item_number=op.route_card.instance.item.item_number serial=op.route_card.instance.serial %}">{{ op.route_card.instance.item.item_number }} – {{ op.route_card.instance.item.name }}</a></td>
+                <td>{{ op.operation_type.name }}</td>
+                <td>{{ op.get_status_display }}</td>
+                <td>{{ op.good_qty }}</td>
+                <td>{{ op.bad_qty }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6">Нет операций</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if ops.paginator.num_pages > 1 %}
+<nav>
+    <ul class="pagination pagination-sm justify-content-center">
+        {% if ops.has_previous %}
+        <li class="page-item"><a class="page-link" href="?page={{ ops.previous_page_number }}&start={{ start_date }}&end={{ end_date }}">←</a></li>
+        {% endif %}
+        {% for num in ops.paginator.page_range %}
+        <li class="page-item {% if num == ops.number %}active{% endif %}"><a class="page-link" href="?page={{ num }}&start={{ start_date }}&end={{ end_date }}">{{ num }}</a></li>
+        {% endfor %}
+        {% if ops.has_next %}
+        <li class="page-item"><a class="page-link" href="?page={{ ops.next_page_number }}&start={{ start_date }}&end={{ end_date }}">→</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+<a href="{% url 'worker_stats' %}" class="btn btn-outline-secondary">← К списку сотрудников</a>
+{% endblock %}

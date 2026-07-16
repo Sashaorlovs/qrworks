@@ -32,7 +32,7 @@
         <tbody>
             {% for w in worker_stats %}
             <tr>
-                <td>{{ w.full_name }}</td>
+                <td><a href="{% url 'worker_operations' username=w.username %}">{{ w.full_name }}</a></td>
                 <td>{{ w.total_ops }}</td>
                 <td>{{ w.good_qty }}</td>
                 <td>{{ w.bad_qty }}</td>

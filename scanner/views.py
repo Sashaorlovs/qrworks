@@ -1794,6 +1794,52 @@ def statistics_bad_operations(request):
 
 
 
+
+@login_required
+def worker_operations(request, username):
+    """Список операций конкретного сотрудника (только для администратора)"""
+    if not request.user.is_superuser and (not hasattr(request.user, 'employee') or request.user.employee.role != 'admin'):
+        messages.error(request, 'Доступ запрещён.')
+        return redirect('home')
+    
+    from django.contrib.auth.models import User
+    from datetime import datetime, timedelta
+    from django.core.paginator import Paginator
+    from django.db.models import Sum
+    
+    worker = get_object_or_404(User, username=username)
+    
+    start_date = request.GET.get('start', '')
+    end_date = request.GET.get('end', '')
+    
+    ops = RouteOperation.objects.filter(worker=worker).select_related('operation_type', 'route_card__instance__item', 'route_card__instance__order')
+    
+    if start_date:
+        ops = ops.filter(completed_at__gte=start_date)
+    if end_date:
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+        ops = ops.filter(completed_at__lt=end_dt)
+    
+    ops = ops.order_by('-completed_at')
+    
+    # Пагинация
+    paginator = Paginator(ops, 50)
+    page = request.GET.get('page', 1)
+    ops_page = paginator.get_page(page)
+    
+    total_good = ops.aggregate(s=Sum('good_qty'))['s'] or 0
+    total_bad = ops.aggregate(s=Sum('bad_qty'))['s'] or 0
+    
+    return render(request, 'scanner/worker_operations.html', {
+        'worker': worker,
+        'ops': ops_page,
+        'total_good': total_good,
+        'total_bad': total_bad,
+        'start_date': start_date,
+        'end_date': end_date,
+    })
+
+
 @login_required
 def worker_stats(request):
     """Статистика по сотрудникам (только для администратора)"""
@@ -1808,7 +1854,7 @@ def worker_stats(request):
     start_date = request.GET.get('start', '')
     end_date = request.GET.get('end', '')
     
-    ops = RouteOperation.objects.filter(status='completed', worker__isnull=False)
+    ops = RouteOperation.objects.filter(status__in=['in_progress', 'completed'], worker__isnull=False)
     
     if start_date:
         ops = ops.filter(completed_at__gte=start_date)
