@@ -1626,11 +1626,18 @@ def statistics(request):
                     current = current.parent
                 root_name = f"{current.item.item_number} – {current.item.name}"
             
+            # Определяем подсборку (родительскую позицию)
+            parent_name = ''
+            if inst.order_item and inst.order_item.parent:
+                p = inst.order_item.parent
+                parent_name = f"{p.item.item_number} – {p.item.name}"
+
             ready_for_assembly.append({
                 'item_number': inst.item.item_number,
                 'name': inst.item.name,
-                'serial': inst.serial,  # полный серийный номер
-                'assembly': root_name,  # главная сборка
+                'serial': inst.serial,
+                'assembly': root_name,
+                'parent_assembly': parent_name,
                 'order_number': inst.order.order_number if inst.order else '',
             })
     
