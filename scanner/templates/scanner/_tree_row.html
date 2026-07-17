@@ -1,7 +1,7 @@
 {% with instances=item.instances.all %}
 {% if instances.exists %}
     {% for inst in instances %}
-    <tr data-node-id="{{ item.id }}" data-parent="{{ item.parent.id|default:'' }}"
+    <tr id="order-item-{{ item.id }}" data-node-id="{{ item.id }}" data-parent="{{ item.parent.id|default:'' }}"
         {% if inst.id in priority_ids %}class="table-info"{% endif %}>
         <td>
             <span style="padding-left:{{ level|add:level }}em"></span>
@@ -68,7 +68,7 @@
     </tr>
     {% endfor %}
 {% else %}
-    <tr data-node-id="{{ item.id }}" data-parent="{{ item.parent.id|default:'' }}">
+    <tr id="order-item-{{ item.id }}" data-node-id="{{ item.id }}" data-parent="{{ item.parent.id|default:'' }}">
         <td>
             <span style="padding-left:{{ level|add:level }}em"></span>
             {{ item.item.item_number }}

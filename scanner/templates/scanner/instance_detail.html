@@ -8,7 +8,7 @@
 // Хранилище логов (заполняется из Django-шаблона)
 var workerLogs = {};
 {% if instance.order %}
-    <a href="{% url 'order_tree' instance.order.id %}" target="_blank" class="btn btn-sm btn-outline-secondary mb-2">← К дереву заказа</a>
+    
 {% endif %}
 {% for op in operations %}
 {% if op.worker_log %}
@@ -60,6 +60,9 @@ function showWorkerLog(opId) {
     </div>
 {% endif %}
 
+{% if instance.order %}
+    <a href="{% url 'order_tree' instance.order.id %}{% if instance.order_item %}#order-item-{{ instance.order_item.id }}{% endif %}" class="btn btn-sm btn-outline-secondary mb-2">← К дереву заказа</a>
+{% endif %}
 <div class="progress mb-3" style="height: 20px;">
     <div class="progress-bar bg-info" style="width: {{ instance.route_card.operation_progress }}%;">
         {{ instance.route_card.operation_progress }}% операций выполнено
@@ -109,7 +112,7 @@ function showWorkerLog(opId) {
     </div>
 
     {% if instance.order %}
-    <a href="{% url 'order_tree' instance.order.id %}" target="_blank" class="btn btn-sm btn-outline-secondary mb-2">← К дереву заказа</a>
+    
 {% endif %}
 {% for op in operations %}
         <div id="operation-{{ op.id }}" class="card mb-2 border-{% if op.status == 'pending' %}secondary{% elif op.status == 'in_progress' %}primary{% else %}success{% endif %}">
@@ -198,7 +201,7 @@ function showWorkerLog(opId) {
 // Хранилище логов (заполняется из Django-шаблона)
 var workerLogs = {};
 {% if instance.order %}
-    <a href="{% url 'order_tree' instance.order.id %}" target="_blank" class="btn btn-sm btn-outline-secondary mb-2">← К дереву заказа</a>
+    
 {% endif %}
 {% for op in operations %}
 {% if op.worker_log %}
