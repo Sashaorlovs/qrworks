@@ -2328,9 +2328,14 @@ def orders_control(request):
             'progress': progress,
         })
     
+    hide_completed = request.GET.get('hide_completed') == '1'
+    if hide_completed:
+        orders_data = [o for o in orders_data if o['progress'] < 100]
+
     return render(request, 'scanner/orders_control.html', {
         'orders_data': orders_data,
         'today': today,
+        'hide_completed': hide_completed,
     })
 @login_required
 def change_order_status(request, order_id, new_status):

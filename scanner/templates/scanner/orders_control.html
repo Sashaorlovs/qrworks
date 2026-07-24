@@ -7,6 +7,15 @@
     <input type="text" id="controlSearch" class="form-control" placeholder="Поиск по номеру договора или наименованию...">
 </div>
 
+
+<form method="get" class="mb-3">
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" name="hide_completed" value="1" id="hideCompleted"
+               {% if request.GET.hide_completed == "1" %}checked{% endif %}
+               onchange="this.form.submit()">
+        <label class="form-check-label" for="hideCompleted">Скрыть завершённые заказы</label>
+    </div>
+</form>
 <table class="table table-bordered searchable">
     <thead class="table-dark">
         <tr>
