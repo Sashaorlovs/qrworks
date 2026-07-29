@@ -1,0 +1,55 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Запуск серии {{ prototype.order_number }}{% endblock %}
+{% block content %}
+<h1>Запуск серии: {{ prototype.full_name }}</h1>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <label class="form-label">Количество комплектов</label>
+            <input type="number" name="series_qty" class="form-control" value="1" min="1" required>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Номер нового заказа</label>
+            <input type="text" name="order_number" class="form-control" required placeholder="СЕРИЯ-001">
+        </div>
+    </div>
+
+    <h4>Детали для запуска</h4>
+    <div class="table-responsive">
+        <table class="table table-bordered">
+            <thead class="table-dark">
+                <tr><th>Выбрать</th><th>Обозначение</th><th>Наименование</th><th>На 1 комплект</th><th>Будет запущено</th></tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr>
+                    <td><input type="checkbox" name="include_item" value="{{ item.id }}" checked></td>
+                    <td>{{ item.item.item_number }}</td>
+                    <td>{{ item.item.name }}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td class="calculated-qty">—</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <button type="submit" class="btn btn-success btn-lg">🚀 Запустить серию</button>
+    <a href="{% url 'series_list' %}" class="btn btn-secondary">Отмена</a>
+</form>
+
+<script>
+document.querySelector('input[name="series_qty"]').addEventListener('input', function() {
+    var qty = parseInt(this.value) || 1;
+    document.querySelectorAll('tbody tr').forEach(function(row) {
+        var need = parseInt(row.cells[3].textContent);
+        var cell = row.querySelector('.calculated-qty');
+        if (cell) cell.textContent = need * qty;
+    });
+});
+// Триггерим сразу
+document.querySelector('input[name="series_qty"]').dispatchEvent(new Event('input'));
+</script>
+{% endblock %}

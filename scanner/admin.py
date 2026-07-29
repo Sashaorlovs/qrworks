@@ -186,3 +186,20 @@ class WarehouseRecordAdmin(admin.ModelAdmin):
         return f"{obj.instance.item.item_number} — {obj.instance.serial}"
 
 admin.site.register(OrderItem, OrderItemAdmin)
+
+# Регистрация моделей покупных изделий
+from scanner.purchase_models import PurchaseItem, PurchaseTransaction
+
+@admin.register(PurchaseItem)
+class PurchaseItemAdmin(admin.ModelAdmin):
+    list_display = ('item_name', 'order', 'assembly_name', 'quantity_required', 'quantity_purchased', 'purchase_status', 'created_at')
+    list_filter = ('purchase_status', 'order')
+    search_fields = ('item_name', 'designation', 'assembly_name')
+    ordering = ('-created_at',)
+
+@admin.register(PurchaseTransaction)
+class PurchaseTransactionAdmin(admin.ModelAdmin):
+    list_display = ('purchase_item', 'transaction_type', 'quantity', 'recipient', 'basis', 'created_at', 'created_by')
+    list_filter = ('transaction_type',)
+    search_fields = ('purchase_item__item_name', 'recipient')
+    ordering = ('-created_at',)

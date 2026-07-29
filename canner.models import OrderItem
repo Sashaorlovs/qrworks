@@ -1,0 +1,11 @@
+[0;1;32m●[0m gunicorn-simple.service - gunicorn for QR Simple
+     Loaded: loaded (]8;;file://nvjnbaxqpe/etc/systemd/system/gunicorn-simple.service/etc/systemd/system/gunicorn-simple.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Thu 2026-07-23 20:12:27 MSK; 17ms ago
+   Main PID: 752810 (gunicorn)
+      Tasks: 1 (limit: 4653)
+     Memory: 2.9M (peak: 2.9M)
+        CPU: 14ms
+     CGroup: /system.slice/gunicorn-simple.service
+             └─[0;38;5;245m752810 /opt/qr_simple/venv/bin/python3 /opt/qr_simple/venv/bin/gunicorn --workers 3 --bind unix:/opt/qr_simple/gunicorn.sock qr_simple.wsgi:application[0m
+
+Jul 23 20:12:27 nvjnbaxqpe systemd[1]: Started gunicorn-simple.service - gunicorn for QR Simple.

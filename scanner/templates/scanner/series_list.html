@@ -1,0 +1,134 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Серийное производство
+{% if series_items %}
+<h3 class="mt-4">Остатки на складе для серийных заказов</h3>
+<div class="table-responsive">
+    <table class="table table-bordered table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Обозначение</th>
+                <th>Наименование</th>
+                <th>Осн. склад</th>
+                <th>Меж.оп. склад</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in series_items %}
+            <tr>
+                <td>{{ item.item_number }}</td>
+                <td>{{ item.name }}</td>
+                <td>{{ item.main_balance|default:0 }}</td>
+                <td>{{ item.inter_balance|default:0 }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% endblock %}
+{% block content %}
+<h1>Серийное производство</h1>
+
+<button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createSeriesModal">+ Новый серийный заказ</button>
+
+<div class="table-responsive">
+    <table class="table table-bordered table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Номер заказа</th>
+                <th>Наименование</th>
+                <th>Общий план (комплектов)</th>
+                <th>Уже запущено</th>
+                <th>Осталось</th>
+                <th>Действия</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in series_data %}
+            <tr>
+                <td><a href="{% url 'order_detail' s.order.id %}">{{ s.order.order_number }}</a></td>
+                <td>{{ s.order.name }}</td>
+                <td>{{ s.total_plan }}</td>
+                <td>{{ s.launched }}</td>
+                <td>{{ s.remaining }}</td>
+                <td>
+                    <a href="{% url 'order_tree' s.order.id %}" class="btn btn-sm btn-outline-primary">📋 Состав</a>
+                    <a href="{% url 'series_launch' s.order.id %}" class="btn btn-sm btn-success">🚀 Запустить серию</a>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6">Нет серийных заказов</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Модальное окно создания серийного заказа -->
+<div class="modal fade" id="createSeriesModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'series_create_order' %}">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title">Новый серийный заказ</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Номер договора</label>
+                        <input type="text" name="order_number" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Наименование</label>
+                        <input type="text" name="name" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Проект</label>
+                        <input type="text" name="project" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Дата отгрузки</label>
+                        <input type="date" name="due_date" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Общий план серии (комплектов)</label>
+                        <input type="number" name="total_plan" class="form-control" value="1" min="1">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Создать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% if series_items %}
+<h3 class="mt-4">Остатки на складе для серийных заказов</h3>
+<div class="table-responsive">
+    <table class="table table-bordered table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Обозначение</th>
+                <th>Наименование</th>
+                <th>Осн. склад</th>
+                <th>Меж.оп. склад</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in series_items %}
+            <tr>
+                <td>{{ item.item_number }}</td>
+                <td>{{ item.name }}</td>
+                <td>{{ item.main_balance|default:0 }}</td>
+                <td>{{ item.inter_balance|default:0 }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% endblock %}

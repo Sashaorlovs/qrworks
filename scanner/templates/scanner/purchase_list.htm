@@ -1,0 +1,71 @@
+{% extends 'scanner/base.html' %}
+
+{% block title %}Покупные изделия{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">📦 Покупные и стандартные изделия</h4>
+        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#importModal">📥 Загрузить спецификацию</button>
+    </div>
+
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-3"><input type="text" name="q" class="form-control" placeholder="Поиск..." value="{{ q }}"></div>
+        <div class="col-md-2"><select name="status" class="form-select"><option value="">Все статусы</option>{% for s in all_statuses %}<option value="{{ s.0 }}" {% if status == s.0 %}selected{% endif %}>{{ s.1 }}</option>{% endfor %}</select></div>
+        <div class="col-md-1"><button type="submit" class="btn btn-primary w-100">🔍</button></div>
+    </form>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover">
+            <thead><tr><th>Наименование</th><th>Заказ</th><th>Сборка</th><th>Кол-во</th><th>Статус</th></tr></thead>
+            <tbody>
+                {% for item in items %}
+                <tr>
+                    <td>{{ item.item_name }}</td>
+                    <td>{{ item.order.order_number|default:"—" }}</td>
+                    <td>{% if item.assembly_name and item.order_id %}<a href="/orders/{{ item.order_id }}/?q={{ item.assembly_name|urlencode }}">{{ item.assembly_name }}</a>{% else %}{{ item.assembly_name|default:"—" }}{% endif %}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td>{{ item.get_purchase_status_display }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5">Нет данных</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header"><h5>📥 Загрузка спецификации покупных</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <div class="alert alert-info mb-3"><strong>Формат Excel:</strong> A — Обозначение | <strong>B — Наименование</strong> | C — Сборка | D — Количество</div>
+            <form id="import-form" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="mb-3"><label>Файл (.xlsx)</label><input type="file" name="file" class="form-control" accept=".xlsx" required></div>
+                <div class="mb-3"><label>Заказ</label><select name="order_id" class="form-select"><option value="">— Без заказа —</option>{% for o in orders %}<option value="{{ o.id }}">{{ o.order_number }} — {{ o.display_name }}</option>{% endfor %}</select></div>
+                <div id="import-result"></div>
+                <button type="submit" class="btn btn-primary">Загрузить</button>
+            </form>
+        </div>
+    </div></div>
+</div>
+
+<script>
+document.getElementById('import-form').addEventListener('submit', function(e){
+    e.preventDefault();
+    var fd = new FormData(this);
+    document.getElementById('import-result').innerHTML = '<div class="text-info">Загрузка...</div>';
+    fetch('/purchases/import/', {method:'POST', body:fd, headers:{'X-CSRFToken':'{{ csrf_token }}'}})
+    .then(r => r.json()).then(d => {
+        var h = '';
+        if(d.success) h += '<div class="alert alert-success">Загружено: '+d.created+' позиций</div>';
+        if(d.errors && d.errors.length) h += '<div class="alert alert-warning">'+d.errors.join('<br>')+'</div>';
+        if(d.error) h += '<div class="alert alert-danger">'+d.error+'</div>';
+        document.getElementById('import-result').innerHTML = h;
+        if(d.success && d.created > 0) setTimeout(function(){location.reload();}, 1000);
+    });
+});
+</script>
+{% endblock %}
+

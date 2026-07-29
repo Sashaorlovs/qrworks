@@ -1,0 +1,22 @@
+[0;1;32m●[0m gunicorn-simple.service - gunicorn for QR Simple
+     Loaded: loaded (]8;;file://nvjnbaxqpe/etc/systemd/system/gunicorn-simple.service/etc/systemd/system/gunicorn-simple.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Wed 2026-07-29 21:59:47 MSK; 14ms ago
+   Main PID: 816937 (gunicorn)
+      Tasks: 1 (limit: 4653)
+     Memory: 2.5M (peak: 2.5M)
+        CPU: 10ms
+     CGroup: /system.slice/gunicorn-simple.service
+             └─[0;38;5;245m816937 /opt/qr_simple/venv/bin/python3 /opt/qr_simple/venv/bin/gunicorn --workers 3 --bind unix:/opt/qr_simple/gunicorn.sock qr_simple.wsgi:application[0m
+
+Jul 29 21:59:47 nvjnbaxqpe systemd[1]: Started gunicorn-simple.service - gunicorn for QR Simple.
+[0;1;32m●[0m gunicorn-simple.service - gunicorn for QR Simple
+     Loaded: loaded (]8;;file://nvjnbaxqpe/etc/systemd/system/gunicorn-simple.service/etc/systemd/system/gunicorn-simple.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Wed 2026-07-29 22:00:02 MSK; 19ms ago
+   Main PID: 816961 (gunicorn)
+      Tasks: 1 (limit: 4653)
+     Memory: 340.0K (peak: 1.3M)
+        CPU: 10ms
+     CGroup: /system.slice/gunicorn-simple.service
+             └─[0;38;5;245m816961 /opt/qr_simple/venv/bin/python3 /opt/qr_simple/venv/bin/gunicorn --workers 3 --bind unix:/opt/qr_simple/gunicorn.sock qr_simple.wsgi:application[0m
+
+Jul 29 22:00:02 nvjnbaxqpe systemd[1]: Started gunicorn-simple.service - gunicorn for QR Simple.
