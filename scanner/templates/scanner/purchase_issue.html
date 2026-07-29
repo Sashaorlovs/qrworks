@@ -1,0 +1,206 @@
+{% extends 'scanner/base.html' %}
+{% load static %}
+
+{% block title %}Выдача стандартных изделий{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">📤 Выдача стандартных изделий и крепежа</h4>
+        <a href="{% url 'purchase_list' %}" class="btn btn-outline-secondary">← К списку покупных</a>
+    </div>
+
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-4">
+            <div class="input-group">
+                <input type="text" name="q" class="form-control" placeholder="Поиск по наименованию или подсборке..." value="{{ q }}">
+                <button type="submit" class="btn btn-primary">🔍</button>
+            </div>
+        </div>
+    </form>
+
+    <form id="issue-form" method="post">
+        {% csrf_token %}
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">Получатель</label>
+                        <select name="recipient" id="recipient" class="form-select" required>
+                            <option value="">— Выберите сотрудника —</option>
+                            {% for emp in employees %}
+                                <option value="{{ emp.id }}">{{ emp.last_name }} {{ emp.first_name }}{% if emp.position %} ({{ emp.position }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Основание</label>
+                        <input type="text" name="basis" id="basis" class="form-control" placeholder="Наименование подсборки" readonly>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Кто выдал</label>
+                        <input type="text" class="form-control" value="{{ request.user.get_full_name|default:request.user.username }}" readonly>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="button" class="btn btn-success w-100" id="issue-btn" disabled>📤 Выдать</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th><input type="checkbox" id="select-all" title="Выбрать всё"></th>
+                        <th>Наименование</th>
+                        <th>Подсборка</th>
+                        <th>В наличии</th>
+                        <th>К выдаче</th>
+                        <th>Заказ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr>
+                        <td><input type="checkbox" class="item-checkbox" value="{{ item.id }}" data-id="{{ item.id }}" data-assembly="{{ item.assembly_name|default:'' }}"></td>
+                        <td>{{ item.item_name }}</td>
+                        <td>{{ item.assembly_name|default:"—" }}</td>
+                        <td>{{ item.remaining|default:"0" }}</td>
+                        <td>
+                            <input type="number" class="form-control form-control-sm qty-input" 
+                                   value="{{ item.quantity_required }}" 
+                                   min="1" max="{{ item.remaining|default:"0" }}" 
+                                   data-id="{{ item.id }}" style="width:100px">
+                        </td>
+                        <td>{{ item.order.order_number|default:"—" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-center text-muted py-3">Нет изделий в статусе «Готов к выдаче»</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </form>
+
+    <!-- Журнал выдач -->
+    <div class="card mt-4">
+        <div class="card-header"><strong>📋 Журнал выдач</strong></div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Дата</th>
+                        <th>Наименование</th>
+                        <th>Кол-во</th>
+                        <th>Получатель</th>
+                        <th>Основание</th>
+                        <th>Кто выдал</th>
+                        <th>Накладная</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in transactions %}
+                    <tr>
+                        <td>{{ t.created_at|date:"d.m.Y H:i" }}</td>
+                        <td>{{ t.purchase_item.item_name }}</td>
+                        <td>{{ t.quantity }}</td>
+                        <td>{{ t.recipient }}</td>
+                        <td>{{ t.basis|default:"—" }}</td>
+                        <td>{{ t.created_by.get_full_name|default:t.created_by.username|default:"—" }}</td>
+                        <td><a href="{% url 'purchase_reprint_nakladnaya' t.id %}" class="btn btn-sm btn-outline-secondary">📄 Накладная</a></td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-center text-muted">История выдач пуста</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+const selectAll = document.getElementById('select-all');
+const checkboxes = document.querySelectorAll('.item-checkbox');
+const issueBtn = document.getElementById('issue-btn');
+const recipient = document.getElementById('recipient');
+const basis = document.getElementById('basis');
+
+function updateBasis() {
+    const checked = document.querySelectorAll('.item-checkbox:checked');
+    if (checked.length > 0) {
+        basis.value = checked[0].dataset.assembly || '';
+    } else {
+        basis.value = '';
+    }
+}
+
+function updateIssueBtn() {
+    const checked = document.querySelectorAll('.item-checkbox:checked').length;
+    issueBtn.disabled = checked === 0 || recipient.value === '';
+}
+
+selectAll.addEventListener('change', function() {
+    checkboxes.forEach(cb => cb.checked = this.checked);
+    updateBasis();
+    updateIssueBtn();
+});
+
+checkboxes.forEach(cb => {
+    cb.addEventListener('change', function() {
+        updateBasis();
+        updateIssueBtn();
+    });
+});
+
+recipient.addEventListener('change', updateIssueBtn);
+
+issueBtn.addEventListener('click', function() {
+    const items = [];
+    document.querySelectorAll('.item-checkbox:checked').forEach(cb => {
+        const row = cb.closest('tr');
+        const qtyInput = row.querySelector('.qty-input');
+        const qty = parseInt(qtyInput.value) || 1;
+        items.push({ id: cb.value, quantity: qty });
+    });
+
+    if (items.length === 0) {
+        alert('Выберите хотя бы одну позицию');
+        return;
+    }
+    if (!recipient.value) {
+        alert('Выберите получателя');
+        return;
+    }
+
+    fetch('{% url "purchase_bulk_issue" %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            items: items,
+            recipient_id: recipient.value,
+            basis: basis.value
+        })
+    })
+    .then(r => {
+        if (r.ok) return r.blob();
+        return r.json().then(d => { throw new Error(d.error || 'Ошибка сервера'); });
+    })
+    .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'nakladnaya_standartnye_izdeliya.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        setTimeout(() => location.reload(), 500);
+    })
+    .catch(err => alert(err.message));
+});
+</script>
+{% endblock %}

@@ -5,6 +5,8 @@ from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponse
+import uuid
+import pytz
 from django.db.models import Q, Sum
 from scanner.purchase_models import PurchaseItem, PurchaseTransaction
 from scanner.models import Order, OrderItem, Employee
@@ -134,6 +136,14 @@ def purchase_issue(request):
     q = request.GET.get('q', '').strip()
     if q:
         items = items.filter(Q(assembly_name__icontains=q) | Q(item_name__icontains=q))
+    
+    from django.db.models import Sum
+    items = items.annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))
+    
+    # Вычисляем остаток для каждой позиции
+    for item in items:
+        item.remaining = (item.quantity_purchased or 0) - (item.issued_qty or 0)
+
     employees = Employee.objects.all().order_by('last_name', 'first_name')
     # Журнал выдач (последние 50)
     transactions = PurchaseTransaction.objects.filter(transaction_type='out').select_related('purchase_item', 'created_by').order_by('-created_at')[:50]
@@ -161,6 +171,7 @@ def purchase_bulk_issue(request):
     except Employee.DoesNotExist:
         return JsonResponse({'error': 'Получатель не найден'}, status=400)
 
+    batch_token = str(uuid.uuid4())
     issued = []
     for d in items_data:
         try:
@@ -172,31 +183,154 @@ def purchase_bulk_issue(request):
             continue
         PurchaseTransaction.objects.create(
             purchase_item=item, transaction_type='out', quantity=qty,
-            recipient=str(recipient), basis=basis, created_by=request.user
+            recipient=str(recipient), basis=basis, batch_token=batch_token,
+            created_by=request.user
         )
-        item.quantity_purchased -= qty
         item.purchase_status = 'issued'
         item.save()
         issued.append({'name': item.item_name, 'qty': qty, 'assembly': item.assembly_name})
 
     # Excel-накладная
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Накладная выдачи"
-    ws.append(["НАКЛАДНАЯ НА ВЫДАЧУ СТАНДАРТНЫХ ИЗДЕЛИЙ"])
-    ws.append([f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}"])
-    ws.append([f"Кто выдал: {request.user.get_full_name() or request.user.username}"])
-    ws.append([f"Кому выдано: {recipient}"])
-    ws.append([f"Основание: {basis}"])
-    ws.append([])
-    ws.append(["Наименование", "Количество", "Подсборка"])
+    
+    # Стили
+    bold_font = Font(bold=True, size=12)
+    header_font = Font(bold=True, size=11)
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    wrap_align = Alignment(wrap_text=True, vertical='center')
+    center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    
+    # Заголовок
+    ws.merge_cells('A1:C1')
+    ws['A1'] = 'НАКЛАДНАЯ НА ВЫДАЧУ СТАНДАРТНЫХ ИЗДЕЛИЙ И КРЕПЕЖА'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = center_align
+    
+    ws['A2'] = f'Дата: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
+    ws['A2'].font = Font(size=11)
+    ws['A3'] = f'Кто выдал: {request.user.get_full_name() or request.user.username}'
+    ws['A4'] = f'Кому выдано: {recipient}'
+    ws['A5'] = f'Основание: {basis}'
+    # Добавляем главную сборку (из первого элемента заказа)
+    main_assembly = ''
+    if issued:
+        first_item = PurchaseItem.objects.filter(id=items_data[0]['id']).select_related('order').first()
+        if first_item and first_item.order:
+            first_order_item = first_item.order.items.first()
+            if first_order_item and first_order_item.item:
+                main_assembly = first_order_item.item.name
+    ws['A6'] = f'Главная сборка: {main_assembly or "—"}'
+    
+    # Таблица
+    ws['A7'] = 'Наименование'
+    ws['B7'] = 'Количество'
+    ws['C7'] = 'Подсборка'
+    for col in ['A', 'B', 'C']:
+        cell = ws[f'{col}7']
+        cell.font = header_font
+        cell.border = thin_border
+        cell.alignment = center_align
+    
+    row = 8
     for it in issued:
-        ws.append([it['name'], it['qty'], it['assembly']])
-    ws.append([])
-    ws.append(["_________________________", "_________________________"])
-    ws.append(["Подпись выдавшего", "Подпись получившего"])
+        ws[f'A{row}'] = it['name']
+        ws[f'B{row}'] = it['qty']
+        ws[f'C{row}'] = it['assembly']
+        for col in ['A', 'B', 'C']:
+            cell = ws[f'{col}{row}']
+            cell.border = thin_border
+            cell.alignment = wrap_align if col == 'A' else center_align
+        row += 1
+    
+    # Ширина столбцов
+    ws.column_dimensions['A'].width = 50
+    ws.column_dimensions['B'].width = 12
+    ws.column_dimensions['C'].width = 35
+    
+    # Подписи
+    row += 1
+    ws[f'A{row}'] = 'Выдал: _________________________'
+    ws[f'C{row}'] = 'Получил: _________________________'
+    ws[f'A{row+1}'] = f'({request.user.get_full_name() or request.user.username})'
+    ws[f'C{row+1}'] = f'({recipient})'
+    for r in [row, row+1]:
+        ws[f'A{r}'].font = Font(size=11)
+        ws[f'C{r}'].font = Font(size=11)
 
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     response['Content-Disposition'] = 'attachment; filename=issue_nakladnaya.xlsx'
+    wb.save(response)
+    return response
+
+@login_required
+def purchase_reprint_nakladnaya(request, transaction_id):
+    """Повторная печать накладной по batch_token"""
+    from openpyxl.styles import Font, Alignment, Border, Side
+    batch = request.GET.get('batch', '')
+    
+    if batch:
+        transactions = PurchaseTransaction.objects.filter(batch_token=batch).select_related('purchase_item', 'created_by')
+        if not transactions.exists():
+            return HttpResponse('Накладная не найдена', status=404)
+        first = transactions.first()
+    else:
+        t = get_object_or_404(PurchaseTransaction, id=transaction_id)
+        transactions = [t]
+        first = t
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Накладная выдачи"
+    
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
+                         top=Side(style='thin'), bottom=Side(style='thin'))
+    center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    wrap_align = Alignment(wrap_text=True, vertical='center')
+    
+    ws.merge_cells('A1:C1')
+    ws['A1'] = 'НАКЛАДНАЯ НА ВЫДАЧУ СТАНДАРТНЫХ ИЗДЕЛИЙ И КРЕПЕЖА'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = center_align
+    
+    msk = pytz.timezone('Europe/Moscow')
+    ws['A2'] = f'Дата: {first.created_at.astimezone(msk).strftime("%d.%m.%Y %H:%M")}'
+    ws['A3'] = f'Кто выдал: {first.created_by.get_full_name() if first.created_by else "—"}'
+    ws['A4'] = f'Кому выдано: {first.recipient}'
+    ws['A5'] = f'Основание: {first.basis or "—"}'
+    
+    ws['A7'] = 'Наименование'
+    ws['B7'] = 'Количество'
+    ws['C7'] = 'Подсборка'
+    for col in ['A', 'B', 'C']:
+        ws[f'{col}7'].font = Font(bold=True)
+        ws[f'{col}7'].border = thin_border
+        ws[f'{col}7'].alignment = center_align
+    
+    row = 8
+    for t in transactions:
+        ws[f'A{row}'] = t.purchase_item.item_name
+        ws[f'B{row}'] = t.quantity
+        ws[f'C{row}'] = t.purchase_item.assembly_name or '—'
+        for col in ['A', 'B', 'C']:
+            ws[f'{col}{row}'].border = thin_border
+            ws[f'{col}{row}'].alignment = wrap_align if col == 'A' else center_align
+        row += 1
+    
+    ws.column_dimensions['A'].width = 50
+    ws.column_dimensions['B'].width = 12
+    ws.column_dimensions['C'].width = 35
+    
+    row += 1
+    ws[f'A{row}'] = 'Выдал: _________________________'
+    ws[f'C{row}'] = 'Получил: _________________________'
+    
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename=nakladnaya_{batch or first.id}.xlsx'
     wb.save(response)
     return response
