@@ -14,6 +14,7 @@
     <form method="get" class="row g-2 mb-3">
         <div class="col-md-3"><input type="text" name="q" class="form-control" placeholder="Поиск..." value="{{ q }}"></div>
         <div class="col-md-2"><select name="status" class="form-select"><option value="">Все статусы</option>{% for s in statuses %}<option value="{{ s.0 }}" {% if status == s.0 %}selected{% endif %}>{{ s.1 }}</option>{% endfor %}</select></div>
+        <div class="col-md-2"><select name="order" class="form-select"><option value="">Все заказы</option>{% for o in orders %}<option value="{{ o.id }}" {% if order_filter == o.id|stringformat:"s" %}selected{% endif %}>{{ o.order_number }} — {{ o.display_name }}</option>{% endfor %}</select></div>
         <div class="col-md-1"><button type="submit" class="btn btn-primary w-100">🔍</button></div>
     </form>
 

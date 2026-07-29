@@ -16,10 +16,14 @@ def purchase_list(request):
     items = PurchaseItem.objects.select_related('order', 'assembly_ref').all()
     q = request.GET.get('q', '').strip()
     status = request.GET.get('status', '').strip()
+    order_filter = request.GET.get('order', '').strip()
+    
     if q:
         items = items.filter(Q(item_name__icontains=q) | Q(designation__icontains=q) | Q(order__order_number__icontains=q) | Q(assembly_name__icontains=q) | Q(order__items__item__name__icontains=q))
     if status:
         items = items.filter(purchase_status=status)
+    if order_filter:
+        items = items.filter(order_id=order_filter)
     
     from django.db.models import Sum
     items = items.annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))
@@ -48,6 +52,7 @@ def purchase_list(request):
         'orders': orders,
         'q': q,
         'status': status,
+        'order_filter': order_filter,
     })
 
 @login_required
