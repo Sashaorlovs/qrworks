@@ -1,0 +1,102 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Стандартные изделия и крепёж{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4>🔩 Стандартные изделия и крепёж</h4>
+        <div>
+            <a href="{% url 'purchase_issue' %}" class="btn btn-outline-success">📤 Выдача</a>
+            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#importModal">📥 Загрузить Excel</button>
+            <button class="btn btn-warning" id="change-status-btn" disabled>🔄 Сменить статус</button>
+        </div>
+    </div>
+
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-3"><input type="text" name="q" class="form-control" placeholder="Поиск..." value="{{ q }}"></div>
+        <div class="col-md-2"><select name="status" class="form-select"><option value="">Все статусы</option>{% for s in statuses %}<option value="{{ s.0 }}" {% if status == s.0 %}selected{% endif %}>{{ s.1 }}</option>{% endfor %}</select></div>
+        <div class="col-md-1"><button type="submit" class="btn btn-primary w-100">🔍</button></div>
+    </form>
+
+    <table class="table table-sm table-hover">
+        <thead><tr><th><input type="checkbox" id="select-all"></th><th>Наименование</th><th>Главная сборка</th><th>Подсборка</th><th>Требуемое</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th><th>Статус</th></tr></thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td><input type="checkbox" class="item-checkbox" value="{{ item.id }}"></td>
+                <td>{{ item.item_name }}</td>
+                <td>{{ item.main_assembly }}</td>
+                <td>{% if item.assembly_ref and item.order %}<a href="/orders/{{ item.order.id }}/tree/#item-{{ item.assembly_ref.id }}">{{ item.assembly_name }}</a>{% else %}{{ item.assembly_name|default:"—" }}{% endif %}</td>
+                <td class="text-center">{{ item.quantity_required }}</td>
+                <td class="text-center">{{ item.quantity_purchased }}</td>
+                <td class="text-center">{{ item.issued_qty|default:"0" }}</td>
+                <td class="text-center">{{ item.remaining }}</td>
+                <td><span class="badge bg-{% if item.purchase_status == 'pending' %}secondary{% elif item.purchase_status == 'ready_for_issue' %}success{% elif item.purchase_status == 'issued' %}dark{% else %}primary{% endif %}">{{ item.get_purchase_status_display }}</span></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="9">Нет данных</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header"><h5>📥 Загрузка Excel</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <div class="alert alert-info"><strong>Формат:</strong> A — Наименование, B — Требуемое кол-во, C — Закупленное кол-во, D — Подсборка</div>
+            <form id="import-form" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="mb-3"><label>Файл (.xlsx)</label><input type="file" name="file" class="form-control" accept=".xlsx" required></div>
+                <div class="mb-3"><label>Заказ</label><select name="order_id" class="form-select"><option value="">— Без заказа —</option>{% for o in orders %}<option value="{{ o.id }}">{{ o.order_number }} — {{ o.display_name }}</option>{% endfor %}</select></div>
+                <div id="import-result"></div>
+                <button type="submit" class="btn btn-primary">Загрузить</button>
+            </form>
+        </div>
+    </div></div>
+</div>
+
+<div class="modal fade" id="statusModal" tabindex="-1">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5>Сменить статус</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><select id="new-status" class="form-select">{% for s in statuses %}<option value="{{ s.0 }}">{{ s.1 }}</option>{% endfor %}</select></div>
+        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button><button class="btn btn-primary" id="apply-status">Применить</button></div>
+    </div></div>
+</div>
+
+<script>
+document.getElementById('select-all').onchange = function(){
+    document.querySelectorAll('.item-checkbox').forEach(cb => cb.checked = this.checked);
+    updateStatusBtn();
+};
+document.querySelectorAll('.item-checkbox').forEach(cb => cb.onchange = updateStatusBtn);
+function updateStatusBtn(){
+    document.getElementById('change-status-btn').disabled = document.querySelectorAll('.item-checkbox:checked').length === 0;
+}
+document.getElementById('import-form').onsubmit = function(e){
+    e.preventDefault();
+    var fd = new FormData(this);
+    var res = document.getElementById('import-result');
+    res.innerHTML = '<div class="text-info">Загрузка...</div>';
+    fetch('{% url "purchase_import" %}', {method:'POST', body:fd, headers:{'X-CSRFToken':'{{ csrf_token }}'}})
+    .then(r => r.json()).then(d => {
+        var h = '';
+        if(d.success) h += '<div class="alert alert-success">Загружено: '+d.created+'</div>';
+        if(d.errors && d.errors.length) h += '<div class="alert alert-warning">'+d.errors.join('<br>')+'</div>';
+        res.innerHTML = h;
+        if(d.success && d.created > 0) setTimeout(function(){location.reload();}, 1000);
+    });
+};
+document.getElementById('change-status-btn').onclick = function(){
+    new bootstrap.Modal(document.getElementById('statusModal')).show();
+};
+document.getElementById('apply-status').onclick = function(){
+    var ids = Array.from(document.querySelectorAll('.item-checkbox:checked')).map(cb => cb.value);
+    var status = document.getElementById('new-status').value;
+    fetch('{% url "purchase_change_status" %}', {
+        method:'POST',
+        headers:{'X-CSRFToken':'{{ csrf_token }}','Content-Type':'application/x-www-form-urlencoded'},
+        body:'ids[]='+ids.join('&ids[]=')+'&status='+status
+    }).then(r => r.json()).then(d => { if(d.success) location.reload(); });
+};
+</script>
+{% endblock %}
