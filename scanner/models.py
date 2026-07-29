@@ -34,6 +34,7 @@ class Employee(models.Model):
         ('master', 'Мастер'),
         ('controller', 'Контролёр'),
         ('storekeeper', 'Кладовщик'),
+        ('purchase_storekeeper', 'Кладовщик стандартных изделий'),
     ]
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='worker', verbose_name='Роль')
 
@@ -364,3 +365,5 @@ def assign_group_on_role_change(sender, instance, created, **kwargs):
             from django.contrib.auth.models import Group
             group = Group.objects.get(name=group_name)
             instance.user.groups.add(group)
+
+from scanner.purchase_models import PurchaseItem, PurchaseTransaction
