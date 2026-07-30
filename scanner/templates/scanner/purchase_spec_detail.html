@@ -1,0 +1,103 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Спецификация {{ order.order_number }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <a href="{% url 'purchase_list' %}" class="btn btn-outline-secondary">← К списку спецификаций</a>
+        <button class="btn btn-warning" id="change-status-btn" disabled>🔄 Сменить статус</button>
+    </div>
+    
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-4">
+            <div class="input-group">
+                <input type="text" name="q" class="form-control" placeholder="Поиск по наименованию или подсборке..." value="{{ q }}">
+                <button type="submit" class="btn btn-primary">🔍</button>
+            </div>
+        </div>
+    </form>
+    
+    <h4>📦 {{ order.order_number }} — {{ order.items.first.item.name }}</h4>
+    
+    <table class="table table-sm table-hover">
+        <thead><tr><th><input type="checkbox" id="select-all"></th><th>Наименование</th><th>Требуемое</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th><th>Статус</th></tr></thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td><input type="checkbox" class="item-checkbox" value="{{ item.ids|join:"," }}"></td>
+                <td>
+                    <details>
+                        <summary style="cursor:pointer;">{{ item.item_name }}</summary>
+                        <table class="table table-sm mt-1">
+                            <thead><tr><th>Подсборка</th><th>Требуемое</th><th>Статус</th></tr></thead>
+                            <tbody>
+                                {% for sub in item.sub_items %}
+                                <tr>
+                                    <td>{{ sub.assembly_name }}</td>
+                                    <td>{{ sub.quantity_required }}</td>
+                                    <td>{{ sub.purchase_status }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </details>
+                </td>
+                <td class="text-center">{{ item.quantity_required }}</td>
+                <td class="text-center">{{ item.quantity_purchased }}</td>
+                <td class="text-center">{{ item.issued_qty }}</td>
+                <td class="text-center">{{ item.remaining }}</td>
+                <td>
+                    {% if item.purchase_status == 'pending' %}<span class="badge bg-secondary">Ожидает закупки</span>
+                    {% elif item.purchase_status == 'awaiting_payment' %}<span class="badge bg-warning">Ожидает оплаты</span>
+                    {% elif item.purchase_status == 'paid' %}<span class="badge bg-info">Оплачен</span>
+                    {% elif item.purchase_status == 'shipped' %}<span class="badge bg-primary">Отгружен</span>
+                    {% elif item.purchase_status == 'received_warehouse' %}<span class="badge bg-light text-dark">Получено на склад</span>
+                    {% elif item.purchase_status == 'sent_to_inspection' %}<span class="badge bg-warning">Передано на ВК</span>
+                    {% elif item.purchase_status == 'incoming_inspection' %}<span class="badge bg-info">Прошел ВК</span>
+                    {% elif item.purchase_status == 'galvanika' %}<span class="badge bg-info">Гальваника</span>
+                    {% elif item.purchase_status == 'ready_for_issue' %}<span class="badge bg-success">Готов к выдаче</span>
+                    {% elif item.purchase_status == 'issued' %}<span class="badge bg-dark">Выдан</span>
+                    {% else %}<span class="badge bg-secondary">{{ item.purchase_status }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7">Нет данных</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="modal fade" id="statusModal" tabindex="-1">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5>Сменить статус</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><select id="new-status" class="form-select">{% for s in statuses %}<option value="{{ s.0 }}">{{ s.1 }}</option>{% endfor %}</select></div>
+        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button><button class="btn btn-primary" id="apply-status">Применить</button></div>
+    </div></div>
+</div>
+
+<script>
+document.getElementById('select-all').onchange = function(){
+    document.querySelectorAll('.item-checkbox').forEach(cb => cb.checked = this.checked);
+    updateStatusBtn();
+};
+document.querySelectorAll('.item-checkbox').forEach(cb => cb.onchange = updateStatusBtn);
+function updateStatusBtn(){
+    document.getElementById('change-status-btn').disabled = document.querySelectorAll('.item-checkbox:checked').length === 0;
+}
+document.getElementById('change-status-btn').onclick = function(){
+    new bootstrap.Modal(document.getElementById('statusModal')).show();
+};
+document.getElementById('apply-status').onclick = function(){
+    var ids = [];
+    document.querySelectorAll('.item-checkbox:checked').forEach(cb => {
+        ids.push(...cb.value.split(',').map(Number));
+    });
+    var status = document.getElementById('new-status').value;
+    fetch('{% url "purchase_change_status" %}', {
+        method:'POST',
+        headers:{'X-CSRFToken':'{{ csrf_token }}','Content-Type':'application/x-www-form-urlencoded'},
+        body:'ids[]='+ids.join('&ids[]=')+'&status='+status
+    }).then(r => r.json()).then(d => { if(d.success) location.reload(); });
+};
+</script>
+{% endblock %}

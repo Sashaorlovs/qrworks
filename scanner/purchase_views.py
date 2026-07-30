@@ -114,23 +114,27 @@ def purchase_change_status(request):
 
 @login_required
 def purchase_remains(request):
+    from django.db.models import Sum
     items = PurchaseItem.objects.all()
     remains = {}
     for item in items:
-        key = item.item_name
+        key = item.item_name.strip().lower()
         if key not in remains:
-            remains[key] = {'name': item.item_name, 'received': 0, 'issued': 0}
-    for t in PurchaseTransaction.objects.filter(purchase_item__in=items):
-        key = t.purchase_item.item_name
-        if key not in remains:
-            continue
-        if t.transaction_type == 'in':
-            remains[key]['received'] += t.quantity
-        else:
-            remains[key]['issued'] += t.quantity
-    remains_list = [{'name': d['name'], 'received': d['received'], 'issued': d['issued'],
-                     'available': d['received'] - d['issued']}
-                    for d in remains.values() if d['received'] > 0]
+            remains[key] = {'name': item.item_name, 'total_purchased': 0, 'total_issued': 0}
+        if item.quantity_purchased > remains[key]['total_purchased']:
+            remains[key]['total_purchased'] = item.quantity_purchased or 0
+    
+    transactions = PurchaseTransaction.objects.filter(transaction_type='out', purchase_item__in=items)        .values('purchase_item__item_name').annotate(total=Sum('quantity'))
+    for t in transactions:
+        key = t['purchase_item__item_name'].strip().lower()
+        if key in remains:
+            remains[key]['total_issued'] = t['total']
+    
+    remains_list = []
+    for d in remains.values():
+        available = d['total_purchased'] - d['total_issued']
+        remains_list.append({'name': d['name'], 'total_purchased': d['total_purchased'], 'total_issued': d['total_issued'], 'available': available})
+    
     remains_list.sort(key=lambda x: x['name'])
     return render(request, 'scanner/purchase_remains.html', {'remains': remains_list})
 
@@ -337,5 +341,127 @@ def purchase_reprint_nakladnaya(request, transaction_id):
     
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     response['Content-Disposition'] = f'attachment; filename=nakladnaya_{batch or first.id}.xlsx'
+    wb.save(response)
+    return response
+
+def check_purchase_access(view_func):
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('login')
+        if request.user.is_staff:
+            return view_func(request, *args, **kwargs)
+        if hasattr(request.user, 'employee'):
+            role = request.user.employee.role
+            if role in ['admin', 'purchase_storekeeper']:
+                return view_func(request, *args, **kwargs)
+            if role == 'supervisor' and request.method == 'GET':
+                return view_func(request, *args, **kwargs)
+            if role == 'technologist':
+                return view_func(request, *args, **kwargs)
+        messages.error(request, 'Доступ запрещён')
+        return redirect('home')
+    return wrapper
+
+@login_required
+@check_purchase_access
+def purchase_spec_list(request):
+    """Список спецификаций (заказов) с покупными изделиями"""
+    order_ids = list(set(PurchaseItem.objects.filter(order__isnull=False).values_list('order_id', flat=True)))
+    orders = Order.objects.filter(id__in=order_ids).order_by('-id')[:50]
+    
+    for o in orders:
+        first = o.items.first()
+        o.display_name = first.item_name if first and hasattr(first, 'item_name') else (first.item.name if first and first.item else '-')
+        o.purchase_count = PurchaseItem.objects.filter(order=o).count()
+    
+    all_orders = Order.objects.all().order_by('-id')[:50]
+    for o in all_orders:
+        first = o.items.first()
+        o.display_name = first.item_name if first and hasattr(first, 'item_name') else (first.item.name if first and first.item else '-')
+
+    return render(request, 'scanner/purchase_list.html', {
+        'orders': orders,
+        'all_orders': all_orders,
+    })
+
+
+@login_required
+@check_purchase_access
+def purchase_spec_detail(request, spec_id):
+    """Детальная страница спецификации покупных изделий"""
+    from collections import defaultdict
+    from django.db.models import Sum
+    
+    items = PurchaseItem.objects.filter(order_id=spec_id).select_related('order', 'assembly_ref')\
+        .annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))\
+        .order_by('item_name')
+    
+    q = request.GET.get('q', '').strip()
+    if q:
+        items = items.filter(Q(assembly_name__icontains=q) | Q(item_name__icontains=q))
+    
+    order = Order.objects.get(id=spec_id) if spec_id else None
+    
+    groups = defaultdict(list)
+    for item in items:
+        key = item.item_name.strip().lower()
+        groups[key].append(item)
+    
+    grouped_items = []
+    for group_items in groups.values():
+        first = group_items[0]
+        g = {
+            'item_name': first.item_name,
+            'quantity_required': sum(i.quantity_required or 0 for i in group_items),
+            'quantity_purchased': group_items[0].quantity_purchased or 0,
+            'issued_qty': sum(i.issued_qty or 0 for i in group_items),
+            'remaining': (group_items[0].quantity_purchased or 0) - sum(i.issued_qty or 0 for i in group_items),
+            'ids': [i.id for i in group_items],
+            'statuses': set(i.purchase_status for i in group_items),
+            'sub_items': [{
+                'id': i.id,
+                'assembly_name': i.assembly_name or '—',
+                'quantity_required': i.quantity_required or 0,
+                'purchase_status': i.get_purchase_status_display(),
+                'status_raw': i.purchase_status,
+            } for i in group_items],
+        }
+        g['purchase_status'] = list(g['statuses'])[0] if len(g['statuses']) == 1 else 'mixed'
+        grouped_items.append(g)
+    
+    return render(request, 'scanner/purchase_spec_detail.html', {
+        'order': order,
+        'items': grouped_items,
+        'statuses': PurchaseItem.PURCHASE_STATUS_CHOICES,
+        'q': q,
+    })
+
+
+@login_required
+@check_purchase_access
+def purchase_export_request(request):
+    """Экспорт заявки по текущему фильтру в Excel"""
+    items = PurchaseItem.objects.select_related('order', 'assembly_ref').all()
+    q = request.GET.get('q', '').strip()
+    if q:
+        items = items.filter(Q(item_name__icontains=q) | Q(assembly_name__icontains=q) | Q(order__order_number__icontains=q))
+    items = items.order_by('item_name', 'assembly_name')
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Заявка на склад"
+    ws.append(["ЗАЯВКА НА СКЛАД СТАНДАРТНЫХ ИЗДЕЛИЙ"])
+    ws.append([f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}"])
+    ws.append([])
+    ws.append(["Наименование", "Требуемое", "Закуплено", "Подсборка", "Статус"])
+    for item in items:
+        ws.append([item.item_name, item.quantity_required, item.quantity_purchased, item.assembly_name or '', item.get_purchase_status_display()])
+    ws.column_dimensions['A'].width = 45
+    ws.column_dimensions['B'].width = 12
+    ws.column_dimensions['C'].width = 12
+    ws.column_dimensions['D'].width = 30
+    ws.column_dimensions['E'].width = 25
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename=zayavka_sklad.xlsx'
     wb.save(response)
     return response
