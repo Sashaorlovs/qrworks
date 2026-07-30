@@ -115,30 +115,53 @@ def purchase_change_status(request):
 @login_required
 def purchase_remains(request):
     from django.db.models import Sum
-    items = PurchaseItem.objects.all()
-    remains = {}
+    from collections import defaultdict
+    
+    items = PurchaseItem.objects.select_related('order').all()
+    
+    projects = defaultdict(lambda: {'order': None, 'items': defaultdict(lambda: {'purchased': 0, 'issued': 0})})
+    
     for item in items:
+        order = item.order
+        if not order:
+            continue
+        proj = projects[order.id]
+        if not proj['order']:
+            proj['order'] = order
         key = item.item_name.strip().lower()
-        if key not in remains:
-            remains[key] = {'name': item.item_name, 'total_purchased': 0, 'total_issued': 0}
-        if item.quantity_purchased > remains[key]['total_purchased']:
-            remains[key]['total_purchased'] = item.quantity_purchased or 0
+        if item.quantity_purchased > proj['items'][key]['purchased']:
+            proj['items'][key]['purchased'] = item.quantity_purchased or 0
     
-    transactions = PurchaseTransaction.objects.filter(transaction_type='out', purchase_item__in=items)        .values('purchase_item__item_name').annotate(total=Sum('quantity'))
+    transactions = PurchaseTransaction.objects.filter(transaction_type='out', purchase_item__in=items)\
+        .select_related('purchase_item__order')
     for t in transactions:
-        key = t['purchase_item__item_name'].strip().lower()
-        if key in remains:
-            remains[key]['total_issued'] = t['total']
+        order = t.purchase_item.order
+        if not order:
+            continue
+        key = t.purchase_item.item_name.strip().lower()
+        if order.id in projects:
+            projects[order.id]['items'][key]['issued'] += t.quantity
     
-    remains_list = []
-    for d in remains.values():
-        available = d['total_purchased'] - d['total_issued']
-        remains_list.append({'name': d['name'], 'total_purchased': d['total_purchased'], 'total_issued': d['total_issued'], 'available': available})
+    projects_list = []
+    for proj_id, proj_data in projects.items():
+        items_list = []
+        for name, data in proj_data['items'].items():
+            available = data['purchased'] - data['issued']
+            items_list.append({
+                'name': name,
+                'purchased': data['purchased'],
+                'issued': data['issued'],
+                'available': available,
+            })
+        items_list.sort(key=lambda x: x['name'])
+        projects_list.append({
+            'order': proj_data['order'],
+            'items': items_list,
+        })
     
-    remains_list.sort(key=lambda x: x['name'])
-    return render(request, 'scanner/purchase_remains.html', {'remains': remains_list})
-
-@login_required
+    projects_list.sort(key=lambda x: x['order'].order_number if x['order'] else '')
+    
+    return render(request, 'scanner/purchase_remains.html', {'projects': projects_list})
 def purchase_issue(request):
     """Страница выдачи с выбором получателя из списка сотрудников"""
     items = PurchaseItem.objects.filter(purchase_status='ready_for_issue').select_related('order', 'assembly_ref')
@@ -154,8 +177,12 @@ def purchase_issue(request):
         item.remaining = (item.quantity_purchased or 0) - (item.issued_qty or 0)
 
     employees = Employee.objects.all().order_by('last_name', 'first_name')
-    # Журнал выдач (последние 50)
-    transactions = PurchaseTransaction.objects.filter(transaction_type='out').select_related('purchase_item', 'created_by').order_by('-created_at')[:50]
+    # Журнал выдач с пагинацией
+    from django.core.paginator import Paginator
+    transactions_list = PurchaseTransaction.objects.filter(transaction_type='out').select_related('purchase_item', 'created_by').order_by('-created_at')
+    paginator = Paginator(transactions_list, 20)
+    page_number = request.GET.get('page', 1)
+    transactions = paginator.get_page(page_number)
     return render(request, 'scanner/purchase_issue.html', {
         'items': items,
         'q': q,
@@ -441,26 +468,60 @@ def purchase_spec_detail(request, spec_id):
 @check_purchase_access
 def purchase_export_request(request):
     """Экспорт заявки по текущему фильтру в Excel"""
+    from openpyxl.styles import Font, Alignment, Border, Side
     items = PurchaseItem.objects.select_related('order', 'assembly_ref').all()
     q = request.GET.get('q', '').strip()
+    order_filter = request.GET.get('order', '').strip()
     if q:
         items = items.filter(Q(item_name__icontains=q) | Q(assembly_name__icontains=q) | Q(order__order_number__icontains=q))
-    items = items.order_by('item_name', 'assembly_name')
+    if order_filter:
+        items = items.filter(order_id=order_filter)
+    items = items.order_by('assembly_name', 'item_name')
     
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Заявка на склад"
-    ws.append(["ЗАЯВКА НА СКЛАД СТАНДАРТНЫХ ИЗДЕЛИЙ"])
-    ws.append([f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}"])
-    ws.append([])
-    ws.append(["Наименование", "Требуемое", "Закуплено", "Подсборка", "Статус"])
+    
+    # Стили
+    bold = Font(bold=True, size=12)
+    title_font = Font(bold=True, size=14)
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    wrap_align = Alignment(wrap_text=True, vertical='center')
+    
+    # Заголовок
+    ws.merge_cells('A1:C1')
+    ws['A1'] = 'ЗАЯВКА НА СКЛАД СТАНДАРТНЫХ ИЗДЕЛИЙ'
+    ws['A1'].font = title_font
+    ws['A1'].alignment = center
+    
+    ws['A2'] = f'Дата: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
+    ws['A3'] = f'Кто сформировал: {request.user.get_full_name() or request.user.username}'
+    
+    # Заголовки таблицы
+    ws['A5'] = 'Наименование'
+    ws['B5'] = 'Требуемое кол-во'
+    ws['C5'] = 'Подсборка'
+    for col in ['A', 'B', 'C']:
+        ws[f'{col}5'].font = bold
+        ws[f'{col}5'].border = thin_border
+        ws[f'{col}5'].alignment = center
+    
+    # Данные — каждая подсборка отдельной строкой
+    row = 6
     for item in items:
-        ws.append([item.item_name, item.quantity_required, item.quantity_purchased, item.assembly_name or '', item.get_purchase_status_display()])
-    ws.column_dimensions['A'].width = 45
-    ws.column_dimensions['B'].width = 12
-    ws.column_dimensions['C'].width = 12
-    ws.column_dimensions['D'].width = 30
-    ws.column_dimensions['E'].width = 25
+        ws[f'A{row}'] = item.item_name
+        ws[f'B{row}'] = item.quantity_required
+        ws[f'C{row}'] = item.assembly_name or '—'
+        for col in ['A', 'B', 'C']:
+            ws[f'{col}{row}'].border = thin_border
+            ws[f'{col}{row}'].alignment = wrap_align if col != 'B' else center
+        row += 1
+    
+    ws.column_dimensions['A'].width = 50
+    ws.column_dimensions['B'].width = 18
+    ws.column_dimensions['C'].width = 35
+    
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     response['Content-Disposition'] = 'attachment; filename=zayavka_sklad.xlsx'
     wb.save(response)

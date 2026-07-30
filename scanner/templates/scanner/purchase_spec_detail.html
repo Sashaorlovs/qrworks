@@ -11,7 +11,7 @@
         <div class="col-md-4">
             <div class="input-group">
                 <input type="text" name="q" class="form-control" placeholder="Поиск по наименованию или подсборке..." value="{{ q }}">
-                <button type="submit" class="btn btn-primary">🔍</button>
+                <button type="submit" class="btn btn-primary">🔍</button> <a href="/purchases/export-request/?q={{ q|urlencode }}&order={{ order.id }}" class="btn btn-outline-success btn-sm">📋 Заявка</a>
             </div>
         </div>
     </form>

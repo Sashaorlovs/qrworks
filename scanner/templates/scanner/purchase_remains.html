@@ -4,20 +4,28 @@
 <div class="container-fluid">
     <h4>📋 Остатки стандартных изделий и крепежа</h4>
     <a href="{% url 'purchase_list' %}" class="btn btn-outline-primary mb-3">← К списку спецификаций</a>
-    <table class="table table-sm">
-        <thead><tr><th>Наименование</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th></tr></thead>
-        <tbody>
-            {% for r in remains %}
-            <tr>
-                <td>{{ r.name }}</td>
-                <td class="text-center">{{ r.total_purchased }}</td>
-                <td class="text-center">{{ r.total_issued }}</td>
-                <td class="text-center"><strong>{{ r.available }}</strong></td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="4">Нет данных</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    
+    {% for project in projects %}
+    <div class="card mb-3">
+        <div class="card-header"><strong>{{ project.order.order_number }} — {{ project.order.items.first.item.name }}</strong></div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <thead><tr><th>Наименование</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th></tr></thead>
+                <tbody>
+                    {% for item in project.items %}
+                    <tr>
+                        <td>{{ item.name }}</td>
+                        <td class="text-center">{{ item.purchased }}</td>
+                        <td class="text-center">{{ item.issued }}</td>
+                        <td class="text-center"><strong>{{ item.available }}</strong></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% empty %}
+    <p>Нет данных</p>
+    {% endfor %}
 </div>
 {% endblock %}

@@ -113,6 +113,23 @@
                     {% empty %}
                     <tr><td colspan="7" class="text-center text-muted">История выдач пуста</td></tr>
                     {% endfor %}
+                    {% if transactions.paginator.num_pages > 1 %}
+                    <tr><td colspan="7">
+                        <nav>
+                            <ul class="pagination pagination-sm justify-content-center mb-0">
+                                {% if transactions.has_previous %}
+                                <li class="page-item"><a class="page-link" href="?page={{ transactions.previous_page_number }}">&laquo;</a></li>
+                                {% endif %}
+                                {% for num in transactions.paginator.page_range %}
+                                <li class="page-item {% if transactions.number == num %}active{% endif %}"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>
+                                {% endfor %}
+                                {% if transactions.has_next %}
+                                <li class="page-item"><a class="page-link" href="?page={{ transactions.next_page_number }}">&raquo;</a></li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    </td></tr>
+                    {% endif %}
                 </tbody>
             </table>
         </div>
