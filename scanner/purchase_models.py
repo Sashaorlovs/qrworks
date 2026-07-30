@@ -7,6 +7,8 @@ class PurchaseItem(models.Model):
         ("awaiting_payment", "Ожидает оплаты"),
         ("paid", "Оплачен"),
         ("shipped", "Отгружен"),
+        ("received_warehouse", "Получено на склад"),
+        ("sent_to_inspection", "Передано на входной контроль"),
         ("incoming_inspection", "Прошел входной контроль"),
         ("galvanika", "Гальваника"),
         ("ready_for_issue", "Готов к выдаче"),
