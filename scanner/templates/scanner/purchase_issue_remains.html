@@ -30,7 +30,7 @@
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">Основание</label>
-                        <input type="text" id="basis" class="form-control" placeholder="Общепроизводственные нужды" value="Общепроизводственные нужды">
+                        <input type="text" id="basis" class="form-control" value="Общепроизводственные нужды">
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Кто выдал</label>
@@ -43,13 +43,30 @@
             </div>
         </div>
 
-        <table class="table table-sm table-hover">
+        <table class="table table-sm">
             <thead><tr><th><input type="checkbox" id="select-all"></th><th>Наименование</th><th>Остаток</th><th>К выдаче</th></tr></thead>
             <tbody>
                 {% for item in items %}
                 <tr>
-                    <td><input type="checkbox" class="item-checkbox" value="{{ item.id }}"></td>
-                    <td>{{ item.item_name }}</td>
+                    <td><input type="checkbox" class="item-checkbox" value="{{ item.ids|join:"," }}"></td>
+                    <td>
+                        <details>
+                            <summary>{{ item.name }}</summary>
+                            <table class="table table-sm mt-1">
+                                <thead><tr><th>Проект</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th></tr></thead>
+                                <tbody>
+                                    {% for pd in item.project_details %}
+                                    <tr>
+                                        <td>{{ pd.name }}</td>
+                                        <td>{{ pd.purchased }}</td>
+                                        <td>{{ pd.issued }}</td>
+                                        <td>{{ pd.remaining }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </details>
+                    </td>
                     <td>{{ item.remaining }}</td>
                     <td><input type="number" class="form-control form-control-sm qty-input" value="1" min="1" max="{{ item.remaining }}" style="width:100px"></td>
                 </tr>
@@ -71,12 +88,12 @@ document.getElementById('recipient').onchange = updateBtn;
 function updateBtn(){
     document.getElementById('issue-btn').disabled = document.querySelectorAll('.item-checkbox:checked').length === 0 || document.getElementById('recipient').value === '';
 }
-
 document.getElementById('issue-btn').onclick = function(){
     var items = [];
     document.querySelectorAll('.item-checkbox:checked').forEach(function(cb){
         var qty = parseInt(cb.closest('tr').querySelector('.qty-input').value) || 1;
-        items.push({id: cb.value, quantity: qty});
+        var ids = cb.value.split(',').map(Number);
+        ids.forEach(function(id){ items.push({id: id, quantity: qty}); });
     });
     fetch('{% url "purchase_bulk_issue" %}', {
         method:'POST',

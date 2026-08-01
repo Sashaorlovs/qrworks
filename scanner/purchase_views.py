@@ -210,7 +210,7 @@ def purchase_issue(request):
     """Страница выдачи с выбором получателя из списка сотрудников"""
     from django.db.models import Sum
     from django.db.models import Sum
-    items = PurchaseItem.objects.select_related('order', 'assembly_ref').annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))\
+    items = PurchaseItem.objects.filter(purchase_status='ready_for_issue').select_related('order', 'assembly_ref').annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))\
         .annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))
     
     q = request.GET.get('q', '').strip()
@@ -571,19 +571,38 @@ def purchase_export_request(request):
 def purchase_issue_remains(request):
     """Упрощённая выдача со страницы остатков (без привязки к проекту)"""
     from django.db.models import Sum
+    from collections import defaultdict
+    
     items = PurchaseItem.objects.select_related('order', 'assembly_ref')\
         .annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))
     
     # Только позиции с остатком > 0
     items = [i for i in items if (i.quantity_purchased or 0) > (i.issued_qty or 0)]
     
+    # Группировка по наименованиям
+    grouped = defaultdict(lambda: {'purchased': 0, 'issued': 0, 'projects': defaultdict(lambda: {'purchased': 0, 'issued': 0})})
+    for i in items:
+        key = i.item_name.strip().lower()
+        grouped[key]['purchased'] += i.quantity_purchased or 0
+        grouped[key]['issued'] += i.issued_qty or 0
+        proj_name = i.order.full_name or i.order.order_number if i.order else 'Без проекта'
+        grouped[key]['projects'][proj_name]['purchased'] += i.quantity_purchased or 0
+        grouped[key]['projects'][proj_name]['issued'] += i.issued_qty or 0
+    
     q = request.GET.get('q', '').strip()
     if q:
         q_lower = q.lower()
-        items = [i for i in items if q_lower in (i.item_name or '').lower()]
+        grouped = {k: v for k, v in grouped.items() if q_lower in k}
     
-    for item in items:
-        item.remaining = (item.quantity_purchased or 0) - (item.issued_qty or 0)
+    items = []
+    for name, data in grouped.items():
+        data['name'] = name[0].upper() + name[1:] if name else name
+        data['remaining'] = data['purchased'] - data['issued']
+        data['projects_list'] = ', '.join(data['projects'].keys())
+        data['project_details'] = [{'name': pn, 'purchased': pd['purchased'], 'issued': pd['issued'], 'remaining': pd['purchased'] - pd['issued']} for pn, pd in data['projects'].items()]
+        ids = list(PurchaseItem.objects.filter(item_name__iexact=name).values_list('id', flat=True))
+        data['ids'] = ids
+        items.append(data)
     
     employees = Employee.objects.all().order_by('last_name', 'first_name')
     
@@ -593,8 +612,7 @@ def purchase_issue_remains(request):
         'employees': employees,
     })
 
-@login_required
-@check_purchase_access
+
 def purchase_issue_log(request):
     """Журнал выдач с пагинацией"""
     from django.core.paginator import Paginator
