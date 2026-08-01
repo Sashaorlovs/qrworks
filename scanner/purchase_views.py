@@ -118,50 +118,78 @@ def purchase_remains(request):
     from collections import defaultdict
     
     items = PurchaseItem.objects.select_related('order').all()
-    
-    projects = defaultdict(lambda: {'order': None, 'items': defaultdict(lambda: {'purchased': 0, 'issued': 0})})
-    
-    for item in items:
-        order = item.order
-        if not order:
-            continue
-        proj = projects[order.id]
-        if not proj['order']:
-            proj['order'] = order
-        key = item.item_name.strip().lower()
-        if item.quantity_purchased > proj['items'][key]['purchased']:
-            proj['items'][key]['purchased'] = item.quantity_purchased or 0
-    
     transactions = PurchaseTransaction.objects.filter(transaction_type='out', purchase_item__in=items)\
-        .select_related('purchase_item__order')
-    for t in transactions:
-        order = t.purchase_item.order
-        if not order:
-            continue
-        key = t.purchase_item.item_name.strip().lower()
-        if order.id in projects:
-            projects[order.id]['items'][key]['issued'] += t.quantity
+        .values('purchase_item__item_name').annotate(total=Sum('quantity'))
     
-    projects_list = []
-    for proj_id, proj_data in projects.items():
-        items_list = []
-        for name, data in proj_data['items'].items():
-            available = data['purchased'] - data['issued']
-            items_list.append({
-                'name': name,
-                'purchased': data['purchased'],
-                'issued': data['issued'],
-                'available': available,
-            })
-        items_list.sort(key=lambda x: x['name'])
-        projects_list.append({
-            'order': proj_data['order'],
-            'items': items_list,
+    issued_dict = {}
+    for t in transactions:
+        key = t['purchase_item__item_name'].strip().lower()
+        issued_dict[key] = t['total']
+    
+    remains = defaultdict(lambda: {'purchased': 0, 'projects': set()})
+    for item in items:
+        key = item.item_name.strip().lower()
+        if item.quantity_purchased > remains[key]['purchased']:
+            remains[key]['purchased'] = item.quantity_purchased or 0
+        if item.order:
+            remains[key]['projects'].add(item.order.full_name or item.order.order_number)
+    
+    remains_list = []
+    for name, data in remains.items():
+        issued = issued_dict.get(name, 0)
+        available = data['purchased'] - issued
+        remains_list.append({
+            'name': name,
+            'projects': ', '.join(sorted(data['projects'])),
+            'purchased': data['purchased'],
+            'issued': issued,
+            'available': available,
         })
     
-    projects_list.sort(key=lambda x: x['order'].order_number if x['order'] else '')
+    # Добавляем детализацию по проектам
+    for item in remains_list:
+        key = item['name']
+        item['project_details'] = []
+        proj_data = defaultdict(lambda: {'purchased': 0, 'issued': 0})
+        for pi in items:
+            if pi.item_name.strip().lower() == key:
+                proj_name = pi.order.full_name or pi.order.order_number
+                if pi.quantity_purchased > proj_data[proj_name]['purchased']:
+                    proj_data[proj_name]['purchased'] = pi.quantity_purchased or 0
+        for proj_name, data in proj_data.items():
+            issued = PurchaseTransaction.objects.filter(
+                purchase_item__item_name__iexact=key,
+                purchase_item__order__full_name=proj_name if 'full_name' in dir(pi.order) else None,
+                transaction_type='out'
+            ).aggregate(s=Sum('quantity'))['s'] or 0
+            # Упростим: issued по проекту не считаем отдельно, оставим общее
+            proj_data[proj_name]['issued'] = 0
+        # Пересчитаем issued по проектам
+        for proj_name in proj_data:
+            proj_issued = 0
+            for pi in items:
+                if pi.item_name.strip().lower() == key and (pi.order.full_name or pi.order.order_number) == proj_name:
+                    proj_issued += PurchaseTransaction.objects.filter(purchase_item=pi, transaction_type='out').aggregate(s=Sum('quantity'))['s'] or 0
+            proj_data[proj_name]['issued'] = proj_issued
+            proj_data[proj_name]['available'] = proj_data[proj_name]['purchased'] - proj_issued
+            item['project_details'].append({
+                'project': proj_name,
+                'purchased': proj_data[proj_name]['purchased'],
+                'issued': proj_data[proj_name]['issued'],
+                'available': proj_data[proj_name]['available'],
+            })
+        item['project_details'].sort(key=lambda x: x['project'])
     
-    return render(request, 'scanner/purchase_remains.html', {'projects': projects_list})
+    # Пересчитываем итоги как сумму по проектам
+    for item in remains_list:
+        item['purchased'] = sum(pd['purchased'] for pd in item['project_details'])
+        item['issued'] = sum(pd['issued'] for pd in item['project_details'])
+        item['available'] = item['purchased'] - item['issued']
+    
+    remains_list.sort(key=lambda x: x['name'])
+    return render(request, 'scanner/purchase_remains.html', {'remains': remains_list})
+
+
 def purchase_issue(request):
     """Страница выдачи с выбором получателя из списка сотрудников"""
     items = PurchaseItem.objects.filter(purchase_status='ready_for_issue').select_related('order', 'assembly_ref')
