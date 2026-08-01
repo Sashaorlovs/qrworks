@@ -56,7 +56,7 @@
                     {% elif item.purchase_status == 'galvanika' %}<span class="badge bg-info">Гальваника</span>
                     {% elif item.purchase_status == 'ready_for_issue' %}<span class="badge bg-success">Готов к выдаче</span>
                     {% elif item.purchase_status == 'issued' %}<span class="badge bg-dark">Выдан</span>
-                    {% else %}<span class="badge bg-secondary">{{ item.purchase_status }}</span>
+                    {% else %}<span class="badge bg-warning">Смешанный</span>
                     {% endif %}
                 </td>
             </tr>
