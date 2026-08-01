@@ -1,0 +1,37 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Журнал выдач{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4>📋 Журнал выдач стандартных изделий</h4>
+        <a href="{% url 'purchase_list' %}" class="btn btn-outline-secondary">← К списку спецификаций</a>
+    </div>
+    
+    <table class="table table-sm table-hover">
+        <thead><tr><th>Дата</th><th>Наименование</th><th>Кол-во</th><th>Получатель</th><th>Основание</th><th>Кто выдал</th><th></th></tr></thead>
+        <tbody>
+            {% for t in transactions %}
+            <tr>
+                <td>{{ t.created_at|date:"d.m.Y H:i" }}</td>
+                <td>{{ t.purchase_item.item_name }}</td>
+                <td>{{ t.quantity }}</td>
+                <td>{{ t.recipient }}</td>
+                <td>{{ t.basis|default:"—" }}</td>
+                <td>{{ t.created_by.get_full_name|default:t.created_by.username|default:"—" }}</td>
+                <td><a href="{% url 'purchase_reprint_nakladnaya' t.id %}" class="btn btn-sm btn-outline-secondary">📄</a></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7">Журнал пуст</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    {% if transactions.paginator.num_pages > 1 %}
+    <nav><ul class="pagination pagination-sm justify-content-center">
+        {% if transactions.has_previous %}<li class="page-item"><a class="page-link" href="?page={{ transactions.previous_page_number }}">&laquo;</a></li>{% endif %}
+        {% for num in transactions.paginator.page_range %}<li class="page-item {% if transactions.number == num %}active{% endif %}"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>{% endfor %}
+        {% if transactions.has_next %}<li class="page-item"><a class="page-link" href="?page={{ transactions.next_page_number }}">&raquo;</a></li>{% endif %}
+    </ul></nav>
+    {% endif %}
+</div>
+{% endblock %}

@@ -95,56 +95,6 @@
         </div>
     </form>
 
-    <!-- Журнал выдач -->
-    <div class="card mt-4">
-        <div class="card-header"><strong>📋 Журнал выдач</strong></div>
-        <div class="card-body p-0">
-            <table class="table table-sm table-hover mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Дата</th>
-                        <th>Наименование</th>
-                        <th>Кол-во</th>
-                        <th>Получатель</th>
-                        <th>Основание</th>
-                        <th>Кто выдал</th>
-                        <th>Накладная</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for t in transactions %}
-                    <tr>
-                        <td>{{ t.created_at|date:"d.m.Y H:i" }}</td>
-                        <td>{{ t.purchase_item.item_name }}</td>
-                        <td>{{ t.quantity }}</td>
-                        <td>{{ t.recipient }}</td>
-                        <td>{{ t.basis|default:"—" }}</td>
-                        <td>{{ t.created_by.get_full_name|default:t.created_by.username|default:"—" }}</td>
-                        <td><a href="{% url 'purchase_reprint_nakladnaya' t.id %}" class="btn btn-sm btn-outline-secondary">📄 Накладная</a></td>
-                    </tr>
-                    {% empty %}
-                    <tr><td colspan="7" class="text-center text-muted">История выдач пуста</td></tr>
-                    {% endfor %}
-                    {% if transactions.paginator.num_pages > 1 %}
-                    <tr><td colspan="7">
-                        <nav>
-                            <ul class="pagination pagination-sm justify-content-center mb-0">
-                                {% if transactions.has_previous %}
-                                <li class="page-item"><a class="page-link" href="?page={{ transactions.previous_page_number }}">&laquo;</a></li>
-                                {% endif %}
-                                {% for num in transactions.paginator.page_range %}
-                                <li class="page-item {% if transactions.number == num %}active{% endif %}"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>
-                                {% endfor %}
-                                {% if transactions.has_next %}
-                                <li class="page-item"><a class="page-link" href="?page={{ transactions.next_page_number }}">&raquo;</a></li>
-                                {% endif %}
-                            </ul>
-                        </nav>
-                    </td></tr>
-                    {% endif %}
-                </tbody>
-            </table>
-        </div>
     </div>
 </div>
 

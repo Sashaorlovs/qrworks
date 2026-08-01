@@ -209,34 +209,27 @@ def purchase_remains(request):
 
 def purchase_issue(request):
     """Страница выдачи с выбором получателя из списка сотрудников"""
-    items = PurchaseItem.objects.filter(purchase_status='ready_for_issue').select_related('order', 'assembly_ref')
+    from django.db.models import Sum
+    items = PurchaseItem.objects.filter(purchase_status='ready_for_issue').select_related('order', 'assembly_ref')\
+        .annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))
+    
     q = request.GET.get('q', '').strip()
     if q:
-        items = items.filter(Q(assembly_name__icontains=q) | Q(item_name__icontains=q))
-    
-    from django.db.models import Sum
-    items = items.annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))
-    
+        q_lower = q.lower()
+        items = [i for i in items if q_lower in (i.assembly_name or '').lower() or q_lower in (i.item_name or '').lower()]
+
     # Вычисляем остаток для каждой позиции
     for item in items:
         item.remaining = (item.quantity_purchased or 0) - (item.issued_qty or 0)
 
     employees = Employee.objects.all().order_by('last_name', 'first_name')
-    # Журнал выдач с пагинацией
-    from django.core.paginator import Paginator
-    transactions_list = PurchaseTransaction.objects.filter(transaction_type='out').select_related('purchase_item', 'created_by').order_by('-created_at')
-    paginator = Paginator(transactions_list, 20)
-    page_number = request.GET.get('page', 1)
-    transactions = paginator.get_page(page_number)
     return render(request, 'scanner/purchase_issue.html', {
         'items': items,
         'q': q,
         'employees': employees,
-        'transactions': transactions,
     })
 
-@login_required
-@require_POST
+
 def purchase_bulk_issue(request):
     """Групповая выдача с накладной"""
     data = json.loads(request.body)
@@ -572,3 +565,41 @@ def purchase_export_request(request):
     response['Content-Disposition'] = 'attachment; filename=zayavka_sklad.xlsx'
     wb.save(response)
     return response
+
+@login_required
+@check_purchase_access
+def purchase_issue_remains(request):
+    """Упрощённая выдача со страницы остатков (без привязки к проекту)"""
+    from django.db.models import Sum
+    items = PurchaseItem.objects.select_related('order', 'assembly_ref')\
+        .annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))
+    
+    # Только позиции с остатком > 0
+    items = [i for i in items if (i.quantity_purchased or 0) > (i.issued_qty or 0)]
+    
+    q = request.GET.get('q', '').strip()
+    if q:
+        q_lower = q.lower()
+        items = [i for i in items if q_lower in (i.item_name or '').lower()]
+    
+    for item in items:
+        item.remaining = (item.quantity_purchased or 0) - (item.issued_qty or 0)
+    
+    employees = Employee.objects.all().order_by('last_name', 'first_name')
+    
+    return render(request, 'scanner/purchase_issue_remains.html', {
+        'items': items,
+        'q': q,
+        'employees': employees,
+    })
+
+@login_required
+@check_purchase_access
+def purchase_issue_log(request):
+    """Журнал выдач с пагинацией"""
+    from django.core.paginator import Paginator
+    transactions_list = PurchaseTransaction.objects.filter(transaction_type='out').select_related('purchase_item', 'created_by').order_by('-created_at')
+    paginator = Paginator(transactions_list, 20)
+    page_number = request.GET.get('page', 1)
+    transactions = paginator.get_page(page_number)
+    return render(request, 'scanner/purchase_issue_log.html', {'transactions': transactions})
