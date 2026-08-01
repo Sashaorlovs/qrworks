@@ -25,8 +25,7 @@ def purchase_list(request):
     if order_filter:
         items = items.filter(order_id=order_filter)
     
-    from django.db.models import Sum
-    items = items.annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))
+
     items = list(items[:500])
 
     # Добавляем main_assembly через отдельный запрос
@@ -210,7 +209,8 @@ def purchase_remains(request):
 def purchase_issue(request):
     """Страница выдачи с выбором получателя из списка сотрудников"""
     from django.db.models import Sum
-    items = PurchaseItem.objects.filter(purchase_status='ready_for_issue').select_related('order', 'assembly_ref')\
+    from django.db.models import Sum
+    items = PurchaseItem.objects.select_related('order', 'assembly_ref').annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))\
         .annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))
     
     q = request.GET.get('q', '').strip()
