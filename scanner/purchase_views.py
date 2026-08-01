@@ -454,6 +454,7 @@ def purchase_spec_detail(request, spec_id):
             } for i in group_items],
         }
         g['purchase_status'] = list(g['statuses'])[0] if len(g['statuses']) == 1 else 'mixed'
+        g['status_display'] = dict(PurchaseItem.PURCHASE_STATUS_CHOICES).get(g['purchase_status'], g['purchase_status']) if g['purchase_status'] != 'mixed' else 'Смешанный'
         grouped_items.append(g)
     
     return render(request, 'scanner/purchase_spec_detail.html', {

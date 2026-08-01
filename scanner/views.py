@@ -1,6 +1,6 @@
 from scanner.models import RouteCard
 from datetime import datetime, timedelta, date
-from django.db.models import Q,  Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Q
+from django.db.models import Q, Q,  Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Q
 from django.conf import settings
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth import logout
@@ -30,7 +30,11 @@ def order_list(request):
     orders = Order.objects.all().order_by('-created_at')
     contract = request.GET.get('contract', '')
     if contract:
-        orders = orders.filter(order_number=contract)
+        orders = orders.filter(
+            Q(order_number=contract) |
+            Q(items__item__item_number__icontains=contract) |
+            Q(items__item__name__icontains=contract)
+        ).distinct()
     
     group_mode = request.GET.get('group') == '1'
     

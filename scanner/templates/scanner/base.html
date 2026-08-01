@@ -20,11 +20,39 @@
         color: #333;
         text-shadow: 0 0 2px rgba(255,255,255,0.6);
     }
+    .navbar-nav {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+    .navbar-nav .nav-item {
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    /* Фиксированная ширина для поиска */
+    .search-form input {
+        min-width: 250px;
+    }
 </style>
 
 <style>
     .navbar-nav .nav-link {
         white-space: nowrap;
+    }
+    .navbar-nav {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+    .navbar-nav .nav-item {
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    /* Фиксированная ширина для поиска */
+    .search-form input {
+        min-width: 250px;
     }
 </style>
 

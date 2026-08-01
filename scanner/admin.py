@@ -80,10 +80,16 @@ class OrderItemInline(admin.TabularInline):
     extra = 0
     fields = ('item', 'quantity', 'parent')
 
+class OrderItemInline(admin.TabularInline):
+    model = OrderItem
+    extra = 0
+    fields = ('item', 'quantity', 'parent')
+
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display = ('order_number', 'full_name', 'status', 'created_at')
-    list_editable = ('full_name', 'status')
+    list_editable = ('order_number', 'full_name', 'status')
+    list_display_links = ('created_at',)
     list_filter = ('status',)
     search_fields = ('order_number', 'full_name')
     inlines = [OrderItemInline]
