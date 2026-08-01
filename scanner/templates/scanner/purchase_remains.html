@@ -5,14 +5,31 @@
     <h4>📋 Остатки стандартных изделий и крепежа</h4>
     <a href="{% url 'purchase_list' %}" class="btn btn-outline-primary mb-3">← К списку спецификаций</a>
     
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-3">
+            <div class="input-group">
+                <input type="text" name="q" class="form-control" placeholder="Поиск по наименованию..." value="{{ q }}">
+                <button type="submit" class="btn btn-primary">🔍</button>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <select name="group" class="form-select" onchange="this.form.submit()">
+                <option value="">Все группы</option>
+                {% for g in groups %}
+                <option value="{{ g }}" {% if group == g %}selected{% endif %}>{{ g|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
+    
     <table class="table table-sm table-hover">
         <thead><tr><th>Наименование</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th></tr></thead>
         <tbody>
             {% for item in remains %}
-            <tr class="group-row" style="cursor:pointer; background:#f8f9fa;">
+            <tr>
                 <td>
                     <details>
-                        <summary>{{ item.name }}</summary>
+                        <summary style="text-transform: capitalize;">{{ item.name }}</summary>
                         <table class="table table-sm mt-1">
                             <thead><tr><th>Проект</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th></tr></thead>
                             <tbody>

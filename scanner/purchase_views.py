@@ -186,8 +186,25 @@ def purchase_remains(request):
         item['issued'] = sum(pd['issued'] for pd in item['project_details'])
         item['available'] = item['purchased'] - item['issued']
     
+    # Фильтры для отображения
+    q = request.GET.get('q', '').strip()
+    group = request.GET.get('group', '').strip()
+    
+    # Список групп (первые слова)
+    all_groups = set()
+    for item in remains_list:
+        if item['name']:
+            first_word = item['name'].strip().split()[0].lower()
+            all_groups.add(first_word)
+    groups = sorted(all_groups)
+    
+    if q:
+        remains_list = [r for r in remains_list if q.lower() in r['name'].lower()]
+    if group:
+        remains_list = [r for r in remains_list if r['name'].strip().lower().startswith(group.lower())]
+    
     remains_list.sort(key=lambda x: x['name'])
-    return render(request, 'scanner/purchase_remains.html', {'remains': remains_list})
+    return render(request, 'scanner/purchase_remains.html', {'remains': remains_list, 'q': q, 'group': group, 'groups': groups})
 
 
 def purchase_issue(request):
