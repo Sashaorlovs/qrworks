@@ -96,6 +96,7 @@ def purchase_import(request):
     idx_req = next((i for i, h in enumerate(headers1) if 'требуемое' in h or 'required' in h), None)
     idx_asm = next((i for i, h in enumerate(headers1) if 'подсборка' in h or 'сборка' in h or 'assembly' in h), None)
     
+    errors.append(f'Лист1 заголовки: {headers1}')
     if idx_name1 is None or idx_req is None:
         errors.append('Лист 1: не найдены обязательные столбцы "Наименование" и "Требуемое кол-во"')
         return JsonResponse({'success': False, 'errors': errors})
@@ -249,9 +250,23 @@ def purchase_issue(request):
         q_lower = q.lower()
         items = [i for i in items if q_lower in (i.assembly_name or '').lower() or q_lower in (i.item_name or '').lower()]
 
-    # Вычисляем остаток для каждой позиции
+    # Собираем общий остаток по каждому наименованию (как на странице остатков)
+    from collections import defaultdict
+    global_remains = defaultdict(lambda: {'purchased': 0, 'issued': 0})
     for item in items:
-        item.remaining = (item.quantity_purchased or 0) - (item.issued_qty or 0)
+        key = item.item_name.strip().lower()
+        # purchased берём максимальный среди всех позиций с этим названием
+        if item.quantity_purchased > global_remains[key]['purchased']:
+            global_remains[key]['purchased'] = item.quantity_purchased or 0
+        # issued суммируем
+        global_remains[key]['issued'] += item.issued_qty or 0
+
+    # Вычисляем остаток для каждой позиции как общий остаток по наименованию
+    for item in items:
+        key = item.item_name.strip().lower()
+        total_purchased = global_remains[key]['purchased']
+        total_issued = global_remains[key]['issued']
+        item.remaining = total_purchased - total_issued
 
     employees = Employee.objects.all().order_by('last_name', 'first_name')
     return render(request, 'scanner/purchase_issue.html', {
@@ -357,13 +372,6 @@ def purchase_bulk_issue(request):
         row += 1
     
     # Ширина столбцов
-    # Подписи после таблицы
-    row += 2  # две пустые строки
-    ws[f'A{row}'] = 'Запросил: _________________________'
-    ws[f'C{row}'] = 'Дата: _______________'
-    row += 3  # расстояние 2 строки между Запросил и Скомплектовал
-    ws[f'A{row}'] = 'Скомплектовал: _________________________'
-    ws[f'C{row}'] = 'Дата: _______________'
 
     ws.column_dimensions['A'].width = 50
     ws.column_dimensions['B'].width = 12
@@ -438,13 +446,6 @@ def purchase_reprint_nakladnaya(request, transaction_id):
             ws[f'{col}{row}'].alignment = wrap_align if col == 'A' else center_align
         row += 1
     
-    # Подписи после таблицы
-    row += 2  # две пустые строки
-    ws[f'A{row}'] = 'Запросил: _________________________'
-    ws[f'C{row}'] = 'Дата: _______________'
-    row += 3  # расстояние 2 строки между Запросил и Скомплектовал
-    ws[f'A{row}'] = 'Скомплектовал: _________________________'
-    ws[f'C{row}'] = 'Дата: _______________'
 
     ws.column_dimensions['A'].width = 50
     ws.column_dimensions['B'].width = 12
@@ -619,11 +620,6 @@ def purchase_export_request(request):
             ws[f'{col}{row}'].alignment = wrap_align if col != 'B' else center
         row += 1
     
-    # Подписи после таблицы
-    row += 2  # две пустые строки
-    ws[f'A{row}'] = 'Запросил: _________________________'
-    ws[f'C{row}'] = 'Дата: _______________'
-    row += 3  # расстояние 2 строки между Запросил и Скомплектовал
     ws[f'A{row}'] = 'Скомплектовал: _________________________'
     ws[f'C{row}'] = 'Дата: _______________'
 
