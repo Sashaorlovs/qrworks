@@ -237,7 +237,14 @@ def purchase_remains(request):
         remains_list = [r for r in remains_list if r['name'].strip().lower().startswith(group.lower())]
     
     remains_list.sort(key=lambda x: x['name'])
-    return render(request, 'scanner/purchase_remains.html', {'remains': remains_list, 'q': q, 'group': group, 'groups': groups})
+    employees = Employee.objects.all().order_by('last_name', 'first_name')
+    return render(request, 'scanner/purchase_remains.html', {
+        'remains': remains_list,
+        'q': q,
+        'group': group,
+        'groups': groups,
+        'employees': employees,
+    })
 
 
 def purchase_issue(request):
@@ -715,6 +722,105 @@ def purchase_issue_remains(request):
         'q': q,
         'employees': employees,
     })
+
+@login_required
+@check_purchase_access
+def purchase_remains_issue(request):
+    """Групповая выдача со страницы остатков"""
+    import uuid
+    from django.db.models import Sum, Max
+    data = json.loads(request.body)
+    names = data.get('names', [])
+    recipient_id = data.get('recipient_id', '').strip()
+    basis = data.get('basis', '').strip()
+    quantities = data.get('quantities', {})
+
+    if not names or not recipient_id:
+        return JsonResponse({'error': 'Не выбраны позиции или получатель'}, status=400)
+    try:
+        recipient = Employee.objects.get(id=recipient_id)
+    except Employee.DoesNotExist:
+        return JsonResponse({'error': 'Получатель не найден'}, status=400)
+
+    # Поиск позиций по именам (цикл, регистронезависимо)
+    items = PurchaseItem.objects.none()
+    for name in names:
+        items |= PurchaseItem.objects.filter(item_name__iexact=name)
+    if not items.exists():
+        # Диагностика: соберём имена, которые есть в базе, для сравнения
+        existing_names = list(PurchaseItem.objects.values_list('item_name', flat=True)[:10])
+        return JsonResponse({
+            'error': 'Позиции не найдены',
+            'sent_names': names,
+            'existing_sample': existing_names
+        }, status=404)
+
+    issued = []
+    batch_token = str(uuid.uuid4())
+    for name in names:
+        qty = quantities.get(name, 0)
+        if qty <= 0:
+            continue
+        max_purchased = PurchaseItem.objects.filter(item_name__iexact=name).aggregate(m=Max('quantity_purchased'))['m'] or 0
+        total_issued = PurchaseTransaction.objects.filter(
+            purchase_item__item_name__iexact=name, transaction_type='out'
+        ).aggregate(s=Sum('quantity'))['s'] or 0
+        available = max_purchased - total_issued
+        if available <= 0:
+            continue
+        qty = min(qty, available)
+        target_item = PurchaseItem.objects.filter(item_name__iexact=name).first()
+        if target_item:
+            PurchaseTransaction.objects.create(
+                purchase_item=target_item, transaction_type='out', quantity=qty,
+                recipient=str(recipient), basis=basis, batch_token=batch_token,
+                created_by=request.user
+            )
+            issued.append({'name': target_item.item_name, 'qty': qty, 'assembly': target_item.assembly_name or ''})
+
+    if not issued:
+        return JsonResponse({'error': 'Нет доступных остатков для выдачи'}, status=400)
+
+    # Excel-накладная
+    from openpyxl.styles import Font, Alignment, Border, Side
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Накладная выдачи"
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    wrap_align = Alignment(wrap_text=True, vertical='center')
+    ws.merge_cells('A1:C1')
+    ws['A1'] = 'НАКЛАДНАЯ НА ВЫДАЧУ СТАНДАРТНЫХ ИЗДЕЛИЙ И КРЕПЕЖА'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = center_align
+    ws['A2'] = f'Дата: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
+    ws['A3'] = f'Кто выдал: {request.user.get_full_name() or request.user.username}'
+    ws['A4'] = f'Кому выдано: {recipient}'
+    ws['A5'] = f'Основание: {basis}'
+    ws['A7'] = 'Наименование'; ws['B7'] = 'Количество'; ws['C7'] = 'Подсборка'
+    for col in ['A','B','C']:
+        ws[f'{col}7'].font = Font(bold=True, size=11)
+        ws[f'{col}7'].border = thin_border
+        ws[f'{col}7'].alignment = center_align
+    row = 8
+    for it in issued:
+        ws[f'A{row}'] = it['name']; ws[f'B{row}'] = it['qty']; ws[f'C{row}'] = it['assembly']
+        for col in ['A','B','C']:
+            ws[f'{col}{row}'].border = thin_border
+            ws[f'{col}{row}'].alignment = wrap_align if col == 'A' else center_align
+        row += 1
+    ws.column_dimensions['A'].width = 50; ws.column_dimensions['B'].width = 12; ws.column_dimensions['C'].width = 35
+    row += 1
+    ws[f'A{row}'] = 'Выдал: _________________________'; ws[f'C{row}'] = 'Получил: _________________________'
+    ws[f'A{row+1}'] = f'({request.user.get_full_name() or request.user.username})'; ws[f'C{row+1}'] = f'({recipient})'
+    for r in [row, row+1]:
+        ws[f'A{r}'].font = Font(size=11); ws[f'C{r}'].font = Font(size=11)
+
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename=remains_issue_nakladnaya.xlsx'
+    wb.save(response)
+    return response
+
 def purchase_issue_log(request):
     """Журнал выдач с группировкой по batch_token и детализацией"""
     from django.core.paginator import Paginator

@@ -21,17 +21,46 @@
             </select>
         </div>
     </form>
-    
+
+    <!-- Форма выдачи -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Получатель</label>
+                    <select id="recipient" class="form-select">
+                        <option value="">— Выберите сотрудника —</option>
+                        {% for emp in employees %}
+                        <option value="{{ emp.id }}">{{ emp.last_name }} {{ emp.first_name }}{% if emp.position %} ({{ emp.position }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Основание</label>
+                    <input type="text" id="basis" class="form-control" placeholder="Основание выдачи">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Кто выдал</label>
+                    <input type="text" class="form-control" value="{{ request.user.get_full_name|default:request.user.username }}" readonly>
+                </div>
+                <div class="col-md-2">
+                    <button type="button" class="btn btn-success w-100" id="issue-btn" disabled>📤 Выдать выбранное</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <table class="table table-sm table-hover">
-        <thead><tr><th style="max-width: 400px;">Наименование</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th><th></th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="select-all"></th><th>Наименование</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th><th></th></tr></thead>
         <tbody>
             {% for item in remains %}
             <tr>
-                <td style="max-width: 400px; word-break: break-word;">
+                <td><input type="checkbox" class="item-checkbox" data-name="{{ item.name|lower }}"></td>
+                <td>
                     <details>
                         <summary style="text-transform: capitalize;">{{ item.name }}</summary>
                         <table class="table table-sm mt-1">
-                            <thead><tr><th>Проект</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th><th></th></tr></thead>
+                            <thead><tr><th>Проект</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th></tr></thead>
                             <tbody>
                                 {% for pd in item.project_details %}
                                 <tr>
@@ -47,12 +76,62 @@
                 </td>
                 <td class="text-center">{{ item.purchased }}</td>
                 <td class="text-center">{{ item.issued }}</td>
-                <td class="text-center"><strong>{{ item.available }}</strong></td><td>{% if item.available > 0 %}<a href="/purchases/issue-remains/?q={{ item.name|urlencode }}" class="btn btn-sm btn-outline-success">📤 Выдать</a>{% endif %}</td>
+                <td class="text-center"><strong>{{ item.available }}</strong></td>
+                <td>{% if item.available > 0 %}<input type="number" class="form-control form-control-sm qty-input" value="1" min="1" max="{{ item.available }}" style="width:80px">{% endif %}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="5">Нет данных</td></tr>
+            <tr><td colspan="6">Нет данных</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+
+<script>
+document.getElementById('select-all').onchange = function(){
+    document.querySelectorAll('.item-checkbox').forEach(cb => cb.checked = this.checked);
+    updateIssueBtn();
+};
+document.querySelectorAll('.item-checkbox').forEach(cb => cb.onchange = updateIssueBtn);
+document.getElementById('recipient').onchange = updateIssueBtn;
+
+function updateIssueBtn(){
+    document.getElementById('issue-btn').disabled = 
+        document.querySelectorAll('.item-checkbox:checked').length === 0 ||
+        document.getElementById('recipient').value === '';
+}
+
+document.getElementById('issue-btn').onclick = function(){
+    var checked = document.querySelectorAll('.item-checkbox:checked');
+    var names = [];
+    var quantities = {};
+    checked.forEach(function(cb){
+        var row = cb.closest('tr');
+        var qtyInput = row.querySelector('.qty-input');
+        var qty = qtyInput ? parseInt(qtyInput.value) || 1 : 1;
+        var name = cb.dataset.name;
+        names.push(name);
+        quantities[name] = (quantities[name] || 0) + qty;
+    });
+    fetch('{% url "purchase_remains_issue" %}', {
+        method:'POST',
+        headers:{'X-CSRFToken':'{{ csrf_token }}','Content-Type':'application/json'},
+        body:JSON.stringify({
+            names: names,
+            quantities: quantities,
+            recipient_id: document.getElementById('recipient').value,
+            basis: document.getElementById('basis').value
+        })
+    }).then(r => {
+        if(r.ok) return r.blob();
+        return r.json().then(d => { throw new Error(d.error || 'Ошибка сервера'); });
+    }).then(blob => {
+        var url = window.URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'nakladnaya_ostatki.xlsx';
+        a.click();
+        location.reload();
+    }).catch(err => alert(err.message));
+};
+</script>
 {% endblock %}
