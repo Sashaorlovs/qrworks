@@ -62,7 +62,6 @@ def purchase_import(request):
         return JsonResponse({'error': 'Файл не выбран'}, status=400)
     try:
         wb = openpyxl.load_workbook(file, data_only=True)
-        ws = wb.active
     except Exception as e:
         return JsonResponse({'error': f'Ошибка чтения: {e}'}, status=400)
 
@@ -71,16 +70,48 @@ def purchase_import(request):
 
     created = 0
     errors = []
+
+    # --- Лист 2: Закупка ---
+    purchased_dict = {}
+    if len(wb.sheetnames) >= 2:
+        ws2 = wb[wb.sheetnames[1]]
+        headers2 = [str(c.value).strip().lower() if c.value else '' for c in next(ws2.iter_rows(min_row=1, max_row=1))]
+        idx_name2 = next((i for i, h in enumerate(headers2) if 'наименование' in h or 'name' in h), None)
+        idx_qty2 = next((i for i, h in enumerate(headers2) if 'закуп' in h or 'purchased' in h or 'кол-во' in h), None)
+        if idx_name2 is not None and idx_qty2 is not None:
+            for row in ws2.iter_rows(min_row=2, values_only=True):
+                if not row or all(c is None for c in row):
+                    continue
+                name = str(row[idx_name2]).strip() if row[idx_name2] else ''
+                qty = int(row[idx_qty2]) if row[idx_qty2] else 0
+                if name:
+                    purchased_dict[name.lower()] = qty
+        else:
+            errors.append('Лист 2: не найдены столбцы "Наименование" и "Закупленное кол-во"')
+
+    # --- Лист 1: Спецификация ---
+    ws = wb.active
+    headers1 = [str(c.value).strip().lower() if c.value else '' for c in next(ws.iter_rows(min_row=1, max_row=1))]
+    idx_name1 = next((i for i, h in enumerate(headers1) if 'наименование' in h or 'name' in h), None)
+    idx_req = next((i for i, h in enumerate(headers1) if 'требуемое' in h or 'required' in h), None)
+    idx_asm = next((i for i, h in enumerate(headers1) if 'подсборка' in h or 'сборка' in h or 'assembly' in h), None)
+    
+    if idx_name1 is None or idx_req is None:
+        errors.append('Лист 1: не найдены обязательные столбцы "Наименование" и "Требуемое кол-во"')
+        return JsonResponse({'success': False, 'errors': errors})
+
     for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         if not row or all(c is None for c in row):
             continue
         try:
-            name = str(row[0]).strip() if row[0] else ''
-            required = int(row[1]) if len(row) > 1 and row[1] else 0
-            purchased = int(row[2]) if len(row) > 2 and row[2] else 0
-            assembly = str(row[3]).strip() if len(row) > 3 and row[3] else ''
+            name = str(row[idx_name1]).strip() if row[idx_name1] else ''
+            required = int(row[idx_req]) if row[idx_req] else 0
+            assembly = str(row[idx_asm]).strip() if idx_asm is not None and row[idx_asm] else ''
+
             if not name:
                 continue
+
+            purchased = purchased_dict.get(name.lower(), 0)
 
             assembly_ref = None
             if assembly and order:
