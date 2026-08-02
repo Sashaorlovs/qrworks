@@ -640,20 +640,23 @@ def purchase_issue_remains(request):
     from django.db.models import Sum
     from collections import defaultdict
     
-    items = PurchaseItem.objects.select_related('order', 'assembly_ref')\
+    items_qs = PurchaseItem.objects.select_related('order', 'assembly_ref')\
         .annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))
     
-    # Только позиции с остатком > 0
-    items = [i for i in items if (i.quantity_purchased or 0) > (i.issued_qty or 0)]
-    
-    # Группировка по наименованиям
+    # Группировка: purchased = max, issued = sum
     grouped = defaultdict(lambda: {'purchased': 0, 'issued': 0, 'projects': defaultdict(lambda: {'purchased': 0, 'issued': 0})})
-    for i in items:
+    for i in items_qs:
         key = i.item_name.strip().lower()
-        grouped[key]['purchased'] += i.quantity_purchased or 0
+        # Общий purchased = максимум
+        if i.quantity_purchased > grouped[key]['purchased']:
+            grouped[key]['purchased'] = i.quantity_purchased or 0
+        # Общий issued = сумма
         grouped[key]['issued'] += i.issued_qty or 0
+        
         proj_name = i.order.full_name or i.order.order_number if i.order else 'Без проекта'
-        grouped[key]['projects'][proj_name]['purchased'] += i.quantity_purchased or 0
+        # Для проекта purchased тоже максимум
+        if i.quantity_purchased > grouped[key]['projects'][proj_name]['purchased']:
+            grouped[key]['projects'][proj_name]['purchased'] = i.quantity_purchased or 0
         grouped[key]['projects'][proj_name]['issued'] += i.issued_qty or 0
     
     q = request.GET.get('q', '').strip()
@@ -661,25 +664,34 @@ def purchase_issue_remains(request):
         q_lower = q.lower()
         grouped = {k: v for k, v in grouped.items() if q_lower in k}
     
-    items = []
+    result_items = []
     for name, data in grouped.items():
         data['name'] = name[0].upper() + name[1:] if name else name
-        data['remaining'] = data['purchased'] - data['issued']
         data['projects_list'] = ', '.join(data['projects'].keys())
-        data['project_details'] = [{'name': pn, 'purchased': pd['purchased'], 'issued': pd['issued'], 'remaining': pd['purchased'] - pd['issued']} for pn, pd in data['projects'].items()]
-        ids = list(PurchaseItem.objects.filter(item_name__iexact=name).values_list('id', flat=True))
-        data['ids'] = ids
-        items.append(data)
+        # Детализация по проектам
+        project_details = []
+        for proj_name, pd in data['projects'].items():
+            project_details.append({
+                'name': proj_name,
+                'purchased': pd['purchased'],
+                'issued': pd['issued'],
+                'remaining': pd['purchased'] - pd['issued']
+            })
+        data['project_details'] = project_details
+        # Итоги: purchased = максимум по проектам
+        data['purchased'] = max((pd['purchased'] for pd in project_details), default=0)
+        data['issued'] = sum(pd['issued'] for pd in project_details)
+        data['remaining'] = data['purchased'] - data['issued']
+        data['ids'] = list(PurchaseItem.objects.filter(item_name__iexact=name).values_list('id', flat=True))
+        result_items.append(data)
     
     employees = Employee.objects.all().order_by('last_name', 'first_name')
     
     return render(request, 'scanner/purchase_issue_remains.html', {
-        'items': items,
+        'items': result_items,
         'q': q,
         'employees': employees,
     })
-
-
 def purchase_issue_log(request):
     """Журнал выдач с пагинацией"""
     from django.core.paginator import Paginator
