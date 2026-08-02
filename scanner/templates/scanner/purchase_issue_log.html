@@ -8,17 +8,34 @@
     </div>
     
     <table class="table table-sm table-hover">
-        <thead><tr><th>Дата</th><th>Наименование</th><th>Кол-во</th><th>Получатель</th><th>Основание</th><th>Кто выдал</th><th></th></tr></thead>
+        <thead><tr><th>Дата</th><th>Позиций</th><th>Всего</th><th>Получатель</th><th>Основание</th><th>Кто выдал</th><th></th></tr></thead>
         <tbody>
             {% for t in transactions %}
             <tr>
                 <td>{{ t.created_at|date:"d.m.Y H:i" }}</td>
-                <td>{{ t.purchase_item.item_name }}</td>
-                <td>{{ t.quantity }}</td>
+                <td>
+                    <details>
+                        <summary>{{ t.items_count }} поз.</summary>
+                        <table class="table table-sm mt-1">
+                            <thead><tr><th>Наименование</th><th>Кол-во</th></tr></thead>
+                            <tbody>
+                                {% for d in t.details %}
+                                <tr>
+                                    <td>{{ d.name }}</td>
+                                    <td>{{ d.qty }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="2">Нет данных</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </details>
+                </td>
+                <td>{{ t.total_qty }}</td>
                 <td>{{ t.recipient }}</td>
                 <td>{{ t.basis|default:"—" }}</td>
-                <td>{{ t.created_by.get_full_name|default:t.created_by.username|default:"—" }}</td>
-                <td><a href="{% url 'purchase_reprint_nakladnaya' t.id %}" class="btn btn-sm btn-outline-secondary">📄</a></td>
+                <td>{{ t.created_by_name }}</td>
+                <td><a href="{% url 'purchase_reprint_nakladnaya' t.first_id %}?batch={{ t.batch_token }}" class="btn btn-sm btn-outline-secondary">📄</a></td>
             </tr>
             {% empty %}
             <tr><td colspan="7">Журнал пуст</td></tr>

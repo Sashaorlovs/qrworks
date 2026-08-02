@@ -47,6 +47,7 @@ class PurchaseTransaction(models.Model):
     recipient = models.CharField(max_length=255, blank=True, verbose_name='Получатель')
     basis = models.CharField(max_length=255, blank=True, verbose_name='Основание')
     batch_token = models.CharField(max_length=64, blank=True, db_index=True, verbose_name='Токен группы')
+    batch_token = models.CharField(max_length=64, blank=True, db_index=True, verbose_name='Токен группы')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата')
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Исполнитель')
 

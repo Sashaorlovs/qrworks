@@ -6,6 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponse
 import uuid
+import uuid
 import pytz
 from django.db.models import Q, Sum
 from scanner.purchase_models import PurchaseItem, PurchaseTransaction
@@ -405,8 +406,13 @@ def purchase_reprint_nakladnaya(request, transaction_id):
         first = transactions.first()
     else:
         t = get_object_or_404(PurchaseTransaction, id=transaction_id)
-        transactions = [t]
-        first = t
+        # Если у этой транзакции есть batch_token, собираем все транзакции с ним
+        if t.batch_token:
+            transactions = PurchaseTransaction.objects.filter(batch_token=t.batch_token).select_related('purchase_item', 'created_by')
+            first = transactions.first()
+        else:
+            transactions = [t]
+            first = t
     
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -692,10 +698,38 @@ def purchase_issue_remains(request):
         'employees': employees,
     })
 def purchase_issue_log(request):
-    """Журнал выдач с пагинацией"""
+    """Журнал выдач с группировкой по batch_token и детализацией"""
     from django.core.paginator import Paginator
-    transactions_list = PurchaseTransaction.objects.filter(transaction_type='out').select_related('purchase_item', 'created_by').order_by('-created_at')
-    paginator = Paginator(transactions_list, 20)
+    from django.db.models import Count, Sum, Min
+    # Группируем по batch_token (если batch_token пустой, используем id как уникальный)
+    grouped = PurchaseTransaction.objects.filter(transaction_type='out')        .values('batch_token', 'recipient', 'basis', 'created_by__username', 'created_by__first_name', 'created_by__last_name')        .annotate(
+            total_qty=Sum('quantity'),
+            items_count=Count('id'),
+            first_date=Min('created_at'),
+            first_id=Min('id')
+        )        .order_by('-first_date')
+    
+    # Получаем детализацию для каждой группы
+    batch_tokens = [g['batch_token'] for g in grouped if g['batch_token']]
+    details = {}
+    if batch_tokens:
+        detail_qs = PurchaseTransaction.objects.filter(
+            batch_token__in=batch_tokens, transaction_type='out'
+        ).select_related('purchase_item').values('batch_token', 'purchase_item__item_name').annotate(qty=Sum('quantity'))
+        for d in detail_qs:
+            token = d['batch_token']
+            if token not in details:
+                details[token] = []
+            details[token].append({'name': d['purchase_item__item_name'], 'qty': d['qty']})
+    
+    paginator = Paginator(grouped, 20)
     page_number = request.GET.get('page', 1)
     transactions = paginator.get_page(page_number)
+    
+    # Добавляем имя создавшего и детали
+    for t in transactions:
+        t['created_by_name'] = (t['created_by__last_name'] or '') + ' ' + (t['created_by__first_name'] or '') or t['created_by__username'] or '—'
+        t['created_at'] = t['first_date']
+        t['details'] = details.get(t['batch_token'], [])
+    
     return render(request, 'scanner/purchase_issue_log.html', {'transactions': transactions})
