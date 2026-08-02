@@ -265,6 +265,9 @@ def purchase_bulk_issue(request):
     """Групповая выдача с накладной"""
     data = json.loads(request.body)
     items_data = data.get('items', [])
+    # ОТЛАДКА: возвращаем полученные данные обратно, чтобы увидеть их в консоли браузера
+    if request.GET.get('debug') == '1':
+        return JsonResponse({'debug_data': data, 'items_data': items_data})
     recipient_id = data.get('recipient_id', '').strip()
     basis = data.get('basis', '').strip()
 
