@@ -22,7 +22,7 @@
         <thead><tr><th><input type="checkbox" id="select-all"></th><th>Наименование</th><th>Требуемое</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th><th>Статус</th></tr></thead>
         <tbody>
             {% for item in items %}
-            <tr>
+            <tr class="{% if item.quantity_required > item.quantity_purchased %}table-danger{% endif %}">
                 <td><input type="checkbox" class="item-checkbox" value="{{ item.ids|join:"," }}"></td>
                 <td>
                     <details>

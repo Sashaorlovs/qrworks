@@ -354,6 +354,14 @@ def purchase_bulk_issue(request):
         row += 1
     
     # Ширина столбцов
+    # Подписи после таблицы
+    row += 2  # две пустые строки
+    ws[f'A{row}'] = 'Запросил: _________________________'
+    ws[f'C{row}'] = 'Дата: _______________'
+    row += 3  # расстояние 2 строки между Запросил и Скомплектовал
+    ws[f'A{row}'] = 'Скомплектовал: _________________________'
+    ws[f'C{row}'] = 'Дата: _______________'
+
     ws.column_dimensions['A'].width = 50
     ws.column_dimensions['B'].width = 12
     ws.column_dimensions['C'].width = 35
@@ -427,6 +435,14 @@ def purchase_reprint_nakladnaya(request, transaction_id):
             ws[f'{col}{row}'].alignment = wrap_align if col == 'A' else center_align
         row += 1
     
+    # Подписи после таблицы
+    row += 2  # две пустые строки
+    ws[f'A{row}'] = 'Запросил: _________________________'
+    ws[f'C{row}'] = 'Дата: _______________'
+    row += 3  # расстояние 2 строки между Запросил и Скомплектовал
+    ws[f'A{row}'] = 'Скомплектовал: _________________________'
+    ws[f'C{row}'] = 'Дата: _______________'
+
     ws.column_dimensions['A'].width = 50
     ws.column_dimensions['B'].width = 12
     ws.column_dimensions['C'].width = 35
@@ -566,19 +582,31 @@ def purchase_export_request(request):
     ws['A1'].alignment = center
     
     ws['A2'] = f'Дата: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
-    ws['A3'] = f'Кто сформировал: {request.user.get_full_name() or request.user.username}'
+    ws['A3'] = f'Сформировал: {request.user.get_full_name() or request.user.username}'
+    # Добавляем наименование проекта
+    project_name = 'не указан'
+    if order_filter:
+        try:
+            proj_order = Order.objects.get(id=order_filter)
+            project_name = proj_order.full_name or proj_order.order_number
+        except:
+            pass
+    ws['A4'] = f'Проект: {project_name}'
+    
+    # Заголовки таблицы начинаются со строки 5 (сразу после "Сформировал" и "Проект")
+    row_start = 5
     
     # Заголовки таблицы
-    ws['A5'] = 'Наименование'
-    ws['B5'] = 'Требуемое кол-во'
-    ws['C5'] = 'Подсборка'
+    ws[f'A{row_start}'] = 'Наименование'
+    ws[f'B{row_start}'] = 'Требуемое кол-во'
+    ws[f'C{row_start}'] = 'Подсборка'
     for col in ['A', 'B', 'C']:
-        ws[f'{col}5'].font = bold
-        ws[f'{col}5'].border = thin_border
-        ws[f'{col}5'].alignment = center
+        ws[f'{col}{row_start}'].font = bold
+        ws[f'{col}{row_start}'].border = thin_border
+        ws[f'{col}{row_start}'].alignment = center
     
     # Данные — каждая подсборка отдельной строкой
-    row = 6
+    row = row_start + 1
     for item in items:
         ws[f'A{row}'] = item.item_name
         ws[f'B{row}'] = item.quantity_required
@@ -588,6 +616,14 @@ def purchase_export_request(request):
             ws[f'{col}{row}'].alignment = wrap_align if col != 'B' else center
         row += 1
     
+    # Подписи после таблицы
+    row += 2  # две пустые строки
+    ws[f'A{row}'] = 'Запросил: _________________________'
+    ws[f'C{row}'] = 'Дата: _______________'
+    row += 3  # расстояние 2 строки между Запросил и Скомплектовал
+    ws[f'A{row}'] = 'Скомплектовал: _________________________'
+    ws[f'C{row}'] = 'Дата: _______________'
+
     ws.column_dimensions['A'].width = 50
     ws.column_dimensions['B'].width = 18
     ws.column_dimensions['C'].width = 35
