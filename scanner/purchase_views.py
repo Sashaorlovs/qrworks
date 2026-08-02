@@ -6,6 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponse
 import uuid
+from django.db.models import Max
 import uuid
 import pytz
 from django.db.models import Q, Sum
@@ -302,7 +303,24 @@ def purchase_bulk_issue(request):
             item = PurchaseItem.objects.get(id=d['id'])
         except PurchaseItem.DoesNotExist:
             continue
-        qty = min(int(d.get('quantity', 0)), item.quantity_purchased)
+        qty = int(d.get('quantity', 0))
+        if qty <= 0:
+            continue
+
+        # Проверяем общий остаток по всем позициям с таким же наименованием
+        from django.db.models import Sum
+        # Общее закупленное (максимальное среди всех позиций с этим названием)
+        max_purchased = PurchaseItem.objects.filter(
+            item_name__iexact=item.item_name
+        ).aggregate(m=Max('quantity_purchased'))['m'] or 0
+        # Общее выданное (сумма по всем позициям с этим названием)
+        total_issued = PurchaseTransaction.objects.filter(
+            purchase_item__item_name__iexact=item.item_name,
+            transaction_type='out'
+        ).aggregate(s=Sum('quantity'))['s'] or 0
+        
+        available = max_purchased - total_issued
+        qty = min(qty, available)
         if qty <= 0:
             continue
         PurchaseTransaction.objects.create(
