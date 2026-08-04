@@ -107,6 +107,25 @@ function updateIssueBtn(){
 
 document.getElementById('issue-btn').onclick = function(){
     var checked = document.querySelectorAll('.item-checkbox:checked');
+    
+    // Проверка на превышение остатка
+    var errors = [];
+    checked.forEach(function(cb){
+        var row = cb.closest('tr');
+        var qtyInput = row.querySelector('.qty-input');
+        if (qtyInput) {
+            var qty = parseInt(qtyInput.value) || 0;
+            var max = parseInt(qtyInput.max) || 0;
+            if (qty > max) {
+                errors.push(cb.dataset.name + ' (запрошено ' + qty + ', доступно ' + max + ')');
+            }
+        }
+    });
+    if (errors.length > 0) {
+        alert('Невозможно выдать больше остатка!\n' + errors.join('\n'));
+        return;
+    }
+    
     var names = [];
     var quantities = {};
     checked.forEach(function(cb){
