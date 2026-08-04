@@ -690,6 +690,10 @@ def purchase_export_request(request):
             ws[f'{col}{row}'].alignment = wrap_align if col != 'B' else center
         row += 1
     
+    row += 2
+    ws[f'A{row}'] = 'Запросил: _________________________'
+    ws[f'C{row}'] = 'Дата: _______________'
+    row += 3
     ws[f'A{row}'] = 'Скомплектовал: _________________________'
     ws[f'C{row}'] = 'Дата: _______________'
 
@@ -806,12 +810,12 @@ def purchase_remains_issue(request):
         relevant = [it for it in all_items if it.item_name.lower().startswith(name_lower)]
         if not relevant:
             continue
-        max_purchased = max(it.quantity_purchased or 0 for it in relevant)
+        total_purchased = sum(it.quantity_purchased or 0 for it in relevant)
         total_issued = PurchaseTransaction.objects.filter(
             purchase_item__in=relevant,
             transaction_type='out'
         ).aggregate(s=Sum('quantity'))['s'] or 0
-        available = max_purchased - total_issued
+        available = total_purchased - total_issued
         if available <= 0:
             continue
         qty = min(qty, available)

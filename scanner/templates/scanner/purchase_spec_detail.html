@@ -7,12 +7,15 @@
         <button class="btn btn-warning" id="change-status-btn" disabled>🔄 Сменить статус</button>
     </div>
     
-    <form method="get" class="row g-2 mb-3">
+    <form method="get" class="row g-2 mb-3 align-items-center">
         <div class="col-md-4">
             <div class="input-group">
                 <input type="text" name="q" class="form-control" placeholder="Поиск по наименованию или подсборке..." value="{{ q }}">
-                <button type="submit" class="btn btn-primary">🔍</button> <a href="/purchases/export-request/?q={{ q|urlencode }}&order={{ order.id }}" class="btn btn-outline-success btn-sm">📋 Заявка</a>
+                <button type="submit" class="btn btn-primary">🔍</button>
             </div>
+        </div>
+        <div class="col-md-auto">
+            <a href="/purchases/export-request/?q={{ q|urlencode }}&order={{ order.id }}" class="btn btn-outline-success">📋 Заявка</a>
         </div>
     </form>
     
