@@ -259,13 +259,21 @@ def instance_detail(request, item_number, serial):
     assembly_status = instance.assembly_status() if instance.item.item_type == 'Сборочная единица' else None
 
 
+    # Полный путь до главной сборки
+    root_assembly_path = []
+    if instance.order_item:
+        current = instance.order_item
+        while current:
+            label = current.item.item_number + ' – ' + current.item.name if current.item else '—'
+            root_assembly_path.insert(0, label)
+            current = current.parent
     context = {
-
         'instance': instance,
         'route_card': route_card,
         'status_info': status_info,
         'operations': operations,
         'assembly_status': assembly_status,
+        'root_assembly_path': root_assembly_path,
     }
     return render(request, 'scanner/instance_detail.html', context)
 

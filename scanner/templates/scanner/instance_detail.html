@@ -52,6 +52,14 @@ function showWorkerLog(opId) {
 {% endblock %}
 {% block content %}
 <h2>{{ instance.item.item_number }} – {{ instance.item.name }}</h2>
+{% if root_assembly_path %}
+<div class="text-muted mb-2" style="font-size:0.9em;">
+    <strong>Путь в сборке:</strong>
+    {% for label in root_assembly_path %}
+        {{ label }}{% if not forloop.last %} → {% endif %}
+    {% endfor %}
+</div>
+{% endif %}
 <p>Партия: {{ instance.serial }} (план сборки: {{ instance.quantity }}, настроечные: {{ instance.setup_quantity }}, всего к изготовлению: {{ instance.total_planned_quantity }})</p>
 
 {% if assembly_status %}
@@ -71,18 +79,7 @@ function showWorkerLog(opId) {
 
 {% if instance.order_item %}
     <p class="text-muted small mb-2">
-        Входит в:
-        {% with parent=instance.order_item.parent %}
-            {% if parent %}
-                {% if parent.parent %}
-                    {{ parent.parent.item.item_number }} – {{ parent.parent.item.name }} &rarr;
-                {% endif %}
-                {{ parent.item.item_number }} – {{ parent.item.name }} &rarr;
-            {% endif %}
-        {% endwith %}
-        {{ instance.item.item_number }} – {{ instance.item.name }}
-        {% if instance.order %} | Заказ: {{ instance.order.order_number }}{% endif %}
-    </p>
+        
 {% endif %}
 
 {% if instance.shortage > 0 %}
