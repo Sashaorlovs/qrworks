@@ -183,7 +183,7 @@
             <div class="mb-3"><label class="form-label">Получатель</label>
                 <select name="recipient" class="form-select" required>
                     <option value="">-- выберите --</option>
-                    {% for emp in employee_list %}<option value="{{ emp.id }}">{{ emp.last_name }} {{ emp.first_name }} {{ emp.middle_name }}</option>{% endfor %}
+                    {% for emp in employee_list %}<option value="{{ emp.id }}">{{ emp.last_name }} {{ emp.first_name }}{% if emp.position %} ({{ emp.position }}){% endif %} {{ emp.middle_name }}</option>{% endfor %}
                 </select>
             </div>
             <div class="mb-3"><label class="form-label">Основание</label><input type="text" name="basis" class="form-control" id="mainBasis" required></div>
@@ -211,7 +211,7 @@
             <div class="mb-3"><label class="form-label">Получатель</label>
                 <select name="recipient" class="form-select" required>
                     <option value="">-- выберите --</option>
-                    {% for emp in employee_list %}<option value="{{ emp.id }}">{{ emp.last_name }} {{ emp.first_name }} {{ emp.middle_name }}</option>{% endfor %}
+                    {% for emp in employee_list %}<option value="{{ emp.id }}">{{ emp.last_name }} {{ emp.first_name }}{% if emp.position %} ({{ emp.position }}){% endif %} {{ emp.middle_name }}</option>{% endfor %}
                 </select>
             </div>
             <div class="mb-3"><label class="form-label">Основание</label><input type="text" name="basis" class="form-control" id="intermediateBasis" required></div>
@@ -347,7 +347,7 @@ function bulkIssue() {
                         <select name="recipient" class="form-select" required>
                             <option value="">Выберите...</option>
                             {% for emp in employee_list %}
-                                <option value="{{ emp.last_name }} {{ emp.first_name }}">{{ emp.last_name }} {{ emp.first_name }}</option>
+                                <option value="{{ emp.last_name }} {{ emp.first_name }}{% if emp.position %} ({{ emp.position }}){% endif %}">{{ emp.last_name }} {{ emp.first_name }}{% if emp.position %} ({{ emp.position }}){% endif %}</option>
                             {% endfor %}
                         </select>
                     </div>
