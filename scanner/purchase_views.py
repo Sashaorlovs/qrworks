@@ -765,7 +765,7 @@ def purchase_issue_remains(request):
 @login_required
 @check_purchase_access
 def purchase_remains_issue(request):
-    """Групповая выдача со страницы остатков"""
+    """Групповая выдача со страницы остатков (поддержка групп)"""
     import uuid
     from django.db.models import Sum, Max
     data = json.loads(request.body)
@@ -781,41 +781,47 @@ def purchase_remains_issue(request):
     except Employee.DoesNotExist:
         return JsonResponse({'error': 'Получатель не найден'}, status=400)
 
-    # Поиск позиций по именам (цикл, регистронезависимо)
-    items = PurchaseItem.objects.none()
-    for name in names:
-        items |= PurchaseItem.objects.filter(item_name__iexact=name)
-    if not items.exists():
-        # Диагностика: соберём имена, которые есть в базе, для сравнения
-        existing_names = list(PurchaseItem.objects.values_list('item_name', flat=True)[:10])
-        return JsonResponse({
-            'error': 'Позиции не найдены',
-            'sent_names': names,
-            'existing_sample': existing_names
-        }, status=404)
+    # Фильтрация в Python (регистронезависимо)
+    all_items = PurchaseItem.objects.all()
+    matched = []
+    for item in all_items:
+        item_lower = item.item_name.lower()
+        for name in names:
+            name_lower = name.lower()
+            if item_lower == name_lower or item_lower.startswith(name_lower):
+                matched.append(item)
+                break
+    if not matched:
+        return JsonResponse({'error': 'Позиции не найдены'}, status=404)
 
+    # Группируем по уникальным именам для выдачи
     issued = []
     batch_token = str(uuid.uuid4())
     for name in names:
         qty = quantities.get(name, 0)
         if qty <= 0:
             continue
-        max_purchased = PurchaseItem.objects.filter(item_name__iexact=name).aggregate(m=Max('quantity_purchased'))['m'] or 0
+        name_lower = name.lower()
+        # Считаем общий доступный остаток по всем позициям, начинающимся с name_lower
+        relevant = [it for it in all_items if it.item_name.lower().startswith(name_lower)]
+        if not relevant:
+            continue
+        max_purchased = max(it.quantity_purchased or 0 for it in relevant)
         total_issued = PurchaseTransaction.objects.filter(
-            purchase_item__item_name__iexact=name, transaction_type='out'
+            purchase_item__in=relevant,
+            transaction_type='out'
         ).aggregate(s=Sum('quantity'))['s'] or 0
         available = max_purchased - total_issued
         if available <= 0:
             continue
         qty = min(qty, available)
-        target_item = PurchaseItem.objects.filter(item_name__iexact=name).first()
-        if target_item:
-            PurchaseTransaction.objects.create(
-                purchase_item=target_item, transaction_type='out', quantity=qty,
-                recipient=str(recipient), basis=basis, batch_token=batch_token,
-                created_by=request.user
-            )
-            issued.append({'name': target_item.item_name, 'qty': qty, 'assembly': target_item.assembly_name or ''})
+        target = relevant[0]
+        PurchaseTransaction.objects.create(
+            purchase_item=target, transaction_type='out', quantity=qty,
+            recipient=str(recipient), basis=basis, batch_token=batch_token,
+            created_by=request.user
+        )
+        issued.append({'name': target.item_name, 'qty': qty, 'assembly': target.assembly_name or ''})
 
     if not issued:
         return JsonResponse({'error': 'Нет доступных остатков для выдачи'}, status=400)

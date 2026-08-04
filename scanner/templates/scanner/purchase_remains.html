@@ -35,15 +35,20 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <label class="form-label">Основание</label>
-                    <input type="text" id="basis" class="form-control" placeholder="Основание выдачи">
+                    <div class="input-group flex-nowrap">
+                        <input type="text" id="basis" class="form-control" placeholder="Основание выдачи" style="min-width:150px; flex:1;">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('basis').value='Общепроизводственные нужды'">Общепроизв. нужды</button>
+                    </div>
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Кто выдал</label>
                     <input type="text" class="form-control" value="{{ request.user.get_full_name|default:request.user.username }}" readonly>
                 </div>
                 <div class="col-md-2">
+                    <label class="form-label invisible">.</label>
+                    <label class="form-label invisible">.</label>
                     <button type="button" class="btn btn-success w-100" id="issue-btn" disabled>📤 Выдать выбранное</button>
                 </div>
             </div>
