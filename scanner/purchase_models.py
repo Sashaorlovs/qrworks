@@ -23,6 +23,7 @@ class PurchaseItem(models.Model):
     assembly_name = models.CharField(max_length=500, blank=True, verbose_name='Подсборка (название)')
     quantity_required = models.PositiveIntegerField(default=0, verbose_name='Требуемое количество')
     quantity_purchased = models.PositiveIntegerField(default=0, verbose_name='Закупленное количество')
+    notes = models.TextField(blank=True, verbose_name='Примечание (общее для заказа)')
     purchase_status = models.CharField(max_length=20, choices=PURCHASE_STATUS_CHOICES, default='pending', verbose_name='Статус')
     created_at = models.DateTimeField(auto_now_add=True)
 

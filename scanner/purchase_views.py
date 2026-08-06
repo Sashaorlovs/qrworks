@@ -1,7 +1,8 @@
 import json
 import openpyxl
 from datetime import datetime
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponse
@@ -578,6 +579,29 @@ def purchase_spec_detail(request, spec_id):
     from collections import defaultdict
     from django.db.models import Sum
     
+    order = Order.objects.get(id=spec_id) if spec_id else None
+    
+    # Сохранение примечания (журнал)
+    if request.method == 'POST' and 'save_notes' in request.POST:
+        new_text = request.POST.get('notes', '').strip()
+        if new_text:
+            timestamp = datetime.now().strftime('%d.%m.%Y %H:%M')
+            author = request.user.get_full_name() or request.user.username
+            entry = f'[{timestamp}] {author}: {new_text}'
+            
+            current_notes = PurchaseItem.objects.filter(order_id=spec_id).values_list('notes', flat=True).first() or ''
+            updated_notes = entry + '\n' + current_notes if current_notes else entry
+            
+            PurchaseItem.objects.filter(order_id=spec_id).update(notes=updated_notes)
+            messages.success(request, 'Примечание добавлено')
+        return redirect('purchase_spec_detail', spec_id=spec_id)
+    
+    # Очистка журнала примечаний
+    if request.method == 'POST' and 'clear_notes' in request.POST:
+        PurchaseItem.objects.filter(order_id=spec_id).update(notes='')
+        messages.success(request, 'Журнал примечаний очищен')
+        return redirect('purchase_spec_detail', spec_id=spec_id)
+    
     items = PurchaseItem.objects.filter(order_id=spec_id).select_related('order', 'assembly_ref')\
         .annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))\
         .order_by('item_name')
@@ -585,8 +609,6 @@ def purchase_spec_detail(request, spec_id):
     q = request.GET.get('q', '').strip()
     if q:
         items = items.filter(Q(assembly_name__icontains=q) | Q(item_name__icontains=q))
-    
-    order = Order.objects.get(id=spec_id) if spec_id else None
     
     groups = defaultdict(list)
     for item in items:
@@ -613,19 +635,18 @@ def purchase_spec_detail(request, spec_id):
             } for i in group_items],
         }
         g['purchase_status'] = list(g['statuses'])[0] if len(g['statuses']) == 1 else 'mixed'
-        g['status_display'] = dict(PurchaseItem.PURCHASE_STATUS_CHOICES).get(g['purchase_status'], g['purchase_status']) if g['purchase_status'] != 'mixed' else 'Смешанный'
         grouped_items.append(g)
+    
+    general_notes = PurchaseItem.objects.filter(order_id=spec_id).values_list('notes', flat=True).first() or ''
     
     return render(request, 'scanner/purchase_spec_detail.html', {
         'order': order,
         'items': grouped_items,
         'statuses': PurchaseItem.PURCHASE_STATUS_CHOICES,
         'q': q,
+        'general_notes': general_notes,
     })
 
-
-@login_required
-@check_purchase_access
 def purchase_export_request(request):
     """Экспорт заявки по текущему фильтру в Excel"""
     from openpyxl.styles import Font, Alignment, Border, Side

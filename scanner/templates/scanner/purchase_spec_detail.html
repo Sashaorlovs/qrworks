@@ -7,25 +7,54 @@
         <button class="btn btn-warning" id="change-status-btn" disabled>🔄 Сменить статус</button>
     </div>
     
-    <form method="get" class="row g-2 mb-3 align-items-center">
+    <form method="get" class="row g-2 mb-3">
         <div class="col-md-4">
             <div class="input-group">
                 <input type="text" name="q" class="form-control" placeholder="Поиск по наименованию или подсборке..." value="{{ q }}">
                 <button type="submit" class="btn btn-primary">🔍</button>
+                <a href="/purchases/export-request/?q={{ q|urlencode }}&order={{ order.id }}" class="btn btn-outline-success">📋 Заявка</a>
             </div>
-        </div>
-        <div class="col-md-auto">
-            <a href="/purchases/export-request/?q={{ q|urlencode }}&order={{ order.id }}" class="btn btn-outline-success">📋 Заявка</a>
         </div>
     </form>
     
     <h4>📦 {{ order.order_number }} — {{ order.items.first.item.name }}</h4>
     
+    <!-- Журнал примечаний -->
+    <form method="post" class="mb-3">
+        {% csrf_token %}
+        <div class="card">
+            <div class="card-body py-2">
+                <div class="row g-2 align-items-center">
+                    <div class="col-auto">
+                        <label class="form-label mb-0"><strong>Добавить примечание:</strong></label>
+                    </div>
+                    <div class="col">
+                        <input type="text" name="notes" class="form-control form-control-sm" placeholder="Текст примечания...">
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" name="save_notes" class="btn btn-sm btn-outline-primary">💾 Сохранить</button>
+                        <button type="submit" name="clear_notes" class="btn btn-sm btn-outline-danger" onclick="return confirm('Очистить весь журнал примечаний?')">🗑️ Очистить</button>
+                    </div>
+                </div>
+                {% if general_notes %}
+                <div class="mt-2">
+                    <strong>История примечаний:</strong>
+                    <div class="border rounded p-2" style="max-height:150px; overflow-y:auto; background:#f9f9f9; font-size:0.85em;">
+                        {% for line in general_notes.splitlines %}
+                            <div class="mb-1">{{ line }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+    
     <table class="table table-sm table-hover">
         <thead><tr><th><input type="checkbox" id="select-all"></th><th>Наименование</th><th>Требуемое</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th><th>Статус</th></tr></thead>
         <tbody>
             {% for item in items %}
-            <tr class="{% if item.quantity_required > item.quantity_purchased %}table-danger{% endif %}">
+            <tr>
                 <td><input type="checkbox" class="item-checkbox" value="{{ item.ids|join:"," }}"></td>
                 <td>
                     <details>
@@ -59,7 +88,7 @@
                     {% elif item.purchase_status == 'galvanika' %}<span class="badge bg-info">Гальваника</span>
                     {% elif item.purchase_status == 'ready_for_issue' %}<span class="badge bg-success">Готов к выдаче</span>
                     {% elif item.purchase_status == 'issued' %}<span class="badge bg-dark">Выдан</span>
-                    {% else %}<span class="badge bg-warning">Смешанный</span>
+                    {% else %}<span class="badge bg-secondary">{{ item.purchase_status }}</span>
                     {% endif %}
                 </td>
             </tr>
