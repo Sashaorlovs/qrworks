@@ -560,6 +560,15 @@ def purchase_spec_list(request):
         first = o.items.first()
         o.display_name = first.item_name if first and hasattr(first, 'item_name') else (first.item.name if first and first.item else '-')
         o.purchase_count = PurchaseItem.objects.filter(order=o).count()
+        o.issued_count = PurchaseItem.objects.filter(order=o, purchase_status='issued').count()
+        if o.purchase_count == 0:
+            o.status_label = 'Нет позиций'
+        elif o.issued_count == o.purchase_count:
+            o.status_label = 'Выдан полностью'
+        elif o.issued_count > 0:
+            o.status_label = 'Выдан частично'
+        else:
+            o.status_label = 'Ожидает выдачи'
     
     all_orders = Order.objects.all().order_by('-id')[:50]
     for o in all_orders:
