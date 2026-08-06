@@ -18,7 +18,7 @@
             {% for order in orders %}
             <tr>
                 <td>{{ order.order_number }}</td>
-                <td>{{ order.display_name }}</td>
+                <td>{{ order.full_name|default:order.order_number }}</td>
                 <td><a href="{% url 'purchase_spec_detail' order.id %}" class="btn btn-sm btn-outline-primary">Открыть</a></td>
             </tr>
             {% empty %}
