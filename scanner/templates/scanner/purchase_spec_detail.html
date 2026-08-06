@@ -50,8 +50,12 @@
         </div>
     </form>
     
+    <div class="btn-group btn-group-sm mb-2">
+        <a href="?view=name{% if q %}&q={{ q|urlencode }}{% endif %}" class="btn btn-outline-secondary {% if view_mode != 'assembly' %}active{% endif %}">По наименованию</a>
+        <a href="?view=assembly{% if q %}&q={{ q|urlencode }}{% endif %}" class="btn btn-outline-secondary {% if view_mode == 'assembly' %}active{% endif %}">По подсборкам</a>
+    </div>
     <table class="table table-sm table-hover">
-        <thead><tr><th><input type="checkbox" id="select-all"></th><th>Наименование</th><th>Требуемое</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th><th>Статус</th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="select-all"></th>{% if view_mode == "assembly" %}<th>Подсборка</th><th>Требуемое</th><th>Выдано</th><th>Статус</th>{% else %}<th>Наименование</th><th>Требуемое</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th><th>Статус</th>{% endif %}</tr></thead>
         <tbody>
             {% for item in items %}
             <tr>
@@ -60,13 +64,23 @@
                     <details>
                         <summary style="cursor:pointer;">{{ item.item_name }}</summary>
                         <table class="table table-sm mt-1">
-                            <thead><tr><th>Подсборка</th><th>Требуемое</th><th>Статус</th></tr></thead>
+                            <thead><tr>{% if view_mode == "assembly" %}<th>Наименование</th><th>Требуемое</th><th>Статус</th>{% else %}<th>Подсборка</th><th>Требуемое</th><th>Статус</th>{% endif %}</tr></thead>
                             <tbody>
                                 {% for sub in item.sub_items %}
                                 <tr>
                                     <td>{{ sub.assembly_name }}</td>
                                     <td>{{ sub.quantity_required }}</td>
-                                    <td>{{ sub.purchase_status }}</td>
+                                    <td>{% if sub.status_raw == 'pending' %}Ожидает закупки
+{% elif sub.status_raw == 'awaiting_payment' %}Ожидает оплаты
+{% elif sub.status_raw == 'paid' %}Оплачен
+{% elif sub.status_raw == 'shipped' %}Отгружен
+{% elif sub.status_raw == 'received_warehouse' %}Получено на склад
+{% elif sub.status_raw == 'sent_to_inspection' %}Передано на входной контроль
+{% elif sub.status_raw == 'incoming_inspection' %}Прошел входной контроль
+{% elif sub.status_raw == 'galvanika' %}Гальваника
+{% elif sub.status_raw == 'ready_for_issue' %}Готов к выдаче
+{% elif sub.status_raw == 'issued' %}Выдан
+{% else %}{{ sub.purchase_status }}{% endif %}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -74,9 +88,13 @@
                     </details>
                 </td>
                 <td class="text-center">{{ item.quantity_required }}</td>
+                {% if view_mode != "assembly" %}
                 <td class="text-center">{{ item.quantity_purchased }}</td>
+                {% endif %}
                 <td class="text-center">{{ item.issued_qty }}</td>
+                {% if view_mode != "assembly" %}
                 <td class="text-center">{{ item.remaining }}</td>
+                {% endif %}
                 <td>
                     {% if item.purchase_status == 'pending' %}<span class="badge bg-secondary">Ожидает закупки</span>
                     {% elif item.purchase_status == 'awaiting_payment' %}<span class="badge bg-warning">Ожидает оплаты</span>
@@ -88,6 +106,7 @@
                     {% elif item.purchase_status == 'galvanika' %}<span class="badge bg-info">Гальваника</span>
                     {% elif item.purchase_status == 'ready_for_issue' %}<span class="badge bg-success">Готов к выдаче</span>
                     {% elif item.purchase_status == 'issued' %}<span class="badge bg-dark">Выдан</span>
+                    {% elif item.purchase_status == 'mixed' %}<span class="badge bg-warning">Смешанный</span>
                     {% else %}<span class="badge bg-secondary">{{ item.purchase_status }}</span>
                     {% endif %}
                 </td>

@@ -611,40 +611,75 @@ def purchase_spec_detail(request, spec_id):
         messages.success(request, 'Журнал примечаний очищен')
         return redirect('purchase_spec_detail', spec_id=spec_id)
     
+    # Все позиции заказа (без фильтрации)
     items = PurchaseItem.objects.filter(order_id=spec_id).select_related('order', 'assembly_ref')\
         .annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))\
         .order_by('item_name')
     
     q = request.GET.get('q', '').strip()
-    if q:
-        items = items.filter(Q(assembly_name__icontains=q) | Q(item_name__icontains=q))
+    view_mode = request.GET.get('view', 'name')
     
+    # Группировка по всем позициям заказа
     groups = defaultdict(list)
-    for item in items:
-        key = item.item_name.strip().lower()
-        groups[key].append(item)
+    if view_mode == 'assembly':
+        for item in items:
+            key = item.assembly_name.strip().lower() if item.assembly_name else '—'
+            groups[key].append(item)
+    else:
+        for item in items:
+            key = item.item_name.strip().lower()
+            groups[key].append(item)
     
+    # Если задан поиск, скрываем группы, не соответствующие запросу
+    if q:
+        filtered_groups = {}
+        for key, group_items in groups.items():
+            if any(q.lower() in (it.assembly_name or '').lower() or q.lower() in (it.item_name or '').lower() for it in group_items):
+                filtered_groups[key] = group_items
+        groups = filtered_groups
+    
+    # Формируем grouped_items
     grouped_items = []
-    for group_items in groups.values():
-        first = group_items[0]
-        g = {
-            'item_name': first.item_name,
-            'quantity_required': sum(i.quantity_required or 0 for i in group_items),
-            'quantity_purchased': group_items[0].quantity_purchased or 0,
-            'issued_qty': sum(i.issued_qty or 0 for i in group_items),
-            'remaining': (group_items[0].quantity_purchased or 0) - sum(i.issued_qty or 0 for i in group_items),
-            'ids': [i.id for i in group_items],
-            'statuses': set(i.purchase_status for i in group_items),
-            'sub_items': [{
-                'id': i.id,
-                'assembly_name': i.assembly_name or '—',
-                'quantity_required': i.quantity_required or 0,
-                'purchase_status': i.get_purchase_status_display(),
-                'status_raw': i.purchase_status,
-            } for i in group_items],
-        }
-        g['purchase_status'] = list(g['statuses'])[0] if len(g['statuses']) == 1 else 'mixed'
-        grouped_items.append(g)
+    for key, group_items in groups.items():
+        if view_mode == 'assembly':
+            g = {
+                'item_name': group_items[0].assembly_name or '—',
+                'quantity_required': sum(i.quantity_required or 0 for i in group_items),
+                'quantity_purchased': 0,
+                'issued_qty': sum(i.issued_qty or 0 for i in group_items),
+                'remaining': 0,
+                'ids': [i.id for i in group_items],
+                'statuses': set(i.purchase_status for i in group_items),
+                'sub_items': [{
+                    'id': i.id,
+                    'assembly_name': i.item_name,
+                    'quantity_required': i.quantity_required or 0,
+                    'purchase_status': dict(PurchaseItem.PURCHASE_STATUS_CHOICES).get(i.purchase_status, i.purchase_status),
+                    'status_raw': i.purchase_status,
+                } for i in group_items],
+            }
+            g['purchase_status'] = list(g['statuses'])[0] if len(g['statuses']) == 1 else 'mixed'
+            grouped_items.append(g)
+        else:
+            first = group_items[0]
+            g = {
+                'item_name': first.item_name,
+                'quantity_required': sum(i.quantity_required or 0 for i in group_items),
+                'quantity_purchased': group_items[0].quantity_purchased or 0,
+                'issued_qty': sum(i.issued_qty or 0 for i in group_items),
+                'remaining': (group_items[0].quantity_purchased or 0) - sum(i.issued_qty or 0 for i in group_items),
+                'ids': [i.id for i in group_items],
+                'statuses': set(i.purchase_status for i in group_items),
+                'sub_items': [{
+                    'id': i.id,
+                    'assembly_name': i.assembly_name or '—',
+                    'quantity_required': i.quantity_required or 0,
+                    'purchase_status': i.get_purchase_status_display(),
+                    'status_raw': i.purchase_status,
+                } for i in group_items],
+            }
+            g['purchase_status'] = list(g['statuses'])[0] if len(g['statuses']) == 1 else 'mixed'
+            grouped_items.append(g)
     
     general_notes = PurchaseItem.objects.filter(order_id=spec_id).values_list('notes', flat=True).first() or ''
     
@@ -654,6 +689,7 @@ def purchase_spec_detail(request, spec_id):
         'statuses': PurchaseItem.PURCHASE_STATUS_CHOICES,
         'q': q,
         'general_notes': general_notes,
+        'view_mode': view_mode,
     })
 
 def purchase_export_request(request):
