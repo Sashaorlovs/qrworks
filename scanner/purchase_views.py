@@ -46,7 +46,7 @@ def purchase_list(request):
     orders = Order.objects.all().order_by('-id')[:50]
     for o in orders:
         first = o.items.first()
-        o.display_name = first.item_name if first and hasattr(first, 'item_name') else (first.item.name if first and first.item else '-')
+        o.display_name = o.full_name if o.full_name else o.order_number
 
     return render(request, 'scanner/purchase_list.html', {
         'items': items,
@@ -558,7 +558,7 @@ def purchase_spec_list(request):
     
     for o in orders:
         first = o.items.first()
-        o.display_name = first.item_name if first and hasattr(first, 'item_name') else (first.item.name if first and first.item else '-')
+        o.display_name = o.full_name if o.full_name else o.order_number
         o.purchase_count = PurchaseItem.objects.filter(order=o).count()
         o.issued_count = PurchaseItem.objects.filter(order=o, purchase_status='issued').count()
         if o.purchase_count == 0:
@@ -573,7 +573,7 @@ def purchase_spec_list(request):
     all_orders = Order.objects.all().order_by('-id')[:50]
     for o in all_orders:
         first = o.items.first()
-        o.display_name = first.item_name if first and hasattr(first, 'item_name') else (first.item.name if first and first.item else '-')
+        o.display_name = o.full_name if o.full_name else o.order_number
 
     return render(request, 'scanner/purchase_list.html', {
         'orders': orders,
