@@ -58,7 +58,7 @@
         <thead><tr><th><input type="checkbox" id="select-all"></th>{% if view_mode == "assembly" %}<th>Подсборка</th><th>Требуемое</th><th>Выдано</th><th>Статус</th>{% else %}<th>Наименование</th><th>Требуемое</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th><th>Статус</th>{% endif %}</tr></thead>
         <tbody>
             {% for item in items %}
-            <tr>
+            <tr class="{% if item.quantity_required > item.quantity_purchased %}table-danger{% endif %}">
                 <td><input type="checkbox" class="item-checkbox" value="{{ item.ids|join:"," }}"></td>
                 <td>
                     <details>
