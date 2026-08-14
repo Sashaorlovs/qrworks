@@ -961,9 +961,8 @@ def purchase_issue_log(request):
                 details[token] = []
             details[token].append({'name': d['purchase_item__item_name'], 'qty': d['qty']})
     
-    paginator = Paginator(grouped, 20)
-    page_number = request.GET.get('page', 1)
-    transactions = paginator.get_page(page_number)
+    # Убираем пагинацию — показываем все записи
+    transactions = list(grouped)
     
     # Добавляем имя создавшего и детали
     for t in transactions:

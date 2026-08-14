@@ -1376,7 +1376,7 @@ def warehouse_dashboard(request):
     intermediate_data.reverse()
 
     # Журнал (без пагинации)
-    records = WarehouseRecord.objects.select_related('instance__item', 'employee').order_by('-date')[:200]
+    records = WarehouseRecord.objects.select_related('instance__item', 'employee').order_by('-date')
 
     # Итоги
     main_total_qty = sum(item['balance'] for item in main_data)
