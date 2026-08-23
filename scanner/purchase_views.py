@@ -938,18 +938,21 @@ def purchase_remains_issue(request):
 
 def purchase_issue_log(request):
     """Журнал выдач с группировкой по batch_token и детализацией"""
-    from django.core.paginator import Paginator
     from django.db.models import Count, Sum, Min
-    # Группируем по batch_token (если batch_token пустой, используем id как уникальный)
-    grouped = PurchaseTransaction.objects.filter(transaction_type='out')        .values('batch_token', 'recipient', 'basis', 'created_by__username', 'created_by__first_name', 'created_by__last_name')        .annotate(
+    q = request.GET.get('q', '').strip()
+
+    grouped_qs = PurchaseTransaction.objects.filter(transaction_type='out')\
+        .values('batch_token', 'recipient', 'basis', 'created_by__username', 'created_by__first_name', 'created_by__last_name')\
+        .annotate(
             total_qty=Sum('quantity'),
             items_count=Count('id'),
             first_date=Min('created_at'),
             first_id=Min('id')
-        )        .order_by('-first_date')
-    
+        )\
+        .order_by('-first_date')
+
     # Получаем детализацию для каждой группы
-    batch_tokens = [g['batch_token'] for g in grouped if g['batch_token']]
+    batch_tokens = [g['batch_token'] for g in grouped_qs if g['batch_token']]
     details = {}
     if batch_tokens:
         detail_qs = PurchaseTransaction.objects.filter(
@@ -960,14 +963,28 @@ def purchase_issue_log(request):
             if token not in details:
                 details[token] = []
             details[token].append({'name': d['purchase_item__item_name'], 'qty': d['qty']})
-    
-    # Убираем пагинацию — показываем все записи
-    transactions = list(grouped)
-    
+
     # Добавляем имя создавшего и детали
-    for t in transactions:
-        t['created_by_name'] = (t['created_by__last_name'] or '') + ' ' + (t['created_by__first_name'] or '') or t['created_by__username'] or '—'
-        t['created_at'] = t['first_date']
-        t['details'] = details.get(t['batch_token'], [])
-    
-    return render(request, 'scanner/purchase_issue_log.html', {'transactions': transactions})
+    for g in grouped_qs:
+        g['created_by_name'] = (g['created_by__last_name'] or '') + ' ' + (g['created_by__first_name'] or '') or g['created_by__username'] or '—'
+        g['created_at'] = g['first_date']
+        g['details'] = details.get(g['batch_token'], [])
+
+    # Фильтрация по q (получатель, основание, кто выдал)
+    if q:
+        q_lower = q.lower()
+        filtered = []
+        for g in grouped_qs:
+            if (q_lower in (g['recipient'] or '').lower() or
+                q_lower in (g['basis'] or '').lower() or
+                q_lower in (g['created_by_name'] or '').lower()):
+                filtered.append(g)
+        transactions = filtered
+    else:
+        transactions = list(grouped_qs)
+
+    return render(request, 'scanner/purchase_issue_log.html', {
+        'transactions': transactions,
+        'q': q,
+    })
+

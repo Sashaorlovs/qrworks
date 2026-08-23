@@ -3,10 +3,19 @@
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4>📋 Журнал выдач стандартных изделий</h4>
+        <h4 class="mb-0">📋 Журнал выдач стандартных изделий</h4>
         <a href="{% url 'purchase_list' %}" class="btn btn-outline-secondary">← К списку спецификаций</a>
     </div>
-    
+
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-4">
+            <div class="input-group">
+                <input type="text" name="q" class="form-control" placeholder="Поиск по получателю, основанию, кто выдал..." value="{{ q }}">
+                <button type="submit" class="btn btn-primary">🔍</button>
+            </div>
+        </div>
+    </form>
+
     <table class="table table-sm table-hover">
         <thead><tr><th>Дата</th><th>Позиций</th><th>Всего</th><th>Получатель</th><th>Основание</th><th>Кто выдал</th><th></th></tr></thead>
         <tbody>
@@ -42,13 +51,5 @@
             {% endfor %}
         </tbody>
     </table>
-    
-    {% if transactions.paginator.num_pages > 1 %}
-    <nav><ul class="pagination pagination-sm justify-content-center">
-        {% if transactions.has_previous %}<li class="page-item"><a class="page-link" href="?page={{ transactions.previous_page_number }}">&laquo;</a></li>{% endif %}
-        {% for num in transactions.paginator.page_range %}<li class="page-item {% if transactions.number == num %}active{% endif %}"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>{% endfor %}
-        {% if transactions.has_next %}<li class="page-item"><a class="page-link" href="?page={{ transactions.next_page_number }}">&raquo;</a></li>{% endif %}
-    </ul></nav>
-    {% endif %}
 </div>
 {% endblock %}
