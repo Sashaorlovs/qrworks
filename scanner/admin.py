@@ -198,7 +198,7 @@ from scanner.purchase_models import PurchaseItem, PurchaseTransaction
 
 @admin.register(PurchaseItem)
 class PurchaseItemAdmin(admin.ModelAdmin):
-    list_display = ('item_name', 'order', 'assembly_name', 'quantity_required', 'quantity_purchased', 'purchase_status', 'created_at')
+    list_display = ('item_name', 'order', 'assembly_name', 'quantity_required', 'quantity_purchased', 'issued_quantity', 'purchase_status', 'created_at')
     list_filter = ('purchase_status', 'order')
     search_fields = ('item_name', 'designation', 'assembly_name')
     ordering = ('-created_at',)

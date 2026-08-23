@@ -27,6 +27,8 @@ class PurchaseItem(models.Model):
     purchase_status = models.CharField(max_length=20, choices=PURCHASE_STATUS_CHOICES, default='pending', verbose_name='Статус')
     created_at = models.DateTimeField(auto_now_add=True)
 
+    issued_quantity = models.PositiveIntegerField(default=0, verbose_name='Выдано')
+
     class Meta:
         verbose_name = 'Покупное изделие'
         verbose_name_plural = 'Покупные изделия'
@@ -51,6 +53,8 @@ class PurchaseTransaction(models.Model):
     batch_token = models.CharField(max_length=64, blank=True, db_index=True, verbose_name='Токен группы')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата')
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Исполнитель')
+
+    issued_quantity = models.PositiveIntegerField(default=0, verbose_name='Выдано')
 
     class Meta:
         verbose_name = 'Движение покупного изделия'
