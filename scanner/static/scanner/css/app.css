@@ -112,9 +112,12 @@ a {
 }
 
 .app-nav {
+    flex: 1 1 auto;
     gap: 0.2rem;
     min-width: 0;
     margin-left: 1.1rem;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
 
 .app-nav .nav-link {
@@ -147,9 +150,42 @@ a {
 }
 
 .app-search {
-    width: min(320px, 24vw);
-    min-width: 220px;
-    margin-left: 0.85rem;
+    width: clamp(220px, 18vw, 300px);
+    min-width: 0;
+    margin-left: 0;
+}
+
+.app-navbar-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+    margin-left: 0.8rem;
+}
+
+.app-logout {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.42rem;
+    min-height: 38px;
+    padding: 0.48rem 0.7rem;
+    color: #ffbec5;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 190, 197, 0.18);
+    border-radius: 9px;
+    font-size: 0.82rem;
+    font-weight: 650;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+
+.app-logout:hover,
+.app-logout:focus {
+    color: #fff;
+    background: rgba(192, 61, 75, 0.28);
 }
 
 .app-search .input-group {
@@ -612,7 +648,7 @@ form label:not(.form-check-label) {
     min-height: 46px;
 }
 
-@media (max-width: 1199.98px) {
+@media (max-width: 1399.98px) {
     .app-navbar .navbar-collapse {
         padding: 0.75rem 0 1rem;
         border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -623,6 +659,8 @@ form label:not(.form-check-label) {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.25rem;
         margin: 0 0 0.75rem;
+        overflow-x: hidden;
+        overflow-y: auto;
     }
 
     .app-nav .nav-link {
@@ -634,6 +672,15 @@ form label:not(.form-check-label) {
         width: 100%;
         min-width: 0;
         margin: 0;
+    }
+
+    .app-navbar-actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.55rem;
+        margin: 0;
+        padding-top: 0.75rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
     }
 }
 
@@ -664,6 +711,14 @@ form label:not(.form-check-label) {
     .app-nav .nav-link {
         min-height: 42px;
         font-size: 0.88rem;
+    }
+
+    .app-navbar-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .app-logout {
+        width: 100%;
     }
 
     .app-toolbar {

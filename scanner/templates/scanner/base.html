@@ -36,7 +36,7 @@
     <div class="container-fluid px-3 px-lg-4">
         <a class="navbar-brand app-brand" href="{% url 'home' %}">
             <span class="app-brand-mark"><i class="bi bi-qr-code-scan"></i></span>
-            <span class="app-brand-copy">QR Works<small>Производство</small></span>
+            <span class="app-brand-copy">QR Works<small>АО «ЦПТ»</small></span>
         </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Открыть меню">
             <span class="navbar-toggler-icon"></span>
@@ -67,19 +67,21 @@
                         {% if role == 'admin' %}
                             <li class="nav-item"><a class="nav-link" href="{% url 'restore_backup' %}"><i class="bi bi-database-check"></i>Восстановление БД</a></li>
                         {% endif %}
-                        <li class="nav-item"><a class="nav-link is-danger" href="{% url 'logout' %}"><i class="bi bi-box-arrow-right"></i>Выйти</a></li>
                     {% endwith %}
-                {% elif user.is_authenticated %}
-                    <li class="nav-item"><a class="nav-link is-danger" href="{% url 'logout' %}"><i class="bi bi-box-arrow-right"></i>Выйти</a></li>
                 {% endif %}
             </ul>
-            <form class="app-search" method="get" action="{% url 'search' %}">
-                <div class="input-group">
-                    <span class="input-group-text"><i class="bi bi-search"></i></span>
-                    <input class="form-control" type="search" name="q" placeholder="Поиск по обозначению" aria-label="Поиск по обозначению">
-                    <button class="btn" type="submit" aria-label="Найти"><i class="bi bi-arrow-right"></i></button>
-                </div>
-            </form>
+            <div class="app-navbar-actions">
+                <form class="app-search" method="get" action="{% url 'search' %}">
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input class="form-control" type="search" name="q" placeholder="Поиск по обозначению" aria-label="Поиск по обозначению">
+                        <button class="btn" type="submit" aria-label="Найти"><i class="bi bi-arrow-right"></i></button>
+                    </div>
+                </form>
+                {% if user.is_authenticated %}
+                    <a class="app-logout" href="{% url 'logout' %}"><i class="bi bi-box-arrow-right"></i><span>Выйти</span></a>
+                {% endif %}
+            </div>
         </div>
     </div>
 </nav>
