@@ -1,10 +1,15 @@
 {% extends 'scanner/base.html' %}
 {% block title %}Заказы{% endblock %}
 {% block content %}
-<h1>Заказы</h1>
+<div class="page-heading">
+    <div>
+        <h1>Заказы</h1>
+        <p>Производственные заказы, сроки отгрузки и текущие статусы.</p>
+    </div>
+</div>
 
-<div class="d-flex justify-content-between mb-3">
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createOrderModal">+ Новый заказ</button>
+<div class="app-toolbar">
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createOrderModal"><i class="bi bi-plus-lg me-1"></i>Новый заказ</button>
     <div class="form-check form-switch d-flex align-items-center">
         <input class="form-check-input me-2" type="checkbox" id="groupToggle" {% if group_mode %}checked{% endif %} onchange="toggleGroupMode()">
         <label class="form-check-label" for="groupToggle">Группировать по проектам</label>
@@ -14,7 +19,7 @@
 <form method="get" class="row g-2 mb-3" id="filterForm" onsubmit="return false;">
     <input type="hidden" name="group" value="{{ group_mode|yesno:'1,0' }}" id="groupHidden">
     
-    <div class="col-auto">
+    <div class="col-12 col-sm-auto">
         <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Поиск по таблице..." onkeyup="filterOrders()">
     </div>
 </form>
@@ -22,7 +27,7 @@
 {% if group_mode %}
     {% for project, project_orders in groups %}
     <div class="card mb-3">
-        <div class="card-header d-flex justify-content-between align-items-center" style="cursor: pointer; background-color: #f8f9fa;" data-bs-toggle="collapse" data-bs-target="#project-{{ forloop.counter }}">
+        <div class="card-header d-flex justify-content-between align-items-center" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#project-{{ forloop.counter }}">
             <div>
                 <strong>{{ project }}</strong>
                 <span class="badge bg-secondary ms-2">{{ project_orders|length }} заказ(ов)</span>
@@ -37,17 +42,14 @@
     {% for order in project_orders %}
     <tr class="{% if order.status == 'draft' %}table-secondary{% elif order.status == 'in_progress' %}table-primary{% elif order.status == 'paused' %}table-warning{% elif order.status == 'completed' %}table-success{% elif order.status == 'shipped' %}table-info{% elif order.status == 'closed' %}table-light{% endif %}">
         <td>{{ order.order_number }}</td>
-        <td>
-                    {{ order.full_name }}
-                    <span style="display: inline-block; width: 32px; height: 32px; background: linear-gradient(to bottom, {{ order.color1 }} 50%, {{ order.color2 }} 50%); border: 1px solid #ccc; vertical-align: middle; margin-left: 6px;"></span>
-                </td>
+        <td><span class="order-name">{{ order.full_name }}<span class="order-swatch" style="background: linear-gradient(to bottom, {{ order.color1 }} 50%, {{ order.color2 }} 50%);"></span></span></td>
         <td>{{ order.created_at|date:"d.m.Y" }}</td>
         <td>{{ order.due_date|date:"d.m.Y"|default:"—" }}</td>
-        <td>{{ order.get_status_display }}</td>
-        <td>
+        <td><span class="badge {% if order.status == 'in_progress' %}text-bg-primary{% elif order.status == 'completed' %}text-bg-success{% elif order.status == 'paused' %}text-bg-warning{% elif order.status == 'shipped' %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ order.get_status_display }}</span></td>
+        <td><div class="table-actions">
             <a href="{% url 'order_detail' order.id %}" class="btn btn-sm btn-outline-primary">Изменить</a>
             <a href="{% url 'order_tree' order.id %}" class="btn btn-sm btn-primary">Подробнее</a>
-        </td>
+        </div></td>
     </tr>
     {% endfor %}
     </tbody>
@@ -56,7 +58,7 @@
         </div>
     </div>
     {% empty %}
-    <div class="alert alert-info">Нет заказов</div>
+    <div class="app-empty"><i class="bi bi-inbox fs-2 d-block mb-2"></i>В этом проекте пока нет заказов.</div>
     {% endfor %}
 {% else %}
 <table class="table searchable align-middle">
@@ -65,17 +67,14 @@
     {% for order in orders %}
     <tr class="{% if order.status == 'draft' %}table-secondary{% elif order.status == 'in_progress' %}table-primary{% elif order.status == 'paused' %}table-warning{% elif order.status == 'completed' %}table-success{% elif order.status == 'shipped' %}table-info{% elif order.status == 'closed' %}table-light{% endif %}">
         <td>{{ order.order_number }}</td>
-        <td>
-                    {{ order.full_name }}
-                    <span style="display: inline-block; width: 32px; height: 32px; background: linear-gradient(to bottom, {{ order.color1 }} 50%, {{ order.color2 }} 50%); border: 1px solid #ccc; vertical-align: middle; margin-left: 6px;"></span>
-                </td>
+        <td><span class="order-name">{{ order.full_name }}<span class="order-swatch" style="background: linear-gradient(to bottom, {{ order.color1 }} 50%, {{ order.color2 }} 50%);"></span></span></td>
         <td>{{ order.created_at|date:"d.m.Y" }}</td>
         <td>{{ order.due_date|date:"d.m.Y"|default:"—" }}</td>
-        <td>{{ order.get_status_display }}</td>
-        <td>
+        <td><span class="badge {% if order.status == 'in_progress' %}text-bg-primary{% elif order.status == 'completed' %}text-bg-success{% elif order.status == 'paused' %}text-bg-warning{% elif order.status == 'shipped' %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ order.get_status_display }}</span></td>
+        <td><div class="table-actions">
             <a href="{% url 'order_detail' order.id %}" class="btn btn-sm btn-outline-primary">Изменить</a>
             <a href="{% url 'order_tree' order.id %}" class="btn btn-sm btn-primary">Подробнее</a>
-        </td>
+        </div></td>
     </tr>
     {% endfor %}
     </tbody>
@@ -97,16 +96,7 @@
       </form>
     </div>
   </div>
-<
-
-<script>
-function toggleGroupMode() {
-    var isGrouped = document.getElementById('groupToggle').checked ? '1' : '0';
-    var currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.set('group', isGrouped);
-    window.location.href = currentUrl.toString();
-}
-</script>
+ </div>
 
 <script>
 function toggleGroupMode() {

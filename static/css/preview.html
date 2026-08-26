@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QR Works UI — переносимая стилистика</title>
+  <link rel="stylesheet" href="qrworks-theme.css">
+  <style>html, body { min-height: 100%; margin: 0; }</style>
+</head>
+<body class="qrw-theme">
+  <div class="qrw-shell">
+    <header class="qrw-topbar">
+      <div class="qrw-topbar__inner">
+        <a class="qrw-brand" href="#">
+          <span class="qrw-brand__mark">QR</span>
+          <span class="qrw-brand__copy">Название продукта<small>рабочая система</small></span>
+        </a>
+
+        <nav class="qrw-nav" aria-label="Основная навигация">
+          <a class="qrw-nav__link is-active" href="#">Обзор</a>
+          <a class="qrw-nav__link" href="#">Заказы</a>
+          <a class="qrw-nav__link" href="#">Склад</a>
+          <a class="qrw-nav__link" href="#">Статистика</a>
+        </nav>
+
+        <div class="qrw-topbar__actions">
+          <a class="qrw-nav__link" href="#">Помощь</a>
+          <span class="qrw-user" title="Пользователь">АО</span>
+        </div>
+
+        <details class="qrw-mobile-nav">
+          <summary aria-label="Открыть меню">☰</summary>
+          <nav class="qrw-mobile-nav__panel">
+            <a class="qrw-nav__link is-active" href="#">Обзор</a>
+            <a class="qrw-nav__link" href="#">Заказы</a>
+            <a class="qrw-nav__link" href="#">Склад</a>
+            <a class="qrw-nav__link" href="#">Статистика</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <main class="qrw-main">
+      <div class="qrw-page-head">
+        <div>
+          <h1>Рабочий обзор</h1>
+          <p>Пример того, как стилистика выглядит на другом сайте.</p>
+        </div>
+        <div class="qrw-actions">
+          <button class="qrw-btn">Экспорт</button>
+          <button class="qrw-btn qrw-btn--primary">+ Новый заказ</button>
+        </div>
+      </div>
+
+      <section class="qrw-grid" aria-label="Основные показатели">
+        <article class="qrw-metric qrw-col-3">
+          <div><div class="qrw-metric__label">Активные заказы</div><strong class="qrw-metric__value">128</strong><div class="qrw-metric__hint">+12 за неделю</div></div>
+          <span class="qrw-metric__icon">01</span>
+        </article>
+        <article class="qrw-metric qrw-col-3">
+          <div><div class="qrw-metric__label">В работе</div><strong class="qrw-metric__value">42</strong><div class="qrw-metric__hint">33% от общего числа</div></div>
+          <span class="qrw-metric__icon">02</span>
+        </article>
+        <article class="qrw-metric qrw-col-3">
+          <div><div class="qrw-metric__label">На складе</div><strong class="qrw-metric__value">1 846</strong><div class="qrw-metric__hint">позиций в наличии</div></div>
+          <span class="qrw-metric__icon">03</span>
+        </article>
+        <article class="qrw-metric qrw-col-3">
+          <div><div class="qrw-metric__label">Выполнено</div><strong class="qrw-metric__value">96%</strong><div class="qrw-metric__hint">за текущий месяц</div></div>
+          <span class="qrw-metric__icon">04</span>
+        </article>
+
+        <section class="qrw-card qrw-col-8">
+          <div class="qrw-card__head"><span>Последние заказы</span><a href="#">Показать все</a></div>
+          <div class="qrw-table-wrap">
+            <table class="qrw-table">
+              <thead><tr><th>Заказ</th><th>Клиент</th><th>Прогресс</th><th>Статус</th><th></th></tr></thead>
+              <tbody>
+                <tr><td><strong>№ 2026-148</strong></td><td>Альфа</td><td><div class="qrw-progress"><span style="--qrw-progress: 72%"></span></div></td><td><span class="qrw-badge qrw-badge--primary">В работе</span></td><td><button class="qrw-btn qrw-btn--small">Открыть</button></td></tr>
+                <tr><td><strong>№ 2026-147</strong></td><td>Вектор</td><td><div class="qrw-progress"><span style="--qrw-progress: 100%"></span></div></td><td><span class="qrw-badge qrw-badge--success">Готов</span></td><td><button class="qrw-btn qrw-btn--small">Открыть</button></td></tr>
+                <tr><td><strong>№ 2026-146</strong></td><td>Сфера</td><td><div class="qrw-progress"><span style="--qrw-progress: 38%"></span></div></td><td><span class="qrw-badge qrw-badge--warning">Ожидает</span></td><td><button class="qrw-btn qrw-btn--small">Открыть</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="qrw-card qrw-col-4">
+          <div class="qrw-card__head">Быстрое действие</div>
+          <div class="qrw-card__body">
+            <div class="qrw-field">
+              <label class="qrw-label" for="search">Найти заказ</label>
+              <input class="qrw-input" id="search" placeholder="Номер или клиент">
+            </div>
+            <div class="qrw-field" style="margin-top: 14px">
+              <label class="qrw-label" for="status">Статус</label>
+              <select class="qrw-select" id="status"><option>Все статусы</option><option>В работе</option><option>Готов</option></select>
+            </div>
+            <button class="qrw-btn qrw-btn--primary" style="width: 100%; margin-top: 16px">Применить</button>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
+
