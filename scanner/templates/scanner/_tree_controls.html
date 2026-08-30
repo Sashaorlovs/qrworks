@@ -1,0 +1,159 @@
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    'use strict';
+    const table = document.getElementById('tree-table');
+    if (!table) return;
+    const rows = Array.from(table.querySelectorAll('tbody tr[data-node-id]'));
+    const checkbox = document.getElementById('hideCompleted');
+    const tools = document.getElementById('tree-mobile-tools');
+    const summary = document.getElementById('tree-visible-summary');
+    const empty = document.getElementById('tree-empty');
+    const mobile = window.matchMedia('(max-width: 767.98px)');
+    const nodes = new Map();
+    let printing = false;
+
+    // Group by the real order-item key, not the repeated HTML id of reruns.
+    rows.forEach(function (row) {
+        const id = row.dataset.nodeId;
+        if (!nodes.has(id)) nodes.set(id, {
+            id: id, parentId: row.dataset.parent, rows: [], children: [],
+            code: row.querySelector('.tree-designation').textContent.trim(), expanded: false
+        });
+        const bar = row.querySelector('.progress-bar');
+        nodes.get(id).rows.push({element: row, completed: !!bar && parseInt(bar.style.width, 10) >= 100});
+    });
+    const roots = [];
+    nodes.forEach(function (node) {
+        const parent = nodes.get(node.parentId);
+        if (parent && parent !== node) {
+            node.parent = parent;
+            parent.children.push(node);
+        } else {
+            node.parent = null;
+            roots.push(node);
+            node.expanded = true;
+        }
+    });
+    // Iterative traversal also supports deeply nested orders without recursion.
+    const ordered = [];
+    const stack = roots.slice().reverse();
+    const visited = new Set();
+    while (stack.length) {
+        const node = stack.pop();
+        if (visited.has(node.id)) continue;
+        visited.add(node.id);
+        node.depth = node.parent ? node.parent.depth + 1 : 0;
+        node.path = node.parent ? node.parent.path.concat(node.parent.code) : [];
+        ordered.push(node);
+        for (let i = node.children.length - 1; i >= 0; i--) stack.push(node.children[i]);
+    }
+    const validTree = ordered.length === nodes.size;
+
+    function element(tag, className, text) {
+        const result = document.createElement(tag);
+        result.className = className;
+        if (text) result.textContent = text;
+        return result;
+    }
+
+    if (validTree) ordered.forEach(function (node) {
+        node.rows.forEach(function (entry, index) {
+            const row = entry.element;
+            row.style.setProperty('--tree-indent', Math.min(node.depth, 2) * 9 + 'px');
+            row.classList.toggle('tree-nested', node.depth > 0);
+            row.classList.toggle('tree-is-branch', node.children.length > 0 && index === 0);
+            const context = row.querySelector('.tree-context');
+            const path = node.path.length ? 'В составе: ' + node.path.join(' › ') : 'Верхний уровень заказа';
+            context.appendChild(element('span', 'tree-path', path));
+            if (index === 0) {
+                node.contextNote = element('span', 'tree-context-note', 'Завершено · показано для структуры');
+                node.contextNote.hidden = true;
+                context.appendChild(node.contextNote);
+            }
+        });
+        if (!node.children.length) return;
+        const button = element('button', 'tree-mobile-only tree-branch-toggle');
+        button.type = 'button';
+        const icon = element('span', 'tree-toggle-icon', '›');
+        icon.setAttribute('aria-hidden', 'true');
+        const label = element('span', 'tree-toggle-label');
+        button.appendChild(icon);
+        button.appendChild(label);
+        node.button = button;
+        node.label = label;
+        node.rows[0].element.querySelector('.tree-name').appendChild(button);
+        function toggle(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            node.expanded = !node.expanded;
+            update();
+        }
+        button.addEventListener('click', toggle);
+        // Existing Bootstrap links have no collapse target. On mobile the same
+        // visible designation controls this branch; desktop behavior is untouched.
+        node.designationLink = node.rows[0].element.querySelector('.tree-designation a[data-bs-toggle="collapse"]');
+        if (node.designationLink) node.designationLink.addEventListener('click', function (event) {
+            if (mobile.matches && !printing) toggle(event);
+        });
+    });
+
+    function update() {
+        const isMobile = mobile.matches && !printing && validTree;
+        const hide = !!checkbox && checkbox.checked;
+        let visible = 0;
+        let available = 0;
+        // A completed assembly stays as context if any descendant/rerun needs work.
+        for (let i = ordered.length - 1; i >= 0; i--) {
+            const node = ordered[i];
+            node.eligible = !hide || node.rows.some(function (entry) { return !entry.completed; }) ||
+                node.children.some(function (child) { return child.eligible; });
+        }
+        ordered.forEach(function (node) {
+            node.reachable = !node.parent || (node.parent.reachable && node.parent.expanded);
+            node.rows.forEach(function (entry, index) {
+                const keep = !hide || !entry.completed || (isMobile && index === 0 && node.eligible);
+                if (keep) available++;
+                const show = keep && (!isMobile || node.reachable);
+                entry.element.hidden = !show;
+                if (show) visible++;
+            });
+            if (node.contextNote) node.contextNote.hidden = !(isMobile && hide && node.eligible && node.rows[0].completed);
+            if (node.button) {
+                const count = node.children.filter(function (child) { return child.eligible; }).length;
+                const total = node.children.length;
+                node.button.setAttribute('aria-expanded', String(node.expanded));
+                node.button.disabled = count === 0;
+                const action = count === 0 ? 'Состав завершён' : node.expanded ? 'Свернуть состав' : 'Показать состав';
+                node.label.textContent = action + ' · ' + (hide ? count + ' из ' + total : total) + ' поз.';
+                node.button.setAttribute('aria-label', action + ': ' + node.code + ', позиций ' + count + ' из ' + total);
+                if (node.designationLink) node.designationLink.setAttribute('aria-expanded', String(isMobile && node.expanded));
+            }
+        });
+        // Invalid hierarchy must never make data inaccessible: fall back to list.
+        if (!validTree) rows.forEach(function (row) {
+            const bar = row.querySelector('.progress-bar');
+            row.hidden = hide && !!bar && parseInt(bar.style.width, 10) >= 100;
+            if (!row.hidden) visible++;
+        });
+        tools.hidden = !isMobile || rows.length === 0;
+        table.classList.toggle('tree-enhanced', validTree);
+        if (summary) summary.textContent = 'Карточек на экране: ' + visible + ' из ' + available + (hide ? ' · с учётом фильтра' : '');
+        if (empty) empty.hidden = visible > 0;
+    }
+
+    document.getElementById('tree-expand-all').addEventListener('click', function () {
+        ordered.forEach(function (node) { node.expanded = true; });
+        update();
+    });
+    document.getElementById('tree-collapse-all').addEventListener('click', function () {
+        ordered.forEach(function (node) { node.expanded = false; });
+        update();
+    });
+    if (checkbox) checkbox.addEventListener('change', update);
+    if (mobile.addEventListener) mobile.addEventListener('change', update);
+    else mobile.addListener(update);
+    window.addEventListener('beforeprint', function () { printing = true; update(); });
+    window.addEventListener('afterprint', function () { printing = false; update(); });
+    update();
+});
+</script>

@@ -1407,6 +1407,75 @@ a.stats-kpi:focus { color: var(--app-text); border-color: #b9cae2; box-shadow: 0
     #tree-table tr.tree-item-row > .tree-actions--empty { display: none; }
 }
 
+/* Mobile hierarchy is progressive enhancement of the same order rows. */
+.tree-mobile-tools { display: none; }
+#tree-table tr[hidden],
+#tree-table .tree-context-note[hidden],
+.tree-mobile-tools[hidden],
+#tree-empty[hidden] { display: none !important; }
+
+@media screen and (max-width: 767.98px) {
+    .tree-mobile-tools:not([hidden]) {
+        display: block;
+        margin: 0 0 1rem;
+        padding: 1rem;
+        background: #edf4fc;
+        border: 1px solid #d5e3f5;
+        border-radius: 14px;
+    }
+    .tree-tools-heading { color: #234d7d; font-size: 1rem; font-weight: 750; }
+    .tree-mobile-tools p { margin: 0.3rem 0 0.8rem; font-size: 0.8rem; color: #586b83; }
+    .tree-tools-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .tree-tools-buttons .btn { flex: 1 1 115px; min-height: 44px; font-size: 0.78rem; }
+    .tree-visible-summary { margin-top: 0.65rem; font-size: 0.73rem; color: #586b83; }
+    #tree-table.tree-enhanced tr.tree-item-row { margin-left: var(--tree-indent, 0px); }
+    #tree-table.tree-enhanced tr.tree-nested { border-left: 3px solid #c2d3e8; }
+    #tree-table.tree-enhanced tr.tree-is-branch { border-top: 3px solid #628bbf; }
+    #tree-table.tree-enhanced tr.tree-is-branch > .tree-designation,
+    #tree-table.tree-enhanced tr.tree-is-branch > .tree-name { background: #f3f7fd; }
+    #tree-table.tree-enhanced tr.table-info { border-left-color: #39a5d3; }
+    #tree-table.tree-enhanced tr.table-info > .tree-designation,
+    #tree-table.tree-enhanced tr.table-info > .tree-name { background: #e6f5ff; }
+    #tree-table.tree-enhanced .tree-parent-context { display: none; }
+    #tree-table .tree-path {
+        flex-basis: 100%;
+        color: #586b83;
+        font-size: 0.72rem;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+    }
+    #tree-table .tree-context-note {
+        flex-basis: 100%;
+        color: #566880;
+        font-size: 0.72rem;
+        font-style: italic;
+    }
+    #tree-table .tree-branch-toggle {
+        align-items: center;
+        justify-content: flex-start;
+        gap: 0.55rem;
+        width: 100%;
+        min-height: 44px;
+        margin-top: 0.8rem;
+        padding: 0.65rem 0.75rem;
+        border: 1px solid #c6d8ef;
+        border-radius: 9px;
+        background: #e7f0fc;
+        color: #254f85;
+        font: inherit;
+        font-size: 0.79rem;
+        font-weight: 650;
+        line-height: 1.4;
+        text-align: left;
+        cursor: pointer;
+    }
+    #tree-table .tree-branch-toggle:focus-visible { outline: 3px solid #337acc; outline-offset: 2px; }
+    #tree-table .tree-branch-toggle:disabled { background: #f0f3f7; color: #63748b; cursor: default; }
+    #tree-table .tree-toggle-icon { display: block; font-size: 1.4rem; line-height: 1; }
+    #tree-table .tree-branch-toggle[aria-expanded="true"] .tree-toggle-icon { transform: rotate(90deg); }
+    #tree-table.tree-enhanced .tree-designation a[aria-expanded="true"] .bi-chevron-right { display: inline-block; transform: rotate(90deg); }
+}
+
 @media print {
     body {
         background: #fff;
