@@ -1294,6 +1294,119 @@ a.stats-kpi:focus { color: var(--app-text); border-color: #b9cae2; box-shadow: 0
     }
 }
 
+/* Order tree: the existing table rows become cards only on small screens. */
+#tree-table .tree-mobile-only { display: none; }
+
+@media screen and (max-width: 767.98px) {
+    .order-tree-table-wrap {
+        overflow: visible;
+        min-width: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+    #tree-table {
+        display: block;
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+        border: 0;
+        background: transparent;
+    }
+    #tree-table thead { display: none; }
+    #tree-table tbody {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.85rem;
+        width: 100%;
+    }
+    #tree-table tr.tree-item-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        min-width: 0;
+        overflow: hidden;
+        background: #fff;
+        border: 1px solid var(--app-border);
+        border-radius: 14px;
+        box-shadow: 0 3px 14px rgba(31, 50, 81, 0.05);
+    }
+    #tree-table tr.tree-item-row[hidden] { display: none; }
+    #tree-table tr.tree-item-row.table-info {
+        background: #f0f9ff;
+        border-color: #b5ddef;
+        border-left: 4px solid #39a5d3;
+    }
+    #tree-table tr.tree-item-row > td {
+        display: block;
+        min-width: 0;
+        padding: 0.8rem 0.95rem;
+        color: var(--app-text);
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        overflow-wrap: anywhere;
+        text-align: left !important;
+    }
+    #tree-table .tree-indent { display: none; }
+    #tree-table tr.tree-item-row > .tree-designation {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.45rem;
+        padding-bottom: 0.25rem;
+        color: #2563a9;
+        font-size: 0.9rem;
+        font-weight: 750;
+        line-height: 1.5;
+    }
+    #tree-table .tree-designation a { color: inherit; text-decoration: none; }
+    #tree-table .tree-mobile-only { display: flex; }
+    #tree-table .tree-rerun-code { display: inline; }
+    #tree-table .tree-rerun-label {
+        padding: 0.18rem 0.45rem;
+        color: #8b6518 !important;
+        background: #fff1d3;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 650;
+    }
+    #tree-table tr.tree-item-row > .tree-name { padding-top: 0; padding-bottom: 0.85rem; }
+    #tree-table .tree-item-name { display: block; font-size: 0.97rem; font-weight: 650; line-height: 1.45; }
+    #tree-table .tree-context { flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-top: 0.6rem; }
+    #tree-table .tree-kind,
+    #tree-table .tree-priority-label {
+        padding: 0.22rem 0.45rem;
+        color: #5d6c81;
+        background: #edf2f8;
+        border-radius: 6px;
+        font-size: 0.68rem;
+        font-weight: 650;
+    }
+    #tree-table .tree-priority-label { color: #176b90; background: #dbf0fb; }
+    #tree-table .tree-parent-context { flex-basis: 100%; color: var(--app-muted); font-size: 0.73rem; line-height: 1.5; }
+    #tree-table .tree-parent-context strong { color: #566880; font-weight: 650; }
+    #tree-table tr.tree-item-row > .tree-quantity,
+    #tree-table tr.tree-item-row > .tree-state { border-top: 1px solid #e8edf4; font-size: 0.82rem; line-height: 1.65; }
+    #tree-table .tree-quantity::before,
+    #tree-table .tree-state::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 0.2rem;
+        color: #7b8798;
+        font-size: 0.64rem;
+        font-weight: 750;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+    }
+    #tree-table .tree-state .progress { height: 12px !important; margin: 0.4rem 0; }
+    #tree-table .tree-state .text-warning { color: #986414 !important; }
+    #tree-table .tree-state .text-danger { display: block; margin-top: 0.3rem; color: #b43241 !important; }
+    #tree-table tr.tree-item-row > .tree-actions { padding-top: 0.2rem; }
+    #tree-table .tree-actions .btn { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; margin-bottom: 0 !important; font-size: 0.84rem; border-radius: 9px; }
+    #tree-table tr.tree-item-row > .tree-actions--empty { display: none; }
+}
+
 @media print {
     body {
         background: #fff;

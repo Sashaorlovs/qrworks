@@ -82,6 +82,7 @@ function downloadMaterialReport(orderId) {
     <label class="form-check-label" for="hideCompleted">Скрыть завершённые</label>
 </div>
 
+<div class="table-responsive order-tree-table-wrap">
 <table class="table table-bordered" id="tree-table">
     <thead class="table-dark">
         <tr><th>Обозначение</th><th>Наименование</th><th>Кол-во</th><th>Готовность</th><th>Действия</th></tr>
@@ -92,6 +93,7 @@ function downloadMaterialReport(orderId) {
     {% endfor %}
     </tbody>
 </table>
+</div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
