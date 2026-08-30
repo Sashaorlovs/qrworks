@@ -1,172 +1,309 @@
 {% extends 'scanner/base.html' %}
 {% block title %}Статистика{% endblock %}
 {% block content %}
-<h1>Статистика производства</h1>
+<div class="stats-page">
+    <header class="stats-heading">
+        <div>
+            <p class="stats-eyebrow">Производство</p>
+            <h1>Статистика производства</h1>
+            <p>Оперативная готовность и результаты за выбранный период.</p>
+        </div>
+    </header>
 
-<form method="get" class="row g-3 mb-4">
-    <div class="col-auto">
-        <label class="form-label">С даты</label>
-        <input type="date" name="start" class="form-control" value="{{ start_date }}">
-    </div>
-    <div class="col-auto">
-        <label class="form-label">По дату</label>
-        <input type="date" name="end" class="form-control" value="{{ end_date }}">
-    </div>
-    <div class="col-auto align-self-end">
-        <button type="submit" class="btn btn-primary me-2">Показать</button>
-        <a href="{% url 'stats_export' %}?start={{ start_date }}&end={{ end_date }}" class="btn btn-success me-2">📥 Экспорт в Excel</a>
-        <a href="{% url 'stats_compare' %}" class="btn btn-info">📊 Сравнение</a>
-    </div>
-</form>
+    <form method="get" class="stats-filter" aria-label="Период статистики">
+        <div class="stats-filter__field">
+            <label for="statsStart">С даты</label>
+            <input id="statsStart" type="date" name="start" class="form-control" value="{{ start_date }}">
+        </div>
+        <div class="stats-filter__field">
+            <label for="statsEnd">По дату</label>
+            <input id="statsEnd" type="date" name="end" class="form-control" value="{{ end_date }}">
+        </div>
+        <div class="stats-filter__actions">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-funnel"></i> Показать</button>
+            {% if start_date or end_date %}
+                <a href="{% url 'stats' %}" class="btn btn-outline-secondary">Сбросить</a>
+            {% endif %}
+            <a href="{% url 'stats_export' %}?{% if start_date %}start={{ start_date }}{% endif %}{% if start_date and end_date %}&{% endif %}{% if end_date %}end={{ end_date }}{% endif %}" class="btn btn-success">
+                <i class="bi bi-file-earmark-spreadsheet"></i> Экспорт
+            </a>
+            <a href="{% url 'stats_compare' %}" class="btn btn-outline-primary"><i class="bi bi-bar-chart"></i> Сравнение</a>
+        </div>
+    </form>
 
-<div class="row mb-4">
-    <div class="col-md-3 mb-3">
-        <div class="card text-white bg-primary h-100"><div class="card-body text-center"><h5 class="card-title">{{ total_ops }}</h5><p class="card-text">Выполнено операций</p></div></div>
+    <section class="stats-section" aria-labelledby="statsNowTitle">
+        <div class="stats-section__heading">
+            <div>
+                <p class="stats-section__kicker">Оперативно</p>
+                <h2 id="statsNowTitle">Состояние сейчас</h2>
+            </div>
+            <span class="stats-live"><i></i> Актуальные данные</span>
+        </div>
+
+        <div class="stats-kpi-grid stats-kpi-grid--current">
+            <a class="stats-kpi stats-kpi--ready" href="#readyAssembly">
+                <span class="stats-kpi__icon"><i class="bi bi-puzzle"></i></span>
+                <span class="stats-kpi__value">{{ ready_for_assembly_count }}</span>
+                <span class="stats-kpi__label">Готово к сборке</span>
+                <span class="stats-kpi__hint">Перейти к списку <i class="bi bi-arrow-down"></i></span>
+            </a>
+            <div class="stats-kpi stats-kpi--work">
+                <span class="stats-kpi__icon"><i class="bi bi-gear-wide-connected"></i></span>
+                <span class="stats-kpi__value">{{ instances_in_progress }}</span>
+                <span class="stats-kpi__label">Деталей в производстве</span>
+                <span class="stats-kpi__hint">Есть незавершённые операции</span>
+            </div>
+            <a class="stats-kpi stats-kpi--attention" href="#longRunning">
+                <span class="stats-kpi__icon"><i class="bi bi-hourglass-split"></i></span>
+                <span class="stats-kpi__value">{{ stuck_in_progress_count }}</span>
+                <span class="stats-kpi__label">Долго в работе</span>
+                <span class="stats-kpi__hint">Более 24 рабочих часов <i class="bi bi-arrow-down"></i></span>
+            </a>
+        </div>
+    </section>
+
+    <section id="readyAssembly" class="stats-dashboard-card stats-ready-card" aria-labelledby="readyAssemblyTitle">
+        <header class="stats-dashboard-card__header">
+            <div>
+                <p class="stats-section__kicker">Приоритетный список</p>
+                <h2 id="readyAssemblyTitle"><i class="bi bi-puzzle"></i> Готово к сборке</h2>
+                <p>Готовность производственных компонентов по маршрутным картам. Покупные комплектующие проверяются отдельно.</p>
+            </div>
+            <span class="stats-count-badge"><span id="readyVisibleCount">{{ ready_for_assembly_count }}</span> поз.</span>
+        </header>
+
+        <div class="stats-card-tools">
+            <label class="stats-inline-search" for="readySearch">
+                <i class="bi bi-search"></i>
+                <input id="readySearch" type="search" aria-label="Поиск готовых сборок" placeholder="Поиск по договору, обозначению или сборке..." autocomplete="off">
+            </label>
+        </div>
+
+        <div class="table-responsive stats-table-wrap">
+            <table class="table stats-table stats-ready-table">
+                <thead>
+                    <tr>
+                        <th>Договор</th>
+                        <th>Обозначение</th>
+                        <th>Наименование</th>
+                        <th>Главная сборка</th>
+                        <th>Подсборка</th>
+                        <th>План партии</th>
+                        <th>Срок</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in ready_for_assembly %}
+                    <tr class="stats-ready-row">
+                        <td data-label="Договор"><span class="stats-order-chip">{{ item.order_number }}</span></td>
+                        <td data-label="Обозначение">
+                            <a class="stats-strong-link" href="{% url 'instance_detail' item_number=item.item_number serial=item.serial %}">{{ item.item_number }}</a>
+                        </td>
+                        <td data-label="Наименование">{{ item.name }}</td>
+                        <td data-label="Главная сборка">{{ item.assembly|default:"—" }}</td>
+                        <td data-label="Подсборка">{{ item.parent_assembly|default:"—" }}</td>
+                        <td data-label="План партии"><strong>{{ item.quantity }}</strong></td>
+                        <td data-label="Срок">
+                            {% if item.due_date %}<span class="stats-date">{{ item.due_date|date:"d.m.Y" }}</span>{% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr class="stats-empty-row"><td colspan="7">Сейчас нет сборочных единиц, готовых к запуску</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section id="longRunning" class="stats-dashboard-card stats-attention-card" aria-labelledby="longRunningTitle">
+        <header class="stats-dashboard-card__header">
+            <div>
+                <p class="stats-section__kicker">Требует внимания</p>
+                <h2 id="longRunningTitle"><i class="bi bi-hourglass-split"></i> Долго в работе</h2>
+                <p>Только реально начатые операции длительностью более 24 рабочих часов.</p>
+            </div>
+            <span class="stats-count-badge stats-count-badge--warning">{{ stuck_in_progress_count }}</span>
+        </header>
+        <div class="table-responsive stats-table-wrap">
+            <table class="table stats-table stats-long-table">
+                <thead>
+                    <tr>
+                        <th>Договор</th>
+                        <th>Деталь</th>
+                        <th>Операция</th>
+                        <th>Начата</th>
+                        <th>Рабочих часов</th>
+                        <th>Исполнитель</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in stuck_in_progress %}
+                    {% with op=item.operation %}
+                    <tr>
+                        <td data-label="Договор"><span class="stats-order-chip">{{ item.order_number }}</span></td>
+                        <td data-label="Деталь">
+                            <a class="stats-strong-link" href="{% url 'instance_detail' item_number=op.route_card.instance.item.item_number serial=op.route_card.instance.serial %}">{{ op.route_card.instance.item.item_number }}</a>
+                        </td>
+                        <td data-label="Операция">{{ op.operation_type.name }}</td>
+                        <td data-label="Начата">{{ op.started_at|date:"d.m.Y H:i" }}</td>
+                        <td data-label="Рабочих часов"><span class="stats-hours">{{ item.working_hours }} ч.</span></td>
+                        <td data-label="Исполнитель">{{ op.worker.employee|default:op.worker|default:"—" }}</td>
+                    </tr>
+                    {% endwith %}
+                    {% empty %}
+                    <tr class="stats-empty-row"><td colspan="6">Долгих операций сейчас нет</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if stuck_in_progress_count > 30 %}<p class="stats-table-note">Показаны 30 самых длительных операций.</p>{% endif %}
+    </section>
+
+    <section class="stats-section stats-period-section" aria-labelledby="statsPeriodTitle">
+        <div class="stats-section__heading">
+            <div>
+                <p class="stats-section__kicker">Аналитика</p>
+                <h2 id="statsPeriodTitle">Результаты {% if start_date or end_date %}за выбранный период{% else %}за всё время{% endif %}</h2>
+            </div>
+        </div>
+
+        <div class="stats-kpi-grid stats-kpi-grid--period">
+            <div class="stats-kpi stats-kpi--neutral">
+                <span class="stats-kpi__icon"><i class="bi bi-check2-circle"></i></span>
+                <span class="stats-kpi__value">{{ total_ops }}</span>
+                <span class="stats-kpi__label">Выполнено операций</span>
+            </div>
+            <div class="stats-kpi stats-kpi--neutral">
+                <span class="stats-kpi__icon"><i class="bi bi-box-seam"></i></span>
+                <span class="stats-kpi__value">{{ total_good }}</span>
+                <span class="stats-kpi__label">Годных по операциям</span>
+            </div>
+            <a class="stats-kpi stats-kpi--defect" href="{% url 'statistics_bad_operations' %}?{% if start_date %}start={{ start_date }}{% endif %}{% if start_date and end_date %}&{% endif %}{% if end_date %}end={{ end_date }}{% endif %}">
+                <span class="stats-kpi__icon"><i class="bi bi-exclamation-octagon"></i></span>
+                <span class="stats-kpi__value">{{ total_bad }}</span>
+                <span class="stats-kpi__label">Брак по операциям</span>
+                <span class="stats-kpi__hint">Открыть детализацию <i class="bi bi-arrow-right"></i></span>
+            </a>
+        </div>
+
+        <div class="stats-movement-strip">
+            <div><span>Принято на основной склад</span><strong>{{ in_main }}</strong></div>
+            <div><span>Принято на межоперационный</span><strong>{{ in_inter }}</strong></div>
+            <div><span>Выдано с основного склада</span><strong>{{ out_main }}</strong></div>
+            <div><span>Выдано с межоперационного</span><strong>{{ out_inter }}</strong></div>
+        </div>
+    </section>
+
+    <div class="stats-charts-grid">
+        <section class="stats-dashboard-card stats-chart-card">
+            <header class="stats-dashboard-card__header">
+                <div><h2>Выпуск по дням</h2><p>{{ chart_period_label|capfirst }}</p></div>
+            </header>
+            <div class="stats-chart-body"><canvas id="dailyChart"></canvas></div>
+        </section>
+        <section class="stats-dashboard-card stats-chart-card">
+            <header class="stats-dashboard-card__header">
+                <div><h2>Топ-10 типов операций</h2><p>По количеству завершённых операций</p></div>
+            </header>
+            <div class="stats-chart-body"><canvas id="opsChart"></canvas></div>
+        </section>
     </div>
-    <div class="col-md-3 mb-3">
-        <div class="card text-white bg-success h-100"><div class="card-body text-center"><h5 class="card-title">{{ total_good }}</h5><p class="card-text">Годные (по операциям)</p></div></div>
-    </div>
-    <div class="col-md-3 mb-3">
-        <div class="card text-white bg-danger h-100"><div class="card-body text-center"><h5 class="card-title">{{ total_bad }}</h5><p class="card-text"><a href="{% url 'statistics_bad_operations' %}?{% if start_date and start_date != 'None' %}start={{ start_date }}&{% endif %}{% if end_date and end_date != 'None' %}end={{ end_date }}{% endif %}" class="text-white text-decoration-none">Брак (по операциям)</a></p></div></div>
-    </div>
-    <div class="col-md-3 mb-3">
-        <div class="card text-white bg-warning h-100"><div class="card-body text-center"><h5 class="card-title">{{ instances_in_progress }}</h5><p class="card-text">Деталей в работе</p></div></div>
-    </div>
+
+    <section class="stats-dashboard-card" aria-labelledby="operationStatsTitle">
+        <header class="stats-dashboard-card__header">
+            <div><h2 id="operationStatsTitle">По типам операций</h2><p>Нажмите на название, чтобы открыть детализацию.</p></div>
+        </header>
+        <div class="table-responsive stats-table-wrap">
+            <table class="table stats-table stats-operation-table">
+                <thead><tr><th>Тип операции</th><th>Завершено</th><th>Годных</th><th>Брак</th></tr></thead>
+                <tbody>
+                    {% for op in op_stats %}
+                    <tr>
+                        <td><a class="stats-strong-link" href="{% url 'stats_operations' op.name %}?{% if start_date %}start={{ start_date }}{% endif %}{% if start_date and end_date %}&{% endif %}{% if end_date %}end={{ end_date }}{% endif %}">{{ op.name }}</a></td>
+                        <td>{{ op.count }}</td><td>{{ op.good }}</td><td>{% if op.bad %}<span class="stats-bad-value">{{ op.bad }}</span>{% else %}0{% endif %}</td>
+                    </tr>
+                    {% empty %}<tr class="stats-empty-row"><td colspan="4">Нет данных за выбранный период</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
 </div>
-<div class="row mb-4">
-    <div class="col-md-3 mb-3">
-        <div class="card text-white bg-info h-100"><div class="card-body text-center"><h5 class="card-title">{{ in_main }}</h5><p class="card-text">Принято годных на осн. склад</p></div></div>
-    </div>
-    <div class="col-md-3 mb-3">
-        <div class="card text-white bg-secondary h-100"><div class="card-body text-center"><h5 class="card-title">{{ in_inter }}</h5><p class="card-text">Принято годных на меж.оп.</p></div></div>
-    </div>
-    <div class="col-md-3 mb-3">
-        <div class="card text-white bg-success h-100"><div class="card-body text-center"><h5 class="card-title">{{ out_main }}</h5><p class="card-text">Выдано годных с осн. склада</p></div></div>
-    </div>
-    <div class="col-md-3 mb-3">
-        <div class="card text-white bg-warning h-100"><div class="card-body text-center"><h5 class="card-title">{{ out_inter }}</h5><p class="card-text">Выдано годных с меж.оп.</p></div></div>
-    </div>
-</div>
 
-<div class="row">
-    <div class="col-lg-6 mb-4 chart-container">
-        <div class="card"><div class="card-header">Выполненные операции по дням (последние 30 дней)</div><div class="card-body"><canvas id="dailyChart" width="400" height="200"></canvas></div></div>
-    </div>
-    <div class="col-lg-6 mb-4 chart-container">
-        <div class="card"><div class="card-header">Распределение операций по типам</div><div class="card-body"><canvas id="opsPieChart" width="400" height="250"></canvas></div></div>
-    </div>
-</div>
-
-<div class="card mb-4"><div class="card-header">По типам операций</div><div class="card-body table-responsive">
-    <table class="table table-bordered"><thead><tr><th>Тип операции</th><th>Кол-во</th><th>Годных (завершённых)</th><th>Брак</th></tr></thead><tbody>
-    {% for op in op_stats %}<tr><td><a href="{% url 'stats_operations' op.name %}?start={{ start_date }}&end={{ end_date }}">{{ op.name }}</a></td><td>{{ op.count }}</td><td>{{ op.good }}</td><td>{{ op.bad }}</td></tr>
-    {% empty %}<tr><td colspan="4">Нет данных</td></tr>{% endfor %}
-    </tbody></table>
-</div></div>
-
+{{ daily_ops|json_script:"statsDailyData" }}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-    var dailyCtx = document.getElementById('dailyChart').getContext('2d');
-    var dailyData = {{ daily_ops|safe }};
-    new Chart(dailyCtx, { type: 'bar', data: { labels: dailyData.map(function(d){return d.day}), datasets: [
-        { label: 'Годных', data: dailyData.map(function(d){return d.good||0}), backgroundColor: '#28a745' },
-        { label: 'Брак', data: dailyData.map(function(d){return d.bad||0}), backgroundColor: '#dc3545' }
-    ]}, options: { responsive: true, scales: { y: { beginAtZero: true } } } });
+(function () {
+    var readySearch = document.getElementById('readySearch');
+    var readyRows = Array.from(document.querySelectorAll('.stats-ready-row'));
+    var readyCount = document.getElementById('readyVisibleCount');
 
-    var pieCtx = document.getElementById('opsPieChart').getContext('2d');
-    var opLabels = [{% for op in op_stats %}'{{ op.name|escapejs }}',{% endfor %}];
-    var opCounts = [{% for op in op_stats %}{{ op.count }},{% endfor %}];
-    if (opLabels.length) new Chart(pieCtx, { type: 'pie', data: { labels: opLabels, datasets: [{ data: opCounts, backgroundColor: ['#007bff','#28a745','#ffc107','#dc3545','#17a2b8','#6f42c1','#fd7e14','#20c997','#e83e8c','#6c757d'] }] }, options: { responsive: true } });
-</script>
-
-<script>
-var ctx_warehouse = document.getElementById('warehouseChart').getContext('2d');
-new Chart(ctx_warehouse, {
-    type: 'pie',
-    data: {
-        labels: ['Основной склад', 'Межоперационный'],
-        datasets: [{
-            data: [{{ in_main }}, {{ in_inter }}],
-            backgroundColor: ['#0dcaf0', '#6c757d'],
-        }]
-    },
-    options: {
-        responsive: true,
-        plugins: {
-            legend: { position: 'bottom' }
-        }
+    if (readySearch) {
+        readySearch.addEventListener('input', function () {
+            var term = readySearch.value.trim().toLocaleLowerCase('ru-RU');
+            var visible = 0;
+            readyRows.forEach(function (row) {
+                var matches = !term || row.textContent.toLocaleLowerCase('ru-RU').includes(term);
+                row.hidden = !matches;
+                if (matches) visible += 1;
+            });
+            readyCount.textContent = visible;
+        });
     }
-});
+
+    if (typeof Chart === 'undefined') return;
+
+    var dailyData = JSON.parse(document.getElementById('statsDailyData').textContent);
+    var dailyCanvas = document.getElementById('dailyChart');
+    if (dailyCanvas) {
+        new Chart(dailyCanvas, {
+            type: 'bar',
+            data: {
+                labels: dailyData.map(function (row) { return row.day; }),
+                datasets: [
+                    { label: 'Годных', data: dailyData.map(function (row) { return row.good || 0; }), backgroundColor: '#1ca471', borderRadius: 4 },
+                    { label: 'Брак', data: dailyData.map(function (row) { return row.bad || 0; }), backgroundColor: '#d94b58', borderRadius: 4 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: { x: { grid: { display: false } }, y: { beginAtZero: true } },
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+    }
+
+    var operationData = [{% for op in op_stats %}{ name: '{{ op.name|escapejs }}', count: {{ op.count }} },{% endfor %}].slice(0, 10);
+    var operationsCanvas = document.getElementById('opsChart');
+    if (operationsCanvas) {
+        new Chart(operationsCanvas, {
+            type: 'bar',
+            data: {
+                labels: operationData.map(function (row) { return row.name; }),
+                datasets: [{ label: 'Завершено', data: operationData.map(function (row) { return row.count; }), backgroundColor: '#3f78e0', borderRadius: 5 }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { beginAtZero: true },
+                    y: {
+                        grid: { display: false },
+                        ticks: {
+                            callback: function (value) {
+                                var label = this.getLabelForValue(value);
+                                var limit = window.innerWidth < 768 ? 18 : 34;
+                                return label.length > limit ? label.slice(0, limit - 1) + '…' : label;
+                            }
+                        }
+                    }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+})();
 </script>
-
-
-<!-- Простои -->
-<div class="row mb-4">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header bg-danger text-white">⏳ В работе > 24 часов</div>
-            <div class="card-body p-0"><div style="max-height: 300px; overflow-y: auto;">
-                <table class="table table-bordered table-sm mb-0">
-                    <thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;"><tr><th>Деталь</th><th>Операция</th><th>Начата</th><th>Исполнитель</th></tr></thead>
-                    <tbody>
-                        {% for op in stuck_in_progress %}
-                        <tr>
-                            <td><a href="{% url 'instance_detail' item_number=op.route_card.instance.item.item_number serial=op.route_card.instance.serial %}">{{ op.route_card.instance.item.item_number }}</a></td>
-                            <td>{{ op.operation_type.name }}</td>
-                            <td>{{ op.started_at|date:"d.m.Y H:i" }}</td>
-                            <td>{{ op.worker.employee|default:op.worker|default:"—" }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="4">Зависших операций нет</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div></div>
-        </div>
-    </div>
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header bg-secondary text-white">⏸️ Ожидают > 48 часов</div>
-            <div class="card-body p-0"><div style="max-height: 300px; overflow-y: auto;">
-                <table class="table table-bordered table-sm mb-0">
-                    <thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;"><tr><th>Деталь</th><th>Операция</th><th>Создана</th></tr></thead>
-                    <tbody>
-                        {% for op in stuck_pending %}
-                        <tr>
-                            <td><a href="{% url 'instance_detail' item_number=op.route_card.instance.item.item_number serial=op.route_card.instance.serial %}">{{ op.route_card.instance.item.item_number }}</a></td>
-                            <td>{{ op.operation_type.name }}</td>
-                            <td>{{ op.route_card.instance.created_at|date:"d.m.Y" }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="3">Долгих ожиданий нет</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div></div>
-        </div>
-    </div>
-</div>
-
-<!-- Готово к сборке -->
-<div class="card mb-4">
-    <div class="card-header bg-success text-white">🧩 Готово к сборке</div>
-    <div class="card-body p-0"><div style="max-height: 300px; overflow-y: auto;">
-        <table class="table table-bordered table-sm mb-0">
-            <thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;"><tr><th>Обозначение</th><th>Наименование</th><th>Главная сборка</th><th>Подсборка</th></tr></thead>
-            <tbody>
-                {% for item in ready_for_assembly %}
-                <tr>
-                    <td><a href="{% url 'instance_detail' item_number=item.item_number serial=item.serial %}">{{ item.item_number }}</a></td>
-                    <td>{{ item.name }}</td>
-                    <td>{{ item.assembly }}</td><td>{{ item.parent_assembly|default:"—" }}</td>
-                    
-                </tr>
-                {% empty %}
-                <tr><td colspan="4">Нет сборочных единиц, готовых к сборке</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
 {% endblock %}

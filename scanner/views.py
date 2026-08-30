@@ -1443,12 +1443,13 @@ def get_working_hours(start_dt, end_dt):
 
 @login_required
 def statistics(request):
-    from django.db.models import Q,  Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Sum, Count, Q, Q, Q, Q
-    from datetime import datetime, timedelta, date
+    from django.db.models import Count, Prefetch, Q, Sum
+    from django.db.models.functions import TruncDate
+    from datetime import datetime, timedelta
 
     # Параметры фильтрации
-    start_date = request.GET.get('start')
-    end_date = request.GET.get('end')
+    start_date = request.GET.get('start', '')
+    end_date = request.GET.get('end', '')
 
     # Базовые запросы
     ops = RouteOperation.objects.select_related('operation_type', 'worker')
@@ -1465,16 +1466,6 @@ def statistics(request):
 
     # Суммарные показатели
     total_ops = ops.filter(status='completed').count()
-    # Определяем start_dt и end_dt для складских расчётов
-    if start_date and start_date != 'None':
-        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-    else:
-        start_dt = None
-    if end_date and end_date != 'None':
-        end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
-    else:
-        end_dt = None
-
     # Годные = сумма good_qty по всем завершённым операциям (аналогично браку)
     total_good = ops.filter(status='completed').aggregate(s=Sum('good_qty'))['s'] or 0
     
@@ -1483,29 +1474,23 @@ def statistics(request):
         route_card__operations__status__in=['in_progress', 'pending']
     ).distinct().count()
 
-    # Деталей в работе (партии с незавершёнными операциями)
-    instances_in_progress = ItemInstance.objects.filter(
-        route_card__operations__status__in=['in_progress', 'pending']
-    ).distinct().count()
-
-    # Брак = сумма бракованных деталей по всем завершённым операциям в периоде
+    # Сохраняем прежний состав показателя и переход в детализацию брака.
     total_bad = ops.aggregate(s=Sum('bad_qty'))['s'] or 0
 
-    # По типам операций
-    op_types = OperationType.objects.all()
-    op_stats = []
-    for ot in op_types:
-        qs = ops.filter(operation_type=ot)
-        cnt = qs.filter(status='completed').count()
-        good = qs.aggregate(s=Sum('good_qty'))['s'] or 0
-        bad = qs.aggregate(s=Sum('bad_qty'))['s'] or 0
-        if cnt > 0:
-            op_stats.append({
-                'name': ot.name,
-                'count': cnt,
-                'good': good,
-                'bad': bad,
-            })
+    # По типам операций — один агрегирующий запрос вместо серии запросов по каждому типу.
+    op_stats = [
+        {
+            'name': row['operation_type__name'],
+            'count': row['count'],
+            'good': row['good'] or 0,
+            'bad': row['bad'] or 0,
+        }
+        for row in ops
+        .values('operation_type__name')
+        .annotate(count=Count('id', filter=Q(status='completed')), good=Sum('good_qty'), bad=Sum('bad_qty'))
+        .filter(count__gt=0)
+        .order_by('-count', 'operation_type__name')
+    ]
 
     # Складские показатели: простая сумма quantity по всем записям за период
     in_main = wh.filter(movement_type='in_main').aggregate(s=Sum('quantity'))['s'] or 0
@@ -1513,13 +1498,25 @@ def statistics(request):
     out_main = wh.filter(movement_type='out_main').aggregate(s=Sum('quantity'))['s'] or 0
     out_inter = wh.filter(movement_type='out_intermediate').aggregate(s=Sum('quantity'))['s'] or 0
 
-    # Для графика выпуска по дням (последние 30 дней)
-    from_date = datetime.now() - timedelta(days=30)
-    daily_ops = RouteOperation.objects.filter(
-        status='completed', completed_at__gte=from_date
-    ).extra(select={'day': 'date(completed_at)'}).values('day').annotate(
+    # График использует выбранный период. Без фильтра показываем последние 30 дней.
+    chart_ops = ops.filter(status='completed')
+    chart_period_label = 'за выбранный период'
+    if not start_date and not end_date:
+        chart_ops = chart_ops.filter(completed_at__gte=timezone.now() - timedelta(days=30))
+        chart_period_label = 'за последние 30 дней'
+
+    daily_rows = chart_ops.annotate(day=TruncDate('completed_at')).values('day').annotate(
         good=Sum('good_qty'), bad=Sum('bad_qty'), count=Count('id')
     ).order_by('day')
+    daily_ops = [
+        {
+            'day': row['day'].strftime('%d.%m') if row['day'] else '',
+            'good': row['good'] or 0,
+            'bad': row['bad'] or 0,
+            'count': row['count'],
+        }
+        for row in daily_rows
+    ]
 
 
     context = {
@@ -1537,14 +1534,19 @@ def statistics(request):
         'out_inter': out_inter,
         'daily_ops': list(daily_ops),
         'op_types_json': [{'name': s['name'], 'count': s['count']} for s in op_stats],
+        'chart_period_label': chart_period_label,
     }
 
-    # --- Простои ---
-    # Зависшие операции: одна запись на деталь (самая ранняя зависшая)
-    # Все операции в статусе "в работе"
+    # --- Долго в работе ---
+    # Оставляем только реально начатые операции старше 24 рабочих часов.
     all_in_progress = RouteOperation.objects.filter(
         status='in_progress'
-    ).select_related('route_card__instance__item', 'worker__employee').order_by('started_at')
+    ).select_related(
+        'route_card__instance__item',
+        'route_card__instance__order',
+        'worker__employee',
+        'operation_type',
+    ).order_by('started_at')
     
     # Фильтруем по рабочим часам
     stuck_in_progress_raw = []
@@ -1555,47 +1557,56 @@ def statistics(request):
             if working_hours > 24:
                 stuck_in_progress_raw.append(op)
     
-    # Группируем по экземпляру, оставляем самую раннюю операцию
+    # Одна самая старая операция на экземпляр.
     stuck_in_progress = []
     seen_instances = set()
     for op in stuck_in_progress_raw:
         inst_id = op.route_card.instance_id
         if inst_id not in seen_instances:
             seen_instances.add(inst_id)
-            stuck_in_progress.append(op)
-    
-    # Долгое ожидание: одна запись на деталь
-    # Все операции в статусе "ожидает" (кроме Комплектование)
-    all_pending = RouteOperation.objects.filter(
-        status='pending'
-    ).exclude(
-        operation_type__name='Комплектование'
-    ).select_related('route_card__instance__item').order_by('route_card__instance__created_at')
-    
-    # Фильтруем по рабочим часам с момента создания экземпляра
-    stuck_pending_raw = []
-    now = timezone.now()
-    for op in all_pending:
-        if op.route_card.instance.created_at:
-            working_hours = get_working_hours(op.route_card.instance.created_at, now)
-            if working_hours > 48:
-                stuck_pending_raw.append(op)
-    
-    stuck_pending = []
-    seen_instances_p = set()
-    for op in stuck_pending_raw:
-        inst_id = op.route_card.instance_id
-        if inst_id not in seen_instances_p:
-            seen_instances_p.add(inst_id)
-            stuck_pending.append(op)
+            stuck_in_progress.append({
+                'operation': op,
+                'working_hours': round(get_working_hours(op.started_at, now)),
+                'order_number': op.route_card.instance.order.order_number if op.route_card.instance.order else '—',
+            })
+
+    stuck_in_progress.sort(key=lambda item: item['working_hours'], reverse=True)
+    stuck_in_progress_count = len(stuck_in_progress)
+    stuck_in_progress = stuck_in_progress[:30]
     
     # --- Готово к сборке ---
     ready_for_assembly = []
-    for inst in ItemInstance.objects.filter(
+    assembly_instances = ItemInstance.objects.filter(
         item__item_type='Сборочная единица',
         route_card__isnull=False
-    ).select_related('item', 'order', 'order_item__parent__item'):
-        if inst.all_components_ready() and inst.assembly_status() == 'Готово к комплектованию':
+    ).select_related(
+        'item',
+        'order',
+        'route_card',
+        'order_item__item',
+        'order_item__parent__item',
+        'order_item__parent__parent__item',
+        'order_item__parent__parent__parent__item',
+    ).prefetch_related(
+        'route_card__operations',
+        'order_item__children__item',
+        Prefetch(
+            'order_item__children__instances',
+            queryset=ItemInstance.objects.select_related('route_card').prefetch_related('route_card__operations'),
+        ),
+    )
+
+    for inst in assembly_instances:
+        if not inst.all_components_ready():
+            continue
+
+        assembly_ops = list(inst.route_card.operations.all())
+        has_in_progress = any(op.status == 'in_progress' for op in assembly_ops)
+        has_pending = any(op.status == 'pending' for op in assembly_ops)
+        has_completed = any(op.status == 'completed' for op in assembly_ops)
+        is_ready = not assembly_ops or (has_pending and not has_completed and not has_in_progress)
+
+        if is_ready:
             # Определяем главную сборку
             root_name = ''
             if inst.order_item:
@@ -1616,12 +1627,22 @@ def statistics(request):
                 'serial': inst.serial,
                 'assembly': root_name,
                 'parent_assembly': parent_name,
-                'order_number': inst.order.order_number if inst.order else '',
+                'order_number': inst.order.order_number if inst.order else '—',
+                'quantity': inst.quantity,
+                'due_date': inst.due_date or (inst.order.due_date if inst.order else None),
             })
-    
+
+    ready_for_assembly.sort(key=lambda item: (
+        item['due_date'] is None,
+        item['due_date'] or date.max,
+        item['order_number'],
+        item['item_number'],
+    ))
+
     context['stuck_in_progress'] = stuck_in_progress
-    context['stuck_pending'] = stuck_pending
+    context['stuck_in_progress_count'] = stuck_in_progress_count
     context['ready_for_assembly'] = ready_for_assembly
+    context['ready_for_assembly_count'] = len(ready_for_assembly)
 
     return render(request, 'scanner/statistics.html', context)
 
