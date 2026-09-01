@@ -1,6 +1,7 @@
 from scanner.models import RouteCard
 from datetime import datetime, timedelta, date
 from django.db.models import Q, Q,  Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Count, Max, Q, F, Q
+from django.db.models import Sum
 from django.conf import settings
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth import logout
@@ -187,6 +188,30 @@ def instance_detail(request, item_number, serial):
             if (current_good + current_bad + new_good + new_bad) > planned:
                 messages.error(request, f'Сумма годных и брака не может превышать план ({planned} шт.).')
                 anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
+
+            # Проверяем, не исчерпан ли план браком на предыдущих операциях
+            prev_ops = route_card.operations.filter(order__lt=op.order)
+            total_bad_before = prev_ops.aggregate(total=Sum('bad_qty'))['total'] or 0
+            total_good_before = prev_ops.aggregate(total=Sum('good_qty'))['total'] or 0
+            remaining_before = planned - total_good_before - total_bad_before
+
+            # Если план уже исчерпан браком, разрешаем завершить с нулями
+            if remaining_before <= 0:
+                op.good_qty = current_good + 0
+                op.bad_qty = current_bad + 0
+                op.status = 'completed'
+                op.completed_at = timezone.now()
+                op.notes = request.POST.get('notes', '') if request.POST.get('notes') else f'План исчерпан браком до операции (брак: {total_bad_before})'
+                # Логируем
+                worker_name = f"{request.user.employee.last_name} {request.user.employee.first_name}" if hasattr(request.user, 'employee') else request.user.username
+                timestamp = (timezone.now() + timedelta(hours=3)).strftime('%d.%m.%Y %H:%M')
+                new_log_entry = f"{timestamp} — {worker_name} (автозавершение: план исчерпан браком)"
+                op.worker_log = (op.worker_log + '\n' + new_log_entry) if op.worker_log else new_log_entry
+                op.worker = request.user
+                op.save()
+                messages.warning(request, 'Операция завершена автоматически: план исчерпан браком на предыдущих операциях.')
+                anchor = f'#operation-{op.id}'
+                return redirect(f'/instance/{item_number}/{serial}/' + anchor)
 
             # накапливаем годные и брак
             op.good_qty = current_good + new_good
