@@ -178,22 +178,42 @@ def instance_detail(request, item_number, serial):
             current_good = op.good_qty or 0
             current_bad = op.bad_qty or 0
 
-            # Проверки на превышение плана
-            if new_good > planned:
-                messages.error(request, f'Количество годных не может превышать план ({planned} шт.).')
+            # Проверка: если не введено ни годных, ни брака, но план ещё не исчерпан
+            # (проверим позже, после подсчёта previous bad)
+
+            current_good = op.good_qty or 0
+            current_bad = op.bad_qty or 0
+
+            # Рассчитываем оставшийся план для этой операции
+            prev_ops = route_card.operations.filter(order__lt=op.order)
+            total_bad_before = prev_ops.aggregate(total=Sum('bad_qty'))['total'] or 0
+            remaining_before = planned - total_bad_before
+
+            # Проверки на превышение остатка
+            if new_good > remaining_before:
+                request.session['error_op_id'] = op.id
+                request.session['error_message'] = f'Количество годных не может превышать остаток ({remaining_before} шт.).'
                 anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
-            if new_bad > planned:
-                messages.error(request, f'Количество брака не может превышать план ({planned} шт.).')
+            if new_bad > remaining_before:
+                request.session['error_op_id'] = op.id
+                request.session['error_message'] = f'Количество брака не может превышать остаток ({remaining_before} шт.).'
                 anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
-            if (current_good + current_bad + new_good + new_bad) > planned:
-                messages.error(request, f'Сумма годных и брака не может превышать план ({planned} шт.).')
+            if (current_good + current_bad + new_good + new_bad) > remaining_before:
+                request.session['error_op_id'] = op.id
+                request.session['error_message'] = f'Сумма годных и брака не может превышать остаток ({remaining_before} шт.).'
                 anchor = f'#operation-{op.id}'; return redirect(f'/instance/{item_number}/{serial}/' + anchor)
 
             # Проверяем, не исчерпан ли план браком на предыдущих операциях
             prev_ops = route_card.operations.filter(order__lt=op.order)
             total_bad_before = prev_ops.aggregate(total=Sum('bad_qty'))['total'] or 0
-            total_good_before = prev_ops.aggregate(total=Sum('good_qty'))['total'] or 0
-            remaining_before = planned - total_good_before - total_bad_before
+            # Оставшиеся детали = план - брак предыдущих операций (годные не вычитаем)
+            remaining_before = planned - total_bad_before
+
+            # Если план ещё не исчерпан, но не введено ни годных, ни брака — ошибка
+            if remaining_before > 0 and new_good == 0 and new_bad == 0 and (current_good + current_bad) == 0:
+                request.session['error_op_id'] = op.id
+                anchor = f'#operation-{op.id}'
+                return redirect(f'/instance/{item_number}/{serial}/' + anchor)
 
             # Если план уже исчерпан браком, разрешаем завершить с нулями
             if remaining_before <= 0:
@@ -236,11 +256,11 @@ def instance_detail(request, item_number, serial):
             
             # Для складских и контрольных операций: завершаем только при достижении плана
             if is_warehouse or is_control:
-                if (op.good_qty + op.bad_qty) >= planned:
+                if (op.good_qty + op.bad_qty) >= (planned - total_bad_before):
                     op.status = 'completed'
                     op.completed_at = timezone.now()
                 # если план не достигнут — остаётся in_progress
-            elif (op.good_qty + op.bad_qty) >= planned:
+            elif (op.good_qty + op.bad_qty) >= (planned - total_bad_before):
                 # Для обычных операций — завершаем при достижении плана
                 op.status = 'completed'
                 op.completed_at = timezone.now()
@@ -300,6 +320,8 @@ def instance_detail(request, item_number, serial):
         'assembly_status': assembly_status,
         'root_assembly_path': root_assembly_path,
     }
+    context['error_op_id'] = request.session.pop('error_op_id', None)
+    context['error_message'] = request.session.pop('error_message', None)
     return render(request, 'scanner/instance_detail.html', context)
 
 @login_required

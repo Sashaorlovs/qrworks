@@ -49,6 +49,22 @@ function showWorkerLog(opId) {
 }
 </script>
 
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('input[name="good_qty"], input[name="bad_qty"]').forEach(function(input) {
+        input.addEventListener('focus', function() {
+            if (this.value === '0') {
+                this.value = '';
+            }
+        });
+        input.addEventListener('blur', function() {
+            if (this.value === '') {
+                this.value = '0';
+            }
+        });
+    });
+});
+</script>
 {% endblock %}
 {% block content %}
 <h2>{{ instance.item.item_number }} – {{ instance.item.name }}</h2>
@@ -154,6 +170,11 @@ function showWorkerLog(opId) {
                         {% csrf_token %}
                         <input type="hidden" name="operation_id" value="{{ op.id }}">
                         <input type="hidden" name="action" value="complete">
+                        {% if error_op_id == op.id %}
+                        <div class="alert alert-danger py-1 mb-2" style="font-size:0.85em;">
+                            {{ error_message|default:'Введите количество годных или брака!' }}
+                        </div>
+                        {% endif %}
                         <div class="row g-2 mb-2">
                             <div class="col-6">
                                 <label class="form-label small">Годных</label>
@@ -239,4 +260,20 @@ function showWorkerLog(opId) {
 }
 </script>
 
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('input[name="good_qty"], input[name="bad_qty"]').forEach(function(input) {
+        input.addEventListener('focus', function() {
+            if (this.value === '0') {
+                this.value = '';
+            }
+        });
+        input.addEventListener('blur', function() {
+            if (this.value === '') {
+                this.value = '0';
+            }
+        });
+    });
+});
+</script>
 {% endblock %}
