@@ -304,9 +304,9 @@ class RouteOperation(models.Model):
     def duration(self):
         if self.started_at and self.completed_at:
             delta = self.completed_at - self.started_at
-            hours, remainder = divmod(delta.seconds, 3600)
-            minutes = remainder // 60
-            return f'{hours} ч {minutes} мин'
+            total_hours = delta.days * 24 + delta.seconds // 3600
+            minutes = (delta.seconds % 3600) // 60
+            return f'{total_hours} ч {minutes} мин'
         return None
     
     class Meta:
