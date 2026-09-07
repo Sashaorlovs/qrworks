@@ -12,6 +12,11 @@ import uuid
 import pytz
 from django.db.models import Q, Sum
 from scanner.purchase_models import PurchaseItem, PurchaseTransaction
+from scanner.purchase_allocation import (
+    PurchaseAllocationError,
+    allocate_purchase_items,
+    allocation_state,
+)
 from scanner.models import Order, OrderItem, Employee
 
 @login_required
@@ -258,6 +263,27 @@ def purchase_remains(request):
         item['purchased'] = sum(pd['purchased'] for pd in item['project_details'])
         item['issued'] = sum(pd['issued'] for pd in item['project_details'])
         item['available'] = item['purchased'] - item['issued']
+        item['destinations'] = []
+        for requirement in items:
+            if requirement.item_name.strip().lower() != item['name']:
+                continue
+            if requirement.purchase_status != 'ready_for_issue':
+                continue
+            state = allocation_state(requirement)
+            if state.allocatable <= 0:
+                continue
+            order_name = 'Без заказа'
+            if requirement.order:
+                order_name = requirement.order.full_name or requirement.order.order_number
+            item['destinations'].append({
+                'id': requirement.id,
+                'order': order_name,
+                'assembly': requirement.assembly_name or 'Без подсборки',
+                'required': state.required_for_assembly,
+                'issued': state.issued_for_assembly,
+                'available': state.allocatable,
+            })
+        item['destinations'].sort(key=lambda row: (row['order'], row['assembly']))
     
     # Фильтры для отображения
     q = request.GET.get('q', '').strip()
@@ -289,33 +315,29 @@ def purchase_remains(request):
 
 def purchase_issue(request):
     """Страница выдачи с выбором получателя из списка сотрудников"""
-    from django.db.models import Sum
-    from django.db.models import Sum
-    items = PurchaseItem.objects.filter(purchase_status='ready_for_issue').select_related('order', 'assembly_ref').annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))\
-        .annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))
+    items = list(
+        PurchaseItem.objects.filter(purchase_status='ready_for_issue')
+        .select_related('order', 'assembly_ref')
+        .order_by('order_id', 'item_name', 'assembly_name')
+    )
     
     q = request.GET.get('q', '').strip()
     if q:
         q_lower = q.lower()
-        items = [i for i in items if q_lower in (i.assembly_name or '').lower() or q_lower in (i.item_name or '').lower()]
+        items = [
+            i for i in items
+            if q_lower in (i.assembly_name or '').lower()
+            or q_lower in (i.item_name or '').lower()
+        ]
 
-    # Собираем общий остаток по каждому наименованию (как на странице остатков)
-    from collections import defaultdict
-    global_remains = defaultdict(lambda: {'purchased': 0, 'issued': 0})
+    available_items = []
     for item in items:
-        key = item.item_name.strip().lower()
-        # purchased берём максимальный среди всех позиций с этим названием
-        if item.quantity_purchased > global_remains[key]['purchased']:
-            global_remains[key]['purchased'] = item.quantity_purchased or 0
-        # issued суммируем
-        global_remains[key]['issued'] += item.issued_qty or 0
-
-    # Вычисляем остаток для каждой позиции как общий остаток по наименованию
-    for item in items:
-        key = item.item_name.strip().lower()
-        total_purchased = global_remains[key]['purchased']
-        total_issued = global_remains[key]['issued']
-        item.remaining = total_purchased - total_issued
+        state = allocation_state(item)
+        item.remaining = state.allocatable
+        item.issued_for_assembly = state.issued_for_assembly
+        if item.remaining > 0:
+            available_items.append(item)
+    items = available_items
 
     employees = Employee.objects.all().order_by('last_name', 'first_name')
     return render(request, 'scanner/purchase_issue.html', {
@@ -344,40 +366,25 @@ def purchase_bulk_issue(request):
         return JsonResponse({'error': 'Получатель не найден'}, status=400)
 
     batch_token = str(uuid.uuid4())
-    issued = []
-    for d in items_data:
-        try:
-            item = PurchaseItem.objects.get(id=d['id'])
-        except PurchaseItem.DoesNotExist:
-            continue
-        qty = int(d.get('quantity', 0))
-        if qty <= 0:
-            continue
-
-        # Проверяем общий остаток по всем позициям с таким же наименованием
-        from django.db.models import Sum
-        # Общее закупленное (максимальное среди всех позиций с этим названием)
-        max_purchased = PurchaseItem.objects.filter(
-            item_name__iexact=item.item_name
-        ).aggregate(m=Max('quantity_purchased'))['m'] or 0
-        # Общее выданное (сумма по всем позициям с этим названием)
-        total_issued = PurchaseTransaction.objects.filter(
-            purchase_item__item_name__iexact=item.item_name,
-            transaction_type='out'
-        ).aggregate(s=Sum('quantity'))['s'] or 0
-        
-        available = max_purchased - total_issued
-        qty = min(qty, available)
-        if qty <= 0:
-            continue
-        PurchaseTransaction.objects.create(
-            purchase_item=item, transaction_type='out', quantity=qty,
-            recipient=str(recipient), basis=basis, batch_token=batch_token,
-            created_by=request.user
+    try:
+        movements = allocate_purchase_items(
+            lines=items_data,
+            recipient=recipient,
+            basis=basis,
+            batch_token=batch_token,
+            created_by=request.user,
         )
-        item.purchase_status = 'issued'
-        item.save()
-        issued.append({'name': item.item_name, 'qty': qty, 'assembly': item.assembly_name})
+    except PurchaseAllocationError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+
+    issued = [
+        {
+            'name': movement.purchase_item.item_name,
+            'qty': movement.quantity,
+            'assembly': movement.purchase_item.assembly_name,
+        }
+        for movement in movements
+    ]
 
     # Excel-накладная
     from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
@@ -835,66 +842,40 @@ def purchase_issue_remains(request):
 @login_required
 @check_purchase_access
 def purchase_remains_issue(request):
-    """Групповая выдача со страницы остатков (поддержка групп)"""
+    """Выдача со страницы остатков на точные заказ и подсборку."""
     import uuid
-    from django.db.models import Sum, Max
     data = json.loads(request.body)
-    names = data.get('names', [])
+    allocations = data.get('allocations', [])
     recipient_id = data.get('recipient_id', '').strip()
     basis = data.get('basis', '').strip()
-    quantities = data.get('quantities', {})
 
-    if not names or not recipient_id:
+    if not allocations or not recipient_id:
         return JsonResponse({'error': 'Не выбраны позиции или получатель'}, status=400)
     try:
         recipient = Employee.objects.get(id=recipient_id)
     except Employee.DoesNotExist:
         return JsonResponse({'error': 'Получатель не найден'}, status=400)
 
-    # Фильтрация в Python (регистронезависимо)
-    all_items = PurchaseItem.objects.all()
-    matched = []
-    for item in all_items:
-        item_lower = item.item_name.lower()
-        for name in names:
-            name_lower = name.lower()
-            if item_lower == name_lower or item_lower.startswith(name_lower):
-                matched.append(item)
-                break
-    if not matched:
-        return JsonResponse({'error': 'Позиции не найдены'}, status=404)
-
-    # Группируем по уникальным именам для выдачи
-    issued = []
     batch_token = str(uuid.uuid4())
-    for name in names:
-        qty = quantities.get(name, 0)
-        if qty <= 0:
-            continue
-        name_lower = name.lower()
-        # Считаем общий доступный остаток по всем позициям, начинающимся с name_lower
-        relevant = [it for it in all_items if it.item_name.lower().startswith(name_lower)]
-        if not relevant:
-            continue
-        total_purchased = sum(it.quantity_purchased or 0 for it in relevant)
-        total_issued = PurchaseTransaction.objects.filter(
-            purchase_item__in=relevant,
-            transaction_type='out'
-        ).aggregate(s=Sum('quantity'))['s'] or 0
-        available = total_purchased - total_issued
-        if available <= 0:
-            continue
-        qty = min(qty, available)
-        target = relevant[0]
-        PurchaseTransaction.objects.create(
-            purchase_item=target, transaction_type='out', quantity=qty,
-            recipient=str(recipient), basis=basis, batch_token=batch_token,
-            created_by=request.user
+    try:
+        movements = allocate_purchase_items(
+            lines=allocations,
+            recipient=recipient,
+            basis=basis,
+            batch_token=batch_token,
+            created_by=request.user,
         )
-        issued.append({'name': target.item_name, 'qty': qty, 'assembly': target.assembly_name or ''})
+    except PurchaseAllocationError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
 
-    if not issued:
-        return JsonResponse({'error': 'Нет доступных остатков для выдачи'}, status=400)
+    issued = [
+        {
+            'name': movement.purchase_item.item_name,
+            'qty': movement.quantity,
+            'assembly': movement.purchase_item.assembly_name or '',
+        }
+        for movement in movements
+    ]
 
     # Excel-накладная
     from openpyxl.styles import Font, Alignment, Border, Side
@@ -987,4 +968,3 @@ def purchase_issue_log(request):
         'transactions': transactions,
         'q': q,
     })
-

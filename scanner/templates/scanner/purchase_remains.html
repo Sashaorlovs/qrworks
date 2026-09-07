@@ -56,11 +56,11 @@
     </div>
 
     <table class="table table-sm table-hover">
-        <thead><tr><th><input type="checkbox" id="select-all"></th><th>Наименование</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th><th></th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="select-all"></th><th>Наименование</th><th>Закуплено</th><th>Выдано</th><th>Остаток</th><th>Заказ / подсборка</th><th>К выдаче</th></tr></thead>
         <tbody>
             {% for item in remains %}
             <tr>
-                <td><input type="checkbox" class="item-checkbox" data-name="{{ item.name|lower }}"></td>
+                <td><input type="checkbox" class="item-checkbox" data-name="{{ item.name|lower }}" {% if not item.destinations %}disabled{% endif %}></td>
                 <td>
                     <details>
                         <summary style="text-transform: capitalize;">{{ item.name }}</summary>
@@ -82,10 +82,27 @@
                 <td class="text-center">{{ item.purchased }}</td>
                 <td class="text-center">{{ item.issued }}</td>
                 <td class="text-center"><strong>{{ item.available }}</strong></td>
-                <td>{% if item.available > 0 %}<input type="number" class="form-control form-control-sm qty-input" value="1" min="1" max="{{ item.available }}" style="width:80px">{% endif %}</td>
+                <td>
+                    {% if item.destinations %}
+                    <select class="form-select form-select-sm destination-select" style="min-width:280px">
+                        <option value="">— Выберите заказ и подсборку —</option>
+                        {% for destination in item.destinations %}
+                        <option value="{{ destination.id }}"
+                                data-max="{{ destination.available }}"
+                                data-assembly="{{ destination.assembly }}">
+                            {{ destination.order }} — {{ destination.assembly }}
+                            (нужно {{ destination.required }}, выдано {{ destination.issued }}, можно {{ destination.available }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                    {% else %}
+                    <span class="text-muted small">Нет доступного остатка для распределения</span>
+                    {% endif %}
+                </td>
+                <td>{% if item.destinations %}<input type="number" class="form-control form-control-sm qty-input" value="1" min="1" max="0" disabled style="width:80px">{% endif %}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="6">Нет данных</td></tr>
+            <tr><td colspan="7">Нет данных</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -93,20 +110,38 @@
 
 <script>
 document.getElementById('select-all').onchange = function(){
-    document.querySelectorAll('.item-checkbox').forEach(cb => cb.checked = this.checked);
+    document.querySelectorAll('.item-checkbox:not(:disabled)').forEach(cb => cb.checked = this.checked);
     updateIssueBtn();
 };
 document.querySelectorAll('.item-checkbox').forEach(cb => cb.onchange = updateIssueBtn);
 document.getElementById('recipient').onchange = updateIssueBtn;
+document.querySelectorAll('.destination-select').forEach(function(select) {
+    select.onchange = function() {
+        var row = this.closest('tr');
+        var qtyInput = row.querySelector('.qty-input');
+        var option = this.options[this.selectedIndex];
+        var max = parseInt(option.dataset.max || '0');
+        qtyInput.max = max;
+        qtyInput.disabled = max <= 0;
+        if (max > 0 && (parseInt(qtyInput.value) || 0) > max) qtyInput.value = max;
+        if (this.value && !document.getElementById('basis').value) {
+            document.getElementById('basis').value = option.dataset.assembly || '';
+        }
+        updateIssueBtn();
+    };
+});
 
 function updateIssueBtn(){
-    document.getElementById('issue-btn').disabled = 
-        document.querySelectorAll('.item-checkbox:checked').length === 0 ||
-        document.getElementById('recipient').value === '';
+    var checked = Array.from(document.querySelectorAll('.item-checkbox:checked:not(:disabled)'));
+    var allHaveDestination = checked.every(function(cb) {
+        return cb.closest('tr').querySelector('.destination-select').value !== '';
+    });
+    document.getElementById('issue-btn').disabled = checked.length === 0 ||
+        !allHaveDestination || document.getElementById('recipient').value === '';
 }
 
 document.getElementById('issue-btn').onclick = function(){
-    var checked = document.querySelectorAll('.item-checkbox:checked');
+    var checked = document.querySelectorAll('.item-checkbox:checked:not(:disabled)');
     
     // Проверка на превышение остатка
     var errors = [];
@@ -126,22 +161,22 @@ document.getElementById('issue-btn').onclick = function(){
         return;
     }
     
-    var names = [];
-    var quantities = {};
+    var allocations = [];
     checked.forEach(function(cb){
         var row = cb.closest('tr');
         var qtyInput = row.querySelector('.qty-input');
         var qty = qtyInput ? parseInt(qtyInput.value) || 1 : 1;
-        var name = cb.dataset.name;
-        names.push(name);
-        quantities[name] = (quantities[name] || 0) + qty;
+        var destination = row.querySelector('.destination-select');
+        allocations.push({
+            purchase_item_id: parseInt(destination.value),
+            quantity: qty
+        });
     });
     fetch('{% url "purchase_remains_issue" %}', {
         method:'POST',
         headers:{'X-CSRFToken':'{{ csrf_token }}','Content-Type':'application/json'},
         body:JSON.stringify({
-            names: names,
-            quantities: quantities,
+            allocations: allocations,
             recipient_id: document.getElementById('recipient').value,
             basis: document.getElementById('basis').value
         })

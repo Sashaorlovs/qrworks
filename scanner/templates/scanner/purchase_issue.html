@@ -81,7 +81,7 @@
                         <td>{{ item.remaining|default:"0" }}</td>
                         <td>
                             <input type="number" class="form-control form-control-sm qty-input" 
-                                   value="{{ item.quantity_required }}" 
+                                   value="{{ item.remaining|default:'1' }}" 
                                    min="1" max="{{ item.remaining|default:"0" }}" 
                                    data-id="{{ item.id }}" style="width:100px">
                         </td>
