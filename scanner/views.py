@@ -2361,13 +2361,13 @@ def search(request):
     if query:
         results['items'] = Item.objects.filter(
             Q(item_number__icontains=query) | Q(name__icontains=query)
-        )[:20]
+        )
         results['orders'] = Order.objects.filter(
             Q(order_number__icontains=query) | Q(full_name__icontains=query)
         )[:10]
         results['instances'] = ItemInstance.objects.filter(
             Q(serial__icontains=query)
-        ).select_related('item')[:20]
+        ).select_related('item')
         results['operations'] = RouteOperation.objects.filter(
             Q(operation_type__name__icontains=query) |
             Q(route_card__instance__item__name__icontains=query) |
