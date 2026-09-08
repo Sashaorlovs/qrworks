@@ -314,6 +314,7 @@ def instance_detail(request, item_number, serial):
             current = current.parent
     # Общее количество на главную сборку
     total_assembly_qty = 0
+    related_instances = []
     if instance.order_item:
         root = instance.order_item
         while root.parent:
@@ -329,12 +330,22 @@ def instance_detail(request, item_number, serial):
                 for child in children:
                     collect(child)
         collect(root)
-        # Для текущего экземпляра берём сумму по его детали
         total_assembly_qty = qty_by_item.get(instance.item_id, 0)
+        # Собираем все экземпляры этой же детали в главной сборке
+        related_instances = []
+        def collect_instances(item):
+            children = item.children.all()
+            if not children and item.item_id == instance.item_id:
+                related_instances.extend(list(item.instances.all()))
+            else:
+                for child in children:
+                    collect_instances(child)
+        collect_instances(root)
 
     context = {
         'instance': instance,
         'total_assembly_qty': total_assembly_qty,
+        'related_instances': related_instances,
         'route_card': route_card,
         'status_info': status_info,
         'operations': operations,

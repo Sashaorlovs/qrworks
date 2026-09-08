@@ -77,7 +77,19 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 {% endif %}
 <p>Партия: {{ instance.serial }} (план сборки: {{ instance.quantity }}, настроечные: {{ instance.setup_quantity }}, всего к изготовлению: {{ instance.total_planned_quantity }})</p>
-{% if total_assembly_qty %}<p>Общее количество на главную сборку: <strong>{{ total_assembly_qty }}</strong></p>{% endif %}
+{% if total_assembly_qty %}
+<p>Общее количество на главную сборку: <strong>{{ total_assembly_qty }}</strong></p>
+{% if related_instances %}
+<details class="mb-2">
+    <summary style="cursor:pointer;">Показать все экземпляры ({{ related_instances|length }})</summary>
+    <ul class="list-unstyled ms-3">
+        {% for ri in related_instances %}
+        <li><a href="/instance/{{ ri.item.item_number }}/{{ ri.serial }}">{{ ri.serial }}</a></li>
+        {% endfor %}
+    </ul>
+</details>
+{% endif %}
+{% endif %}
 
 {% if assembly_status %}
     <div class="alert alert-{% if assembly_status == 'Ожидает комплектации' %}warning{% elif assembly_status == 'Готово к комплектованию' %}success{% elif assembly_status == 'В работе' %}primary{% else %}secondary{% endif %}">
