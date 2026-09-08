@@ -312,8 +312,29 @@ def instance_detail(request, item_number, serial):
             label = current.item.item_number + ' – ' + current.item.name if current.item else '—'
             root_assembly_path.insert(0, label)
             current = current.parent
+    # Общее количество на главную сборку
+    total_assembly_qty = 0
+    if instance.order_item:
+        root = instance.order_item
+        while root.parent:
+            root = root.parent
+        # Суммируем количество одинаковых деталей (по item) во всей главной сборке
+        from collections import defaultdict
+        qty_by_item = defaultdict(int)
+        def collect(item):
+            children = item.children.all()
+            if not children:
+                qty_by_item[item.item_id] += item.quantity
+            else:
+                for child in children:
+                    collect(child)
+        collect(root)
+        # Для текущего экземпляра берём сумму по его детали
+        total_assembly_qty = qty_by_item.get(instance.item_id, 0)
+
     context = {
         'instance': instance,
+        'total_assembly_qty': total_assembly_qty,
         'route_card': route_card,
         'status_info': status_info,
         'operations': operations,
