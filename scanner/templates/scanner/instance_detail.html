@@ -80,14 +80,34 @@ document.addEventListener('DOMContentLoaded', function() {
 {% if total_assembly_qty %}
 <p>Общее количество на главную сборку: <strong>{{ total_assembly_qty }}</strong></p>
 {% if related_instances %}
-<details class="mb-2">
-    <summary style="cursor:pointer;">Показать все экземпляры ({{ related_instances|length }})</summary>
-    <ul class="list-unstyled ms-3">
-        {% for ri in related_instances %}
-        <li><a href="/instance/{{ ri.item.item_number }}/{{ ri.serial }}">{{ ri.serial }}</a></li>
-        {% endfor %}
-    </ul>
-</details>
+<div class="accordion mb-2" id="relatedAccordion">
+    <div class="accordion-item">
+        <h2 class="accordion-header" id="headingRelated">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseRelated" aria-expanded="false" aria-controls="collapseRelated">
+                Все экземпляры этой детали в сборке ({{ related_instances|length }})
+            </button>
+        </h2>
+        <div id="collapseRelated" class="accordion-collapse collapse" aria-labelledby="headingRelated" data-bs-parent="#relatedAccordion">
+            <div class="accordion-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for ri in related_instances %}
+                    <li class="list-group-item">
+                        <a href="/instance/{{ ri.item.item_number }}/{{ ri.serial }}" class="fw-semibold text-decoration-none">
+                            {{ ri.item.item_number }} – {{ ri.item.name }}
+                        </a>
+                        <div class="small text-muted">
+                            Подсборка: {% if ri.order_item and ri.order_item.parent %}{{ ri.order_item.parent.item.item_number }} – {{ ri.order_item.parent.item.name }}{% else %}—{% endif %}
+                        </div>
+                        <div class="small">
+                            План: {{ ri.quantity }} | Годных: {{ ri.good_produced }} | Прогресс: {{ ri.completion_percent }}%
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
 {% endif %}
 {% endif %}
 
