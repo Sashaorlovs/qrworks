@@ -313,7 +313,7 @@ def purchase_remains(request):
             if (
                 requirement.item_name.strip().lower() != item['name']
                 or not requirement.order_id
-                or requirement.purchase_status != 'ready_for_issue'
+                or requirement.purchase_status in ('pending', 'awaiting_payment', 'paid', 'shipped')
             ):
                 continue
             if requirement.order_id in seen_orders:
