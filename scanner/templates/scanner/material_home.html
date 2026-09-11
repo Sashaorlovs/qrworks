@@ -1,0 +1,38 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Склад материалов{% endblock %}
+{% block content %}
+<div class="material-page">
+  <div class="page-heading material-heading">
+    <div><div class="text-uppercase text-muted small fw-semibold">Отдельный производственный модуль</div><h1>Склад материалов</h1><p class="text-muted mb-0">Потребность проектов, заявки, приход, остатки и выдача металла.</p></div>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-outline-primary" href="{% url 'material_stock' %}"><i class="bi bi-box-seam"></i> Остатки</a>
+      <a class="btn btn-outline-primary" href="{% url 'material_requests' %}"><i class="bi bi-file-earmark-text"></i> Заявки</a>
+      <a class="btn btn-outline-primary" href="{% url 'material_issue_log' %}"><i class="bi bi-journal-check"></i> Накладные</a>
+      <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal"><i class="bi bi-file-earmark-arrow-up"></i> Загрузить Excel</button>
+    </div>
+  </div>
+
+  <div class="material-kpis">
+    <div class="material-kpi"><span>Проектов</span><strong>{{ rows|length }}</strong><small>со спецификацией материала</small></div>
+    <div class="material-kpi"><span>Открытых заявок</span><strong>{{ open_requests }}</strong><small>ожидают полной выдачи</small></div>
+    <div class="material-kpi"><span>Остаток на складе</span><strong>{{ stock_mass|floatformat:1 }} кг</strong><small>расчётная масса</small></div>
+  </div>
+
+  <div class="card material-card">
+    <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-3">
+      <div><h2 class="h5 mb-1">Материалы по проектам</h2><div class="text-muted small">Каждый проект хранит свою потребность и историю заявок.</div></div>
+      <form method="get" class="material-search"><div class="input-group"><span class="input-group-text"><i class="bi bi-search"></i></span><input class="form-control" name="q" value="{{ q }}" placeholder="Договор или проект"><button class="btn btn-primary">Найти</button></div></form>
+    </div>
+    <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Проект / заказ</th><th>Позиций</th><th>Потребность</th><th>Заявок</th><th></th></tr></thead><tbody>
+      {% for row in rows %}<tr><td><strong>{{ row.order.order_number }}</strong><div class="text-muted small">{{ row.order.full_name|default:row.order.project|default:'Без наименования' }}</div></td><td>{{ row.positions }}</td><td>{{ row.mass|floatformat:1 }} кг</td><td>{{ row.requests }}</td><td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'material_order_detail' row.order.id %}">Открыть</a></td></tr>
+      {% empty %}<tr><td colspan="5" class="text-center text-muted py-5">Спецификации материалов ещё не загружены.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+</div>
+
+<div class="modal fade" id="importModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><form method="post" action="{% url 'material_import' %}" enctype="multipart/form-data">{% csrf_token %}
+  <div class="modal-header"><div><h5 class="modal-title">Загрузка материалов к проекту</h5><div class="text-muted small">Файл проверяется целиком. При ошибке данные не записываются.</div></div><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><div class="row g-3"><div class="col-md-7"><label class="form-label">Проект / заказ</label><select class="form-select" name="order_id" required><option value="">Выберите проект</option>{% for order in orders %}<option value="{{ order.id }}">{{ order.order_number }} — {{ order.full_name|default:order.project }}</option>{% endfor %}</select></div><div class="col-md-5"><label class="form-label">Файл Excel</label><input class="form-control" type="file" name="file" accept=".xlsx" required></div></div><div class="alert alert-light border mt-3 mb-0"><a href="{% url 'material_import_template' %}"><i class="bi bi-download"></i> Скачать шаблон Excel</a><div class="small text-muted mt-1">В шаблоне есть примеры листа и трубы, а также действующий справочник плотностей.</div></div></div>
+  <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Отмена</button><button class="btn btn-primary">Проверить и загрузить</button></div>
+</form></div></div></div>
+{% endblock %}

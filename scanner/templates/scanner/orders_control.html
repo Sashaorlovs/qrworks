@@ -53,7 +53,9 @@
                     <td data-label="Создан" class="control-date">{{ order.created_at|date:"d.m.Y" }}</td>
                     <td data-label="Отгрузка" class="control-date">{{ order.due_date|date:"d.m.Y"|default:"—" }}</td>
                     <td data-label="Осталось дней">
-                        {% if days is not None %}
+                        {% if entry.is_completed %}
+                            <span class="control-date">{{ entry.completed_date|default:"Завершён" }}</span>
+                        {% elif days is not None %}
                             <span class="control-days{% if days < 0 %} is-overdue{% elif days <= 7 %} is-urgent{% elif days <= 14 %} is-soon{% endif %}">{{ days }} дн.</span>
                         {% else %}
                             <span class="control-empty">—</span>

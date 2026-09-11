@@ -6,18 +6,41 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponse
+from django.urls import reverse
 import uuid
 from django.db.models import Max
 import uuid
 import pytz
-from django.db.models import Q, Sum
-from scanner.purchase_models import PurchaseItem, PurchaseTransaction
+from django.db.models import Q, Sum, Count
+from django.core.exceptions import ValidationError
+from scanner.purchase_models import (
+    PurchaseItem,
+    PurchaseTransaction,
+    PurchaseRequest,
+    PurchaseRequestLine,
+)
+from scanner.purchase_documents import (
+    assign_invoice_number,
+    create_purchase_request,
+    general_surplus_state,
+    issue_general_surplus,
+    issue_purchase_request,
+)
 from scanner.purchase_allocation import (
     PurchaseAllocationError,
     allocate_purchase_items,
     allocation_state,
 )
 from scanner.models import Order, OrderItem, Employee
+
+
+def _user_display_name(user):
+    if not user:
+        return '—'
+    employee = getattr(user, 'employee', None)
+    if employee:
+        return str(employee).strip()
+    return user.get_full_name().strip() or user.username
 
 @login_required
 def purchase_list(request):
@@ -284,6 +307,28 @@ def purchase_remains(request):
                 'available': state.allocatable,
             })
         item['destinations'].sort(key=lambda row: (row['order'], row['assembly']))
+        item['general_options'] = []
+        seen_orders = set()
+        for requirement in items:
+            if (
+                requirement.item_name.strip().lower() != item['name']
+                or not requirement.order_id
+                or requirement.purchase_status != 'ready_for_issue'
+            ):
+                continue
+            if requirement.order_id in seen_orders:
+                continue
+            seen_orders.add(requirement.order_id)
+            surplus = general_surplus_state(requirement)
+            if surplus['general_available'] <= 0:
+                continue
+            item['general_options'].append({
+                'item_id': requirement.id,
+                'order': requirement.order.full_name or requirement.order.order_number,
+                'available': surplus['general_available'],
+                'reserved': surplus['reserved'],
+            })
+        item['general_available'] = sum(row['available'] for row in item['general_options'])
     
     # Фильтры для отображения
     q = request.GET.get('q', '').strip()
@@ -310,6 +355,42 @@ def purchase_remains(request):
         'group': group,
         'groups': groups,
         'employees': employees,
+        'current_employee_id': getattr(getattr(request.user, 'employee', None), 'id', None),
+    })
+
+
+@login_required
+@require_POST
+def purchase_general_issue(request):
+    role = getattr(getattr(request.user, 'employee', None), 'role', '')
+    if not request.user.is_staff and role not in {'admin', 'purchase_storekeeper', 'technologist'}:
+        return JsonResponse({'error': 'Недостаточно прав для выдачи.'}, status=403)
+    try:
+        data = json.loads(request.body)
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'Некорректные данные.'}, status=400)
+    recipient = get_object_or_404(
+        Employee, pk=data.get('recipient_id'), is_active=True
+    )
+    issuer = get_object_or_404(
+        Employee, pk=data.get('issuer_id'), is_active=True
+    )
+    try:
+        batch_token, number, _ = issue_general_surplus(
+            data.get('item_id'),
+            data.get('quantity'),
+            recipient,
+            data.get('basis', ''),
+            request.user,
+            issuer,
+        )
+    except (ValidationError, PurchaseItem.DoesNotExist) as exc:
+        message = ' '.join(exc.messages) if isinstance(exc, ValidationError) else 'Позиция не найдена.'
+        return JsonResponse({'error': message}, status=400)
+    return JsonResponse({
+        'success': True,
+        'number': number,
+        'print_url': reverse('purchase_invoice_print', args=[batch_token]),
     })
 
 
@@ -349,6 +430,12 @@ def purchase_issue(request):
 
 def purchase_bulk_issue(request):
     """Групповая выдача с накладной"""
+    return JsonResponse(
+        {'error': 'Прямая выдача отключена. Сначала сформируйте онлайн-заявку.'},
+        status=400,
+    )
+
+    # Legacy direct-issue implementation retained below for rollback compatibility.
     data = json.loads(request.body)
     items_data = data.get('items', [])
     # ОТЛАДКА: возвращаем полученные данные обратно, чтобы увидеть их в консоли браузера
@@ -376,6 +463,8 @@ def purchase_bulk_issue(request):
         )
     except PurchaseAllocationError as exc:
         return JsonResponse({'error': str(exc)}, status=400)
+
+    document_number = assign_invoice_number(movements)
 
     issued = [
         {
@@ -408,9 +497,9 @@ def purchase_bulk_issue(request):
     ws['A1'].font = Font(bold=True, size=14)
     ws['A1'].alignment = center_align
     
-    ws['A2'] = f'Дата: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
+    ws['A2'] = f'№ {document_number} от {datetime.now().strftime("%d.%m.%Y %H:%M")}'
     ws['A2'].font = Font(size=11)
-    ws['A3'] = f'Кто выдал: {request.user.get_full_name() or request.user.username}'
+    ws['A3'] = f'Кто выдал: {_user_display_name(request.user)}'
     ws['A4'] = f'Кому выдано: {recipient}'
     ws['A5'] = f'Основание: {basis}'
     # Добавляем главную сборку (из первого элемента заказа)
@@ -454,14 +543,14 @@ def purchase_bulk_issue(request):
     row += 1
     ws[f'A{row}'] = 'Выдал: _________________________'
     ws[f'C{row}'] = 'Получил: _________________________'
-    ws[f'A{row+1}'] = f'({request.user.get_full_name() or request.user.username})'
+    ws[f'A{row+1}'] = f'({_user_display_name(request.user)})'
     ws[f'C{row+1}'] = f'({recipient})'
     for r in [row, row+1]:
         ws[f'A{r}'].font = Font(size=11)
         ws[f'C{r}'].font = Font(size=11)
 
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition'] = 'attachment; filename=issue_nakladnaya.xlsx'
+    response['Content-Disposition'] = f'attachment; filename={document_number}.xlsx'
     wb.save(response)
     return response
 
@@ -472,7 +561,7 @@ def purchase_reprint_nakladnaya(request, transaction_id):
     batch = request.GET.get('batch', '')
     
     if batch:
-        transactions = PurchaseTransaction.objects.filter(batch_token=batch).select_related('purchase_item', 'created_by')
+        transactions = PurchaseTransaction.objects.filter(batch_token=batch).select_related('purchase_item', 'created_by__employee')
         if not transactions.exists():
             return HttpResponse('Накладная не найдена', status=404)
         first = transactions.first()
@@ -480,7 +569,7 @@ def purchase_reprint_nakladnaya(request, transaction_id):
         t = get_object_or_404(PurchaseTransaction, id=transaction_id)
         # Если у этой транзакции есть batch_token, собираем все транзакции с ним
         if t.batch_token:
-            transactions = PurchaseTransaction.objects.filter(batch_token=t.batch_token).select_related('purchase_item', 'created_by')
+            transactions = PurchaseTransaction.objects.filter(batch_token=t.batch_token).select_related('purchase_item', 'created_by__employee')
             first = transactions.first()
         else:
             transactions = [t]
@@ -501,8 +590,9 @@ def purchase_reprint_nakladnaya(request, transaction_id):
     ws['A1'].alignment = center_align
     
     msk = pytz.timezone('Europe/Moscow')
-    ws['A2'] = f'Дата: {first.created_at.astimezone(msk).strftime("%d.%m.%Y %H:%M")}'
-    ws['A3'] = f'Кто выдал: {first.created_by.get_full_name() if first.created_by else "—"}'
+    document_number = first.document_number or f'НК-{first.created_at.astimezone(msk):%Y}-{first.id:06d}'
+    ws['A2'] = f'№ {document_number} от {first.created_at.astimezone(msk).strftime("%d.%m.%Y %H:%M")}'
+    ws['A3'] = f'Кто выдал: {first.issuer_name or _user_display_name(first.created_by)}'
     ws['A4'] = f'Кому выдано: {first.recipient}'
     ws['A5'] = f'Основание: {first.basis or "—"}'
     
@@ -518,7 +608,7 @@ def purchase_reprint_nakladnaya(request, transaction_id):
     for t in transactions:
         ws[f'A{row}'] = t.purchase_item.item_name
         ws[f'B{row}'] = t.quantity
-        ws[f'C{row}'] = t.purchase_item.assembly_name or '—'
+        ws[f'C{row}'] = 'Общепроизводственные нужды' if t.is_general_use else (t.purchase_item.assembly_name or '—')
         for col in ['A', 'B', 'C']:
             ws[f'{col}{row}'].border = thin_border
             ws[f'{col}{row}'].alignment = wrap_align if col == 'A' else center_align
@@ -534,7 +624,7 @@ def purchase_reprint_nakladnaya(request, transaction_id):
     ws[f'C{row}'] = 'Получил: _________________________'
     
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition'] = f'attachment; filename=nakladnaya_{batch or first.id}.xlsx'
+    response['Content-Disposition'] = f'attachment; filename={document_number}.xlsx'
     wb.save(response)
     return response
 
@@ -585,6 +675,10 @@ def purchase_spec_list(request):
     return render(request, 'scanner/purchase_list.html', {
         'orders': orders,
         'all_orders': all_orders,
+        'positions_total': PurchaseItem.objects.count(),
+        'ready_total': PurchaseItem.objects.filter(purchase_status='ready_for_issue').count(),
+        'open_requests': PurchaseRequest.objects.filter(status__in=['open', 'partial']).count(),
+        'invoice_total': PurchaseTransaction.objects.filter(transaction_type='out').exclude(batch_token='').values('batch_token').distinct().count(),
     })
 
 
@@ -843,6 +937,12 @@ def purchase_issue_remains(request):
 @check_purchase_access
 def purchase_remains_issue(request):
     """Выдача со страницы остатков на точные заказ и подсборку."""
+    return JsonResponse(
+        {'error': 'Выдача из остатков отключена. Сначала сформируйте онлайн-заявку.'},
+        status=400,
+    )
+
+    # Legacy direct-issue implementation retained below for rollback compatibility.
     import uuid
     data = json.loads(request.body)
     allocations = data.get('allocations', [])
@@ -868,6 +968,8 @@ def purchase_remains_issue(request):
     except PurchaseAllocationError as exc:
         return JsonResponse({'error': str(exc)}, status=400)
 
+    document_number = assign_invoice_number(movements)
+
     issued = [
         {
             'name': movement.purchase_item.item_name,
@@ -889,8 +991,8 @@ def purchase_remains_issue(request):
     ws['A1'] = 'НАКЛАДНАЯ НА ВЫДАЧУ СТАНДАРТНЫХ ИЗДЕЛИЙ И КРЕПЕЖА'
     ws['A1'].font = Font(bold=True, size=14)
     ws['A1'].alignment = center_align
-    ws['A2'] = f'Дата: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
-    ws['A3'] = f'Кто выдал: {request.user.get_full_name() or request.user.username}'
+    ws['A2'] = f'№ {document_number} от {datetime.now().strftime("%d.%m.%Y %H:%M")}'
+    ws['A3'] = f'Кто выдал: {_user_display_name(request.user)}'
     ws['A4'] = f'Кому выдано: {recipient}'
     ws['A5'] = f'Основание: {basis}'
     ws['A7'] = 'Наименование'; ws['B7'] = 'Количество'; ws['C7'] = 'Подсборка'
@@ -908,12 +1010,12 @@ def purchase_remains_issue(request):
     ws.column_dimensions['A'].width = 50; ws.column_dimensions['B'].width = 12; ws.column_dimensions['C'].width = 35
     row += 1
     ws[f'A{row}'] = 'Выдал: _________________________'; ws[f'C{row}'] = 'Получил: _________________________'
-    ws[f'A{row+1}'] = f'({request.user.get_full_name() or request.user.username})'; ws[f'C{row+1}'] = f'({recipient})'
+    ws[f'A{row+1}'] = f'({_user_display_name(request.user)})'; ws[f'C{row+1}'] = f'({recipient})'
     for r in [row, row+1]:
         ws[f'A{r}'].font = Font(size=11); ws[f'C{r}'].font = Font(size=11)
 
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition'] = 'attachment; filename=remains_issue_nakladnaya.xlsx'
+    response['Content-Disposition'] = f'attachment; filename={document_number}.xlsx'
     wb.save(response)
     return response
 
@@ -923,7 +1025,7 @@ def purchase_issue_log(request):
     q = request.GET.get('q', '').strip()
 
     grouped_qs = PurchaseTransaction.objects.filter(transaction_type='out')\
-        .values('batch_token', 'recipient', 'basis', 'created_by__username', 'created_by__first_name', 'created_by__last_name')\
+        .values('batch_token', 'document_number', 'recipient', 'basis', 'issuer_name', 'created_by__username', 'created_by__first_name', 'created_by__last_name', 'created_by__employee__last_name', 'created_by__employee__first_name', 'created_by__employee__middle_name')\
         .annotate(
             total_qty=Sum('quantity'),
             items_count=Count('id'),
@@ -947,9 +1049,12 @@ def purchase_issue_log(request):
 
     # Добавляем имя создавшего и детали
     for g in grouped_qs:
-        g['created_by_name'] = (g['created_by__last_name'] or '') + ' ' + (g['created_by__first_name'] or '') or g['created_by__username'] or '—'
+        employee_name = ' '.join(filter(None, [g['created_by__employee__last_name'], g['created_by__employee__first_name'], g['created_by__employee__middle_name']]))
+        account_name = ' '.join(filter(None, [g['created_by__last_name'], g['created_by__first_name']]))
+        g['created_by_name'] = g['issuer_name'] or employee_name or account_name or g['created_by__username'] or '—'
         g['created_at'] = g['first_date']
         g['details'] = details.get(g['batch_token'], [])
+        g['display_number'] = g['document_number'] or f"НК-{g['first_date']:%Y}-{g['first_id']:06d}"
 
     # Фильтрация по q (получатель, основание, кто выдал)
     if q:
@@ -967,4 +1072,136 @@ def purchase_issue_log(request):
     return render(request, 'scanner/purchase_issue_log.html', {
         'transactions': transactions,
         'q': q,
+    })
+
+
+@login_required
+@check_purchase_access
+def purchase_requests(request):
+    documents = PurchaseRequest.objects.select_related(
+        'order', 'requested_by', 'requested_by__employee'
+    ).annotate(
+        line_count=Count('lines')
+    )
+    status = request.GET.get('status', '').strip()
+    if status:
+        documents = documents.filter(status=status)
+    documents = list(documents)
+    for document in documents:
+        document.requested_by_name = _user_display_name(document.requested_by)
+    return render(request, 'scanner/purchase_requests.html', {
+        'documents': documents,
+        'statuses': PurchaseRequest.STATUS_CHOICES,
+        'status': status,
+    })
+
+
+@login_required
+@check_purchase_access
+@require_POST
+def purchase_create_request(request, order_id):
+    order = get_object_or_404(Order, pk=order_id)
+    raw_ids = request.POST.getlist('item_ids')
+    item_ids = []
+    for value in raw_ids:
+        for item_id in value.split(','):
+            if item_id.strip().isdigit():
+                item_ids.append(int(item_id.strip()))
+    try:
+        document = create_purchase_request(
+            order, item_ids, request.user, request.POST.get('purpose', '')
+        )
+    except ValidationError as exc:
+        messages.error(request, ' '.join(exc.messages))
+        return redirect('purchase_spec_detail', spec_id=order.id)
+    messages.success(request, f'Заявка {document.number} сформирована.')
+    return redirect('purchase_request_detail', request_id=document.id)
+
+
+@login_required
+@check_purchase_access
+def purchase_request_detail(request, request_id):
+    document = get_object_or_404(
+        PurchaseRequest.objects.select_related('order', 'requested_by'), pk=request_id
+    )
+    if request.method == 'POST':
+        recipient = get_object_or_404(
+            Employee, pk=request.POST.get('recipient_id'), is_active=True
+        )
+        issuer = get_object_or_404(
+            Employee, pk=request.POST.get('issuer_id'), is_active=True
+        )
+        quantities = {
+            int(line_id): request.POST.get(f'quantity_{line_id}', '0')
+            for line_id in request.POST.getlist('line_ids')
+            if line_id.isdigit()
+        }
+        try:
+            batch_token, number, _ = issue_purchase_request(
+                document,
+                quantities,
+                recipient,
+                request.POST.get('basis', ''),
+                request.user,
+                issuer,
+            )
+        except ValidationError as exc:
+            messages.error(request, ' '.join(exc.messages))
+        else:
+            messages.success(request, f'Выдача выполнена. Накладная {number} сформирована.')
+            return redirect('purchase_invoice_print', batch_token=batch_token)
+
+    lines = list(document.lines.select_related('purchase_item__order'))
+    for line in lines:
+        state = allocation_state(line.purchase_item)
+        line.available_now = (
+            min(state.allocatable, line.quantity_remaining)
+            if line.purchase_item.purchase_status == 'ready_for_issue'
+            else 0
+        )
+    employees = Employee.objects.filter(is_active=True).order_by('last_name', 'first_name')
+    return render(request, 'scanner/purchase_request_detail.html', {
+        'document': document,
+        'lines': lines,
+        'employees': employees,
+        'current_employee_id': getattr(getattr(request.user, 'employee', None), 'id', None),
+    })
+
+
+@login_required
+@check_purchase_access
+def purchase_request_print(request, request_id):
+    document = get_object_or_404(
+        PurchaseRequest.objects.select_related('order', 'requested_by').prefetch_related(
+            'lines__purchase_item'
+        ),
+        pk=request_id,
+    )
+    return render(request, 'scanner/purchase_request_print.html', {
+        'document': document,
+        'requested_by_name': _user_display_name(document.requested_by),
+    })
+
+
+@login_required
+@check_purchase_access
+def purchase_invoice_print(request, batch_token):
+    items = list(
+        PurchaseTransaction.objects.filter(
+            batch_token=batch_token, transaction_type='out'
+        ).select_related('purchase_item__order', 'created_by', 'request_line__request')
+    )
+    if not items:
+        messages.error(request, 'Накладная не найдена.')
+        return redirect('purchase_issue_log')
+    head = items[0]
+    number = head.document_number or f'НК-{head.created_at:%Y}-{head.id:06d}'
+    order = head.purchase_item.order
+    return render(request, 'scanner/purchase_invoice_print.html', {
+        'items': items,
+        'head': head,
+        'number': number,
+        'order': order,
+        'total_quantity': sum(item.quantity for item in items),
+        'issuer_name': head.issuer_name or _user_display_name(head.created_by),
     })

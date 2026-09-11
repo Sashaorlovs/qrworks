@@ -45,6 +45,7 @@ def allocation_state(item: PurchaseItem) -> AllocationState:
     issued_for_assembly = PurchaseTransaction.objects.filter(
         purchase_item=item,
         transaction_type="out",
+        is_general_use=False,
     ).aggregate(value=Sum("quantity"))["value"] or 0
 
     required = item.quantity_required or 0

@@ -194,7 +194,12 @@ class WarehouseRecordAdmin(admin.ModelAdmin):
 admin.site.register(OrderItem, OrderItemAdmin)
 
 # Регистрация моделей покупных изделий
-from scanner.purchase_models import PurchaseItem, PurchaseTransaction
+from scanner.purchase_models import (
+    PurchaseItem,
+    PurchaseTransaction,
+    PurchaseRequest,
+    PurchaseRequestLine,
+)
 
 @admin.register(PurchaseItem)
 class PurchaseItemAdmin(admin.ModelAdmin):
@@ -208,4 +213,61 @@ class PurchaseTransactionAdmin(admin.ModelAdmin):
     list_display = ('purchase_item', 'transaction_type', 'quantity', 'recipient', 'basis', 'created_at', 'created_by')
     list_filter = ('transaction_type',)
     search_fields = ('purchase_item__item_name', 'recipient')
+
+
+class PurchaseRequestLineInline(admin.TabularInline):
+    model = PurchaseRequestLine
+    extra = 0
+    readonly_fields = ('purchase_item', 'quantity_requested', 'quantity_issued')
+
+
+@admin.register(PurchaseRequest)
+class PurchaseRequestAdmin(admin.ModelAdmin):
+    list_display = ('number', 'order', 'status', 'purpose', 'created_at', 'requested_by')
+    list_filter = ('status', 'created_at')
+    search_fields = ('number', 'order__order_number', 'purpose')
+    readonly_fields = ('number', 'created_at', 'requested_by')
+    inlines = (PurchaseRequestLineInline,)
     ordering = ('-created_at',)
+
+# Склад материалов хранится отдельно от основного склада и покупных изделий.
+from scanner.material_models import (
+    MaterialGrade, MaterialRequirement, MaterialStockLot,
+    MaterialRequest, MaterialRequestLine, MaterialTransaction,
+)
+
+@admin.register(MaterialGrade)
+class MaterialGradeAdmin(admin.ModelAdmin):
+    list_display = ('name', 'category', 'density_kg_m3', 'standard', 'is_active')
+    list_filter = ('category', 'is_active')
+    search_fields = ('name', 'standard')
+
+@admin.register(MaterialRequirement)
+class MaterialRequirementAdmin(admin.ModelAdmin):
+    list_display = ('item_name', 'order', 'assembly_name', 'grade', 'profile_type', 'quantity_required', 'calculated_mass_kg')
+    list_filter = ('profile_type', 'grade', 'order')
+    search_fields = ('item_name', 'assembly_name', 'profile_name')
+
+@admin.register(MaterialStockLot)
+class MaterialStockLotAdmin(admin.ModelAdmin):
+    list_display = ('name', 'grade', 'profile_type', 'order', 'batch_number', 'quantity_remaining', 'length_remaining_mm', 'mass_remaining_kg', 'storage_location')
+    list_filter = ('profile_type', 'grade', 'order')
+    search_fields = ('name', 'profile_name', 'batch_number', 'storage_location')
+
+class MaterialRequestLineInline(admin.TabularInline):
+    model = MaterialRequestLine
+    extra = 0
+    readonly_fields = ('mass_requested_kg', 'quantity_issued', 'length_issued_mm', 'mass_issued_kg')
+
+@admin.register(MaterialRequest)
+class MaterialRequestAdmin(admin.ModelAdmin):
+    list_display = ('number', 'order', 'status', 'purpose', 'created_at', 'requested_by')
+    list_filter = ('status', 'order')
+    search_fields = ('number', 'purpose', 'order__order_number', 'order__full_name')
+    inlines = [MaterialRequestLineInline]
+
+@admin.register(MaterialTransaction)
+class MaterialTransactionAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'transaction_type', 'stock_lot', 'order', 'quantity', 'length_mm', 'mass_kg', 'recipient_name', 'created_by')
+    list_filter = ('transaction_type', 'order')
+    search_fields = ('stock_lot__name', 'recipient_name', 'basis', 'batch_token')

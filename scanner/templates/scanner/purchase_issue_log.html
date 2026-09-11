@@ -1,10 +1,10 @@
 {% extends 'scanner/base.html' %}
 {% block title %}Журнал выдач{% endblock %}
 {% block content %}
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="mb-0">📋 Журнал выдач стандартных изделий</h4>
-        <a href="{% url 'purchase_list' %}" class="btn btn-outline-secondary">← К списку спецификаций</a>
+<div class="purchase-page">
+    <div class="page-heading">
+        <div><a href="{% url 'purchase_list' %}" class="small text-decoration-none">← Склад стандартных изделий</a><h1 class="mt-2">Накладные на выдачу</h1><p class="text-muted mb-0">История выдачи с постоянными автоматическими номерами.</p></div>
+        <a href="{% url 'purchase_requests' %}" class="btn btn-outline-primary">Заявки</a>
     </div>
 
     <form method="get" class="row g-2 mb-3">
@@ -16,12 +16,12 @@
         </div>
     </form>
 
-    <table class="table table-sm table-hover">
-        <thead><tr><th>Дата</th><th>Позиций</th><th>Всего</th><th>Получатель</th><th>Основание</th><th>Кто выдал</th><th></th></tr></thead>
+    <div class="card material-card"><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+        <thead><tr><th>Накладная</th><th>Дата</th><th>Позиций</th><th>Всего</th><th>Получатель</th><th>Основание</th><th>Кто выдал</th><th></th></tr></thead>
         <tbody>
             {% for t in transactions %}
             <tr>
-                <td>{{ t.created_at|date:"d.m.Y H:i" }}</td>
+                <td><strong>{{ t.display_number }}</strong></td><td>{{ t.created_at|date:"d.m.Y H:i" }}</td>
                 <td>
                     <details>
                         <summary>{{ t.items_count }} поз.</summary>
@@ -44,12 +44,12 @@
                 <td>{{ t.recipient }}</td>
                 <td>{{ t.basis|default:"—" }}</td>
                 <td>{{ t.created_by_name }}</td>
-                <td><a href="{% url 'purchase_reprint_nakladnaya' t.first_id %}?batch={{ t.batch_token }}" class="btn btn-sm btn-outline-secondary">📄</a></td>
+                <td><div class="d-flex gap-1">{% if t.batch_token %}<a href="{% url 'purchase_invoice_print' t.batch_token %}" class="btn btn-sm btn-outline-primary" title="Открыть и распечатать"><i class="bi bi-printer"></i></a>{% endif %}<a href="{% url 'purchase_reprint_nakladnaya' t.first_id %}?batch={{ t.batch_token }}" class="btn btn-sm btn-outline-success" title="Скачать Excel"><i class="bi bi-file-earmark-excel"></i></a></div></td>
             </tr>
             {% empty %}
-            <tr><td colspan="7">Журнал пуст</td></tr>
+            <tr><td colspan="8" class="text-center text-muted py-5">Журнал пуст.</td></tr>
             {% endfor %}
         </tbody>
-    </table>
+    </table></div></div>
 </div>
 {% endblock %}

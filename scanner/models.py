@@ -367,3 +367,11 @@ def assign_group_on_role_change(sender, instance, created, **kwargs):
             instance.user.groups.add(group)
 
 from scanner.purchase_models import PurchaseItem, PurchaseTransaction
+from scanner.material_models import (
+    MaterialGrade,
+    MaterialRequirement,
+    MaterialStockLot,
+    MaterialRequest,
+    MaterialRequestLine,
+    MaterialTransaction,
+)

@@ -2438,6 +2438,7 @@ def orders_control(request):
             'order': order,
             'days_left': days_left,
             'progress': progress,
+            'is_completed': progress == 100,
         })
     
     hide_completed = request.GET.get('hide_completed') == '1'

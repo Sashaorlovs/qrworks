@@ -18,6 +18,37 @@
     --app-shadow: 0 8px 28px rgba(31, 50, 81, 0.08);
 }
 
+/* Склад материалов: отдельный модуль в общей стилистике системы. */
+.material-page,
+.purchase-page { display: grid; gap: 1rem; }
+.purchase-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+.material-heading { align-items: flex-end; }
+.material-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.material-kpi { display: grid; gap: .2rem; padding: 1.1rem 1.2rem; background: #fff; border: 1px solid var(--app-border); border-radius: 14px; box-shadow: 0 4px 18px rgba(31, 50, 81, .05); }
+.material-kpi span { color: #6b7789; font-size: .76rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.material-kpi strong { color: #163a66; font-size: 1.65rem; line-height: 1.15; }
+.material-kpi small { color: #7b8798; }
+.material-card { overflow: hidden; border-color: var(--app-border); border-radius: 14px; box-shadow: 0 4px 18px rgba(31, 50, 81, .05); }
+.material-card .card-header { padding: 1rem 1.15rem; background: #fff; border-bottom-color: var(--app-border); }
+.material-search { width: min(410px, 100%); }
+.material-filter { border-color: var(--app-border); border-radius: 14px; box-shadow: 0 4px 18px rgba(31, 50, 81, .04); }
+.material-table td { vertical-align: middle; }
+.print-document { max-width: 1100px; margin: 0 auto; padding: 1.25rem; background: #fff; }
+.print-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; margin-top: 3rem; }
+
+@media (max-width: 767.98px) {
+    .material-kpis,
+    .purchase-kpis { grid-template-columns: 1fr; }
+    .material-heading { align-items: stretch; }
+    .material-heading > .d-flex .btn { flex: 1 1 46%; }
+    .print-signatures { grid-template-columns: 1fr; gap: 2rem; }
+}
+
+@media print {
+    .print-document { max-width: none; padding: 0; }
+    .print-document table { min-width: 0 !important; font-size: 10pt; }
+}
+
 html {
     min-height: 100%;
     background: var(--app-bg);

@@ -55,6 +55,9 @@
                         
                             {% if request.user.is_superuser or request.user.employee.role == 'admin' %}<li class="nav-item"><a class="nav-link" href="{% url 'worker_stats' %}"><i class="bi bi-people"></i>Сотрудники</a></li>{% endif %}
                             <li class="nav-item"><a class="nav-link" href="{% url 'warehouse' %}"><i class="bi bi-box-seam"></i>Склад</a></li>
+                            {% if user.is_staff or role == 'admin' or role == 'dispatcher' or role == 'storekeeper' or role == 'supervisor' or role == 'technologist' %}
+                            <li class="nav-item"><a class="nav-link" href="{% url 'material_home' %}"><i class="bi bi-layers"></i>Склад материалов</a></li>
+                            {% endif %}
                         {% if role in 'admin,dispatcher,master,technologist,supervisor,purchase_storekeeper' %}
                             <li class="nav-item"><a class="nav-link" href="{% url 'orders_control' %}"><i class="bi bi-kanban"></i>Контроль заказов</a></li>
                             {% if user.is_staff or user.employee.role == "admin" or user.employee.role == "purchase_storekeeper" or user.employee.role == "supervisor" or user.employee.role == "technologist" %}

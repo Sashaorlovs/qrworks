@@ -1,10 +1,10 @@
 {% extends 'scanner/base.html' %}
 {% block title %}Спецификация {{ order.order_number }}{% endblock %}
 {% block content %}
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <a href="{% url 'purchase_list' %}" class="btn btn-outline-secondary">← К списку спецификаций</a>
-        <button class="btn btn-warning" id="change-status-btn" disabled>🔄 Сменить статус</button>
+<div class="purchase-page">
+    <div class="page-heading">
+        <div><a href="{% url 'purchase_list' %}" class="small text-decoration-none">← Склад стандартных изделий</a><h1 class="mt-2">{{ order.order_number }}</h1><p class="text-muted mb-0">{{ order.full_name|default:order.project }}</p></div>
+        <div class="d-flex gap-2 flex-wrap"><a href="{% url 'purchase_requests' %}" class="btn btn-outline-primary">Все заявки</a><button class="btn btn-primary" id="create-request-btn" disabled><i class="bi bi-file-earmark-plus"></i> Сформировать заявку</button><button class="btn btn-outline-warning" id="change-status-btn" disabled>Сменить статус</button></div>
     </div>
     
     <form method="get" class="row g-2 mb-3">
@@ -12,12 +12,11 @@
             <div class="input-group">
                 <input type="text" name="q" class="form-control" placeholder="Поиск по наименованию или подсборке..." value="{{ q }}">
                 <button type="submit" class="btn btn-primary">🔍</button>
-                <a href="/purchases/export-request/?q={{ q|urlencode }}&order={{ order.id }}" class="btn btn-outline-success">📋 Заявка</a>
             </div>
         </div>
     </form>
     
-    <h4>📦 {{ order.order_number }} — {{ order.items.first.item.name }}</h4>
+    <h4 class="mb-3">{{ order.items.first.item.name }}</h4>
     
     <!-- Журнал примечаний -->
     <form method="post" class="mb-3">
@@ -59,7 +58,7 @@
         <tbody>
             {% for item in items %}
             <tr class="{% if item.quantity_required > item.quantity_purchased %}table-danger{% endif %}">
-                <td><input type="checkbox" class="item-checkbox" value="{{ item.ids|join:"," }}"></td>
+                <td><input type="checkbox" class="item-checkbox" value="{{ item.ids|join:"," }}" data-assemblies="{% if view_mode == 'assembly' %}{{ item.item_name }}{% else %}{% for sub in item.sub_items %}{{ sub.assembly_name }}{% if not forloop.last %}; {% endif %}{% endfor %}{% endif %}"></td>
                 <td>
                     <details>
                         <summary style="cursor:pointer;">{{ item.item_name }}</summary>
@@ -118,6 +117,8 @@
     </table>
 </div>
 
+<div class="modal fade" id="requestModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><form id="request-form" method="post" action="{% url 'purchase_create_request' order.id %}">{% csrf_token %}<div class="modal-header"><div><h5 class="modal-title">Сформировать заявку</h5><div class="small text-muted">Номер и основание формируются автоматически.</div></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div id="request-item-ids"></div><label class="form-label">Основание / подсборка</label><input class="form-control" id="request-purpose" name="purpose" readonly></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button><button class="btn btn-primary">Создать заявку</button></div></form></div></div></div>
+
 <div class="modal fade" id="statusModal" tabindex="-1">
     <div class="modal-dialog"><div class="modal-content">
         <div class="modal-header"><h5>Сменить статус</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -133,8 +134,27 @@ document.getElementById('select-all').onchange = function(){
 };
 document.querySelectorAll('.item-checkbox').forEach(cb => cb.onchange = updateStatusBtn);
 function updateStatusBtn(){
-    document.getElementById('change-status-btn').disabled = document.querySelectorAll('.item-checkbox:checked').length === 0;
+    var empty = document.querySelectorAll('.item-checkbox:checked').length === 0;
+    document.getElementById('change-status-btn').disabled = empty;
+    document.getElementById('create-request-btn').disabled = empty;
 }
+document.getElementById('create-request-btn').onclick = function(){
+    var holder = document.getElementById('request-item-ids'); holder.innerHTML = '';
+    var assemblies = new Set();
+    document.querySelectorAll('.item-checkbox:checked').forEach(function(cb){
+        var input = document.createElement('input'); input.type='hidden'; input.name='item_ids'; input.value=cb.value; holder.appendChild(input);
+        (cb.dataset.assemblies || '').split(';').map(x => x.trim()).filter(Boolean).forEach(x => assemblies.add(x));
+    });
+    var assembliesArr = Array.from(assemblies);
+    if (assembliesArr.length === 1) {
+        document.getElementById('request-purpose').value = assembliesArr[0];
+    } else if (assembliesArr.length > 1) {
+        document.getElementById('request-purpose').value = 'Разные подсборки';
+    } else {
+        document.getElementById('request-purpose').value = '{{ order.full_name|default:order.order_number|escapejs }}';
+    }
+    new bootstrap.Modal(document.getElementById('requestModal')).show();
+};
 document.getElementById('change-status-btn').onclick = function(){
     new bootstrap.Modal(document.getElementById('statusModal')).show();
 };
