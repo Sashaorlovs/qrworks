@@ -213,6 +213,7 @@ class PurchaseTransactionAdmin(admin.ModelAdmin):
 # Склад материалов хранится отдельно от основного склада и покупных изделий.
 from scanner.material_models import (
     MaterialGrade, MaterialRequirement, MaterialStockLot, AuxiliaryMaterialRequirement,
+    AuxiliaryMaterialLot, AuxiliaryMaterialTransaction,
     MaterialRequest, MaterialRequestLine, MaterialTransaction,
 )
 
@@ -233,6 +234,28 @@ class AuxiliaryMaterialRequirementAdmin(admin.ModelAdmin):
     list_display = ('name', 'order', 'assembly_name', 'category', 'quantity_required', 'unit')
     list_filter = ('category', 'unit', 'order')
     search_fields = ('name', 'assembly_name', 'brand', 'characteristics')
+
+@admin.register(AuxiliaryMaterialLot)
+class AuxiliaryMaterialLotAdmin(admin.ModelAdmin):
+    list_display = (
+        'name', 'category', 'brand', 'order', 'unit', 'quantity_initial',
+        'quantity_remaining', 'storage_location', 'expiry_date', 'received_at',
+    )
+    list_filter = ('category', 'unit', 'order', 'expiry_date')
+    search_fields = ('name', 'brand', 'characteristics', 'storage_location')
+    ordering = ('category', 'name', '-received_at')
+    readonly_fields = ('received_at',)
+
+@admin.register(AuxiliaryMaterialTransaction)
+class AuxiliaryMaterialTransactionAdmin(admin.ModelAdmin):
+    list_display = (
+        'created_at', 'transaction_type', 'stock_lot', 'quantity',
+        'recipient_name', 'basis', 'created_by',
+    )
+    list_filter = ('transaction_type', 'stock_lot__category')
+    search_fields = ('stock_lot__name', 'recipient_name', 'basis')
+    ordering = ('-created_at', '-id')
+    readonly_fields = ('created_at',)
 
 @admin.register(MaterialStockLot)
 class MaterialStockLotAdmin(admin.ModelAdmin):
