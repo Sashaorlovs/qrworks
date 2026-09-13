@@ -1,5 +1,6 @@
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from io import BytesIO
+import uuid
 
 import openpyxl
 from django.contrib import messages
@@ -9,9 +10,13 @@ from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
 from scanner.material_models import (
+    AuxiliaryMaterialLot,
+    AuxiliaryMaterialRequirement,
+    AuxiliaryMaterialTransaction,
     MaterialGrade,
     MaterialRequirement,
     MaterialRequest,
@@ -25,6 +30,13 @@ from scanner.material_services import (
     decimal_value,
     issue_request_lines,
     validate_material_geometry,
+)
+from scanner.material_stock_import import (
+    create_stock_lots_from_preview,
+    group_auxiliary_lots,
+    group_stock_lots,
+    parse_stock_workbook,
+    reconcile_stock_from_preview,
 )
 from scanner.models import Employee, Order, OrderItem
 
@@ -51,15 +63,18 @@ def _row_value(row, headers, aliases, default=None):
 @material_access_required
 def material_home(request):
     q = request.GET.get("q", "").strip()
-    orders = Order.objects.filter(material_requirements__isnull=False).distinct().order_by("-id")
+    orders = Order.objects.filter(
+        Q(material_requirements__isnull=False) | Q(auxiliary_material_requirements__isnull=False)
+    ).distinct().order_by("-id")
     if q:
         orders = orders.filter(Q(order_number__icontains=q) | Q(full_name__icontains=q) | Q(project__icontains=q))
     rows = []
     for order in orders:
         requirements = order.material_requirements.all()
+        auxiliary_requirements = order.auxiliary_material_requirements.all()
         rows.append({
             "order": order,
-            "positions": requirements.count(),
+            "positions": requirements.count() + auxiliary_requirements.count(),
             "mass": requirements.aggregate(total=Sum("calculated_mass_kg"))["total"] or ZERO,
             "requests": order.material_requests.count(),
         })
@@ -82,6 +97,76 @@ def material_import(request):
         return redirect("material_home")
     try:
         workbook = openpyxl.load_workbook(upload, data_only=True)
+        standard_sheets = {"Лист", "Труба", "Прокат", "Прочие материалы"}
+        if standard_sheets.intersection(workbook.sheetnames):
+            prepared, errors = parse_stock_workbook(workbook)
+            if errors:
+                messages.error(request, "Файл не загружен. " + " | ".join(errors[:12]))
+                return redirect("material_home")
+            metal_count = auxiliary_count = 0
+            with transaction.atomic():
+                for row in prepared:
+                    assembly_name = row.get("assembly_name", "").strip()
+                    if row["record_type"] == "auxiliary":
+                        lookup = {
+                            "order": order,
+                            "assembly_name": assembly_name,
+                            "category": row["category"],
+                            "name": row["name"],
+                            "brand": row.get("brand", ""),
+                            "characteristics": row.get("characteristics", ""),
+                            "unit": row["unit"],
+                        }
+                        AuxiliaryMaterialRequirement.objects.update_or_create(
+                            **lookup,
+                            defaults={
+                                "quantity_required": decimal_value(row["quantity"]),
+                                "package_description": row.get("package_description", ""),
+                                "density_kg_l": decimal_value(row.get("density_kg_l"), None),
+                                "thickness_mm": decimal_value(row.get("thickness_mm"), None),
+                                "width_mm": decimal_value(row.get("width_mm"), None),
+                                "length_mm": decimal_value(row.get("length_mm"), None),
+                                "mesh_cell_width_mm": decimal_value(row.get("mesh_cell_width_mm"), None),
+                                "mesh_cell_height_mm": decimal_value(row.get("mesh_cell_height_mm"), None),
+                                "wire_diameter_mm": decimal_value(row.get("wire_diameter_mm"), None),
+                            },
+                        )
+                        auxiliary_count += 1
+                        continue
+                    grade = MaterialGrade.objects.get(pk=row["grade_id"])
+                    lookup = {
+                        "order": order,
+                        "item_name": row["name"],
+                        "assembly_name": assembly_name,
+                        "grade": grade,
+                        "profile_type": row["profile_type"],
+                        "profile_name": row.get("profile_name", ""),
+                    }
+                    assembly_ref = None
+                    if assembly_name:
+                        assembly_ref = OrderItem.objects.filter(order=order, item__name__icontains=assembly_name).first()
+                    MaterialRequirement.objects.update_or_create(
+                        **lookup,
+                        defaults={
+                            "assembly_ref": assembly_ref,
+                            "quantity_required": decimal_value(row["quantity"]),
+                            "total_length_required_mm": decimal_value(row.get("total_length_mm")),
+                            "piece_length_mm": decimal_value(row.get("piece_length_mm"), None),
+                            "thickness_mm": decimal_value(row.get("thickness_mm"), None),
+                            "width_mm": decimal_value(row.get("width_mm"), None),
+                            "height_mm": decimal_value(row.get("height_mm"), None),
+                            "outer_diameter_mm": decimal_value(row.get("outer_diameter_mm"), None),
+                            "wall_thickness_mm": decimal_value(row.get("wall_thickness_mm"), None),
+                            "kg_per_meter": decimal_value(row.get("kg_per_meter"), None),
+                            "unit_mass_kg": decimal_value(row.get("unit_mass_kg"), None),
+                        },
+                    )
+                    metal_count += 1
+            messages.success(
+                request,
+                f"Загружено позиций: {metal_count + auxiliary_count} (металл — {metal_count}, прочие материалы — {auxiliary_count}).",
+            )
+            return redirect("material_order_detail", order_id=order.id)
         sheet = workbook["Материалы"] if "Материалы" in workbook.sheetnames else workbook.active
         headers = [str(cell.value or "").strip().casefold() for cell in sheet[1]]
     except Exception as exc:
@@ -160,28 +245,46 @@ def material_import(request):
 @material_access_required
 def material_import_template(request):
     workbook = openpyxl.Workbook()
-    sheet = workbook.active
-    sheet.title = "Материалы"
-    headers = [
-        "Наименование", "Узел / подсборка", "Марка материала", "Тип профиля", "Сортамент",
-        "Количество", "Длина единицы, мм", "Общая длина, мм", "Толщина, мм", "Ширина, мм",
-        "Высота, мм", "Наружный диаметр, мм", "Стенка, мм", "Масса 1 м, кг", "Масса единицы, кг", "Примечание",
-    ]
-    sheet.append(headers)
-    sheet.append(["Лист для корпуса", "Корпус", "Ст3", "Лист", "Лист 8", 2, 2000, "", 8, 1000, "", "", "", "", "", "Пример"])
-    sheet.append(["Труба для рамы", "Рама", "Сталь", "Труба круглая", "Труба 57×3,5", 4, 6000, 24000, "", "", "", 57, 3.5, "", "", "Пример"])
-    sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = f"A1:P{sheet.max_row}"
-    for cell in sheet[1]:
-        cell.font = openpyxl.styles.Font(bold=True, color="FFFFFF")
-        cell.fill = openpyxl.styles.PatternFill("solid", fgColor="163A66")
-        cell.alignment = openpyxl.styles.Alignment(wrap_text=True)
-    for column in sheet.columns:
-        sheet.column_dimensions[column[0].column_letter].width = min(28, max(12, max(len(str(c.value or "")) for c in column) + 2))
+    workbook.remove(workbook.active)
+
+    def make_sheet(title, headers, rows):
+        sheet = workbook.create_sheet(title)
+        sheet.append(headers)
+        for row in rows:
+            sheet.append(row)
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = f"A1:{sheet.cell(1, len(headers)).column_letter}{sheet.max_row}"
+        for cell in sheet[1]:
+            cell.font = openpyxl.styles.Font(bold=True, color="FFFFFF")
+            cell.fill = openpyxl.styles.PatternFill("solid", fgColor="163A66")
+            cell.alignment = openpyxl.styles.Alignment(wrap_text=True)
+        for column in sheet.columns:
+            sheet.column_dimensions[column[0].column_letter].width = min(30, max(13, max(len(str(c.value or "")) for c in column) + 2))
+
+    make_sheet("Лист", ["Наименование", "Узел / подсборка", "Марка материала", "Толщина, мм", "Ширина, мм", "Длина листа, мм", "Количество"], [["Лист 8 мм", "Корпус", "Ст3", 8, 1500, 6000, 2]])
+    make_sheet("Труба", ["Наименование", "Узел / подсборка", "Вид трубы", "Марка материала", "Сортамент", "Наружный диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина стенки, мм", "Длина куска, мм", "Количество"], [["Труба 57×3,5", "Рама", "Труба круглая", "Сталь", "57×3,5", 57, "", "", 3.5, 6000, 4]])
+    make_sheet("Прокат", ["Наименование", "Узел / подсборка", "Вид профиля", "Марка материала", "Сортамент", "Диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина, мм", "Длина куска, мм", "Количество", "Масса 1 м, кг"], [
+        ["Круг 40", "Вал", "Круг", "Сталь", "Круг 40", 40, "", "", "", 3000, 2, ""],
+        ["Квадрат 20", "Рама", "Квадрат", "Сталь", "20×20", "", 20, "", "", 6000, 2, ""],
+        ["Шестигранник 24", "Крепление", "Шестигранник", "Сталь", "S24", "", 24, "", "", 3000, 2, ""],
+    ])
+    make_sheet("Прочие материалы", ["Категория", "Наименование", "Узел / подсборка", "Марка / производитель", "Характеристика", "Единица учета", "Количество", "Тара / упаковка", "Плотность, кг/л", "Толщина, мм", "Ширина, мм", "Длина, мм", "Ячейка X, мм", "Ячейка Y, мм", "Диаметр проволоки, мм"], [
+        ["Краска / покрытие", "Эмаль ПФ-115 синяя", "Корпус", "Лакра", "RAL 5005", "л", 20, "4 банки по 5 л", 1.2, "", "", "", "", "", ""],
+        ["Сетка", "Сетка сварная 50×50", "Ограждение", "", "Карта сетки", "м²", 12, "", "", "", 1000, 2000, 50, 50, 3],
+    ])
     density = workbook.create_sheet("Справочник плотностей")
     density.append(["Марка материала", "Группа", "Плотность, кг/м³"])
     for grade in MaterialGrade.objects.filter(is_active=True):
         density.append([grade.name, grade.get_category_display(), float(grade.density_kg_m3)])
+    instruction = workbook.create_sheet("Инструкция", 0)
+    instruction.append(["Загрузка потребности материалов к проекту"])
+    instruction.append(["1. Проект выбирается на сайте; в Excel его указывать не нужно."])
+    instruction.append(["2. Формат сортамента совпадает со складом: Лист, Труба, Прокат и Прочие материалы."])
+    instruction.append(["3. В поле «Узел / подсборка» укажите, для какой части изделия требуется материал."])
+    instruction.append(["4. Краску, растворитель, смазку, резину, сетку и расходники вносите в «Прочие материалы»."])
+    instruction.append(["5. Для уголка, швеллера, двутавра и полособульба указывайте сортамент и массу 1 м."])
+    instruction.column_dimensions["A"].width = 110
+    instruction["A1"].font = openpyxl.styles.Font(bold=True, size=14, color="163A66")
     output = BytesIO()
     workbook.save(output)
     response = HttpResponse(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -204,7 +307,21 @@ def material_order_detail(request, order_id):
         item.issued_length_mm = issued["length"] or ZERO
         item.issued_mass_kg = issued["mass"] or ZERO
         item.available = available_for_requirement(item)
-    return render(request, "scanner/material_order_detail.html", {"order": order, "requirements": requirements, "q": q})
+    auxiliary_requirements = list(order.auxiliary_material_requirements.all())
+    if q:
+        auxiliary_requirements = [item for item in auxiliary_requirements if q.casefold() in f"{item.name} {item.assembly_name} {item.brand} {item.characteristics}".casefold()]
+    for item in auxiliary_requirements:
+        lots = AuxiliaryMaterialLot.objects.filter(
+            Q(order__isnull=True) | Q(order=order), category=item.category,
+            unit=item.unit, name__iexact=item.name, quantity_remaining__gt=0,
+        )
+        def same(left, right):
+            return (left or "").strip().casefold() == (right or "").strip().casefold()
+        item.available_quantity = sum((lot.quantity_remaining for lot in lots if same(lot.brand, item.brand) and same(lot.characteristics, item.characteristics)), ZERO)
+    return render(request, "scanner/material_order_detail.html", {
+        "order": order, "requirements": requirements,
+        "auxiliary_requirements": auxiliary_requirements, "q": q,
+    })
 
 
 @material_access_required
@@ -268,13 +385,434 @@ def material_stock(request):
         except Exception as exc:
             messages.error(request, f"Не удалось сохранить приход: {exc}")
     q = request.GET.get("q", "").strip()
-    lots = MaterialStockLot.objects.select_related("grade", "order").filter(Q(quantity_remaining__gt=0) | Q(length_remaining_mm__gt=0))
+    lots = MaterialStockLot.objects.select_related("grade", "order").filter(
+        Q(profile_type="sheet", quantity_remaining__gt=0)
+        | (~Q(profile_type="sheet") & Q(length_remaining_mm__gt=0))
+    )
     if q:
         lots = lots.filter(Q(name__icontains=q) | Q(grade__name__icontains=q) | Q(profile_name__icontains=q) | Q(batch_number__icontains=q))
+    auxiliary_lots = AuxiliaryMaterialLot.objects.select_related("order").filter(quantity_remaining__gt=0)
+    if q:
+        auxiliary_lots = auxiliary_lots.filter(
+            Q(name__icontains=q) | Q(brand__icontains=q) | Q(characteristics__icontains=q)
+            | Q(batch_number__icontains=q) | Q(storage_location__icontains=q)
+        )
+    groups = group_stock_lots(list(lots))
     return render(request, "scanner/material_stock.html", {
-        "lots": lots, "q": q, "grades": MaterialGrade.objects.filter(is_active=True),
+        "groups": groups, "auxiliary_groups": group_auxiliary_lots(list(auxiliary_lots)),
+        "q": q, "grades": MaterialGrade.objects.filter(is_active=True),
         "orders": Order.objects.order_by("-id")[:100], "profiles": MaterialRequirement.PROFILE_CHOICES,
+        "employees": Employee.objects.filter(is_active=True).order_by("last_name", "first_name", "middle_name"),
+        "auxiliary_categories": AuxiliaryMaterialLot.CATEGORY_CHOICES,
+        "auxiliary_units": AuxiliaryMaterialLot.UNIT_CHOICES,
     })
+
+
+@material_access_required
+@require_POST
+def material_auxiliary_receipt(request):
+    try:
+        quantity = decimal_value(request.POST.get("quantity"))
+        if quantity <= 0:
+            raise ValidationError("Количество должно быть больше нуля.")
+        category = request.POST.get("category", "")
+        unit = request.POST.get("unit", "")
+        if category not in dict(AuxiliaryMaterialLot.CATEGORY_CHOICES):
+            raise ValidationError("Выберите категорию материала.")
+        if unit not in dict(AuxiliaryMaterialLot.UNIT_CHOICES):
+            raise ValidationError("Выберите единицу учёта.")
+        name = request.POST.get("name", "").strip()
+        if not name:
+            raise ValidationError("Укажите наименование материала.")
+        expiry_raw = request.POST.get("expiry_date", "").strip()
+        expiry_date = parse_date(expiry_raw) if expiry_raw else None
+        if expiry_raw and not expiry_date:
+            raise ValidationError("Некорректный срок годности.")
+        with transaction.atomic():
+            lot = AuxiliaryMaterialLot.objects.create(
+                order_id=request.POST.get("order_id") or None,
+                category=category,
+                name=name,
+                brand=request.POST.get("brand", "").strip(),
+                characteristics=request.POST.get("characteristics", "").strip(),
+                unit=unit,
+                quantity_initial=quantity,
+                quantity_remaining=quantity,
+                package_description=request.POST.get("package_description", "").strip(),
+                density_kg_l=decimal_value(request.POST.get("density_kg_l"), None),
+                thickness_mm=decimal_value(request.POST.get("thickness_mm"), None),
+                width_mm=decimal_value(request.POST.get("width_mm"), None),
+                length_mm=decimal_value(request.POST.get("length_mm"), None),
+                mesh_cell_width_mm=decimal_value(request.POST.get("mesh_cell_width_mm"), None),
+                mesh_cell_height_mm=decimal_value(request.POST.get("mesh_cell_height_mm"), None),
+                wire_diameter_mm=decimal_value(request.POST.get("wire_diameter_mm"), None),
+                expiry_date=expiry_date,
+                storage_location=request.POST.get("storage_location", "").strip(),
+                created_by=request.user,
+            )
+            AuxiliaryMaterialTransaction.objects.create(
+                stock_lot=lot,
+                transaction_type="in",
+                quantity=quantity,
+                basis=request.POST.get("basis", "").strip() or "Приход материала",
+                created_by=request.user,
+            )
+        messages.success(request, f"Приход сохранён: {lot.name}, {quantity} {lot.get_unit_display()}.")
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    except Exception as exc:
+        messages.error(request, f"Не удалось сохранить приход: {exc}")
+    return redirect("material_stock")
+
+
+@material_access_required
+@require_POST
+def material_auxiliary_issue(request, lot_id):
+    try:
+        quantity = decimal_value(request.POST.get("quantity"))
+        if quantity <= 0:
+            raise ValidationError("Количество выдачи должно быть больше нуля.")
+        recipient = get_object_or_404(Employee, pk=request.POST.get("recipient_id"), is_active=True)
+        with transaction.atomic():
+            lot = get_object_or_404(AuxiliaryMaterialLot.objects.select_for_update(), pk=lot_id)
+            if quantity > lot.quantity_remaining:
+                raise ValidationError(
+                    f"Нельзя выдать {quantity} {lot.get_unit_display()}: на складе {lot.quantity_remaining}."
+                )
+            lot.quantity_remaining -= quantity
+            lot.save(update_fields=["quantity_remaining"])
+            AuxiliaryMaterialTransaction.objects.create(
+                stock_lot=lot,
+                transaction_type="out",
+                quantity=quantity,
+                recipient=recipient,
+                recipient_name=str(recipient).strip(),
+                basis=request.POST.get("basis", "").strip() or "Общепроизводственные нужды",
+                created_by=request.user,
+            )
+        messages.success(request, f"Выдано: {lot.name}, {quantity} {lot.get_unit_display()} — {recipient}.")
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    return redirect("material_stock")
+
+
+@material_access_required
+def material_stock_import(request):
+    preview = None
+    errors = []
+    token = ""
+    selected_order_id = request.POST.get("order_id", "") if request.method == "POST" else ""
+    receipt_type = request.POST.get("receipt_type", "receipt") if request.method == "POST" else "receipt"
+    common_basis = request.POST.get("basis", "").strip() if request.method == "POST" else ""
+    if request.method == "POST" and request.POST.get("action") == "confirm":
+        token = request.POST.get("token", "")
+        session_key = f"material_stock_import:{token}"
+        rows = request.session.pop(session_key, None)
+        if not rows:
+            messages.error(request, "Предварительная проверка устарела. Загрузите файл ещё раз.")
+            return redirect("material_stock_import")
+        try:
+            if rows[0].get("inventory_reconciliation"):
+                lots, adjusted = reconcile_stock_from_preview(rows, request.user)
+                messages.success(
+                    request,
+                    f"Инвентаризация применена: предыдущих складских позиций скорректировано — {adjusted}, фактических позиций и кусков загружено — {len(lots)}.",
+                )
+                return redirect("material_stock")
+            lots = create_stock_lots_from_preview(rows, request.user)
+        except ValidationError as exc:
+            messages.error(request, "Файл не загружен: " + " ".join(exc.messages))
+            return redirect("material_stock_import")
+        messages.success(
+            request,
+            f"Склад загружен: {len(rows)} строк, создано складских позиций и кусков: {len(lots)}.",
+        )
+        return redirect("material_stock")
+
+    if request.method == "POST":
+        upload = request.FILES.get("file")
+        if not upload:
+            errors.append("Выберите файл Excel.")
+        else:
+            try:
+                workbook = openpyxl.load_workbook(upload, data_only=True)
+                workbook_sheet_names = {sheet.title.strip().casefold() for sheet in workbook.worksheets}
+                inventory_sections = {
+                    "metal": bool(workbook_sheet_names & {"лист", "труба", "прокат", "остатки"}),
+                    "auxiliary": "прочие материалы" in workbook_sheet_names,
+                }
+                preview, errors = parse_stock_workbook(workbook)
+            except Exception as exc:
+                errors.append(f"Не удалось прочитать файл: {exc}")
+            if preview and not errors:
+                selected_order = None
+                if selected_order_id:
+                    selected_order = Order.objects.filter(pk=selected_order_id).first()
+                    if not selected_order:
+                        errors.append("Выбранный проект не найден.")
+                if receipt_type not in {"receipt", "inventory"}:
+                    errors.append("Выберите корректный тип загрузки.")
+                if not errors:
+                    default_basis = "Остатки после инвентаризации" if receipt_type == "inventory" else "Приход материала"
+                    for row in preview:
+                        row["order_id"] = selected_order.id if selected_order else None
+                        row["order_number"] = selected_order.order_number if selected_order else "Общий склад"
+                        row["basis"] = common_basis or default_basis
+                        row["inventory_reconciliation"] = receipt_type == "inventory"
+                        row["inventory_sections"] = inventory_sections
+                lots_count = sum(row["lots_to_create"] for row in preview)
+                if not errors and lots_count > 5000:
+                    errors.append("За одну загрузку можно создать не более 5000 складских позиций и кусков.")
+                elif not errors:
+                    token = uuid.uuid4().hex
+                    request.session[f"material_stock_import:{token}"] = preview
+                    request.session.modified = True
+
+    return render(request, "scanner/material_stock_import.html", {
+        "preview": preview,
+        "errors": errors,
+        "token": token,
+        "lots_count": sum(row["lots_to_create"] for row in preview or []),
+        "total_mass": sum((decimal_value(row["mass_kg"]) for row in preview or []), ZERO),
+        "total_area": sum((decimal_value(row["area_m2"]) for row in preview or []), ZERO),
+        "orders": Order.objects.order_by("-id")[:100],
+        "selected_order_id": selected_order_id,
+        "receipt_type": receipt_type,
+        "common_basis": common_basis,
+    })
+
+
+@material_access_required
+def material_stock_import_template(request):
+    workbook = openpyxl.Workbook()
+    default_sheet = workbook.active
+    workbook.remove(default_sheet)
+
+    def make_sheet(title, headers, example):
+        sheet = workbook.create_sheet(title)
+        sheet.append(headers)
+        sheet.append(example)
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = f"A1:{sheet.cell(1, len(headers)).column_letter}{sheet.max_row}"
+        for cell in sheet[1]:
+            cell.font = openpyxl.styles.Font(bold=True, color="FFFFFF")
+            cell.fill = openpyxl.styles.PatternFill("solid", fgColor="163A66")
+            cell.alignment = openpyxl.styles.Alignment(wrap_text=True)
+        for column in sheet.columns:
+            sheet.column_dimensions[column[0].column_letter].width = min(
+                30, max(13, max(len(str(cell.value or "")) for cell in column) + 2)
+            )
+        return sheet
+
+    make_sheet(
+        "Лист",
+        ["Наименование", "Марка материала", "Толщина, мм", "Ширина, мм", "Длина листа, мм", "Количество", "Место хранения"],
+        ["Лист 8 мм", "Ст3", 8, 1500, 6000, 3, "Стеллаж Л-1"],
+    )
+    make_sheet(
+        "Труба",
+        ["Наименование", "Вид трубы", "Марка материала", "Сортамент", "Наружный диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина стенки, мм", "Длина куска, мм", "Количество", "Место хранения"],
+        ["Труба 57×3,5", "Труба круглая", "Сталь", "57×3,5", 57, "", "", 3.5, 6000, 5, "Стеллаж Т-2"],
+    )
+    rolled = make_sheet(
+        "Прокат",
+        ["Наименование", "Вид профиля", "Марка материала", "Сортамент", "Диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина, мм", "Длина куска, мм", "Количество", "Масса 1 м, кг", "Место хранения"],
+        ["Круг 40", "Круг", "Сталь", "Круг 40", 40, "", "", "", 3000, 2, "", "Стеллаж П-1"],
+    )
+    rolled.append(["Квадрат 20", "Квадрат", "Сталь", "20×20", "", 20, "", "", 6000, 2, "", "Стеллаж П-1"])
+    rolled.append(["Шестигранник 24", "Шестигранник", "Сталь", "S24", "", 24, "", "", 3000, 2, "", "Стеллаж П-1"])
+    auxiliary_headers = [
+        "Категория", "Наименование", "Марка / производитель", "Характеристика",
+        "Единица учета", "Количество", "Тара / упаковка", "Плотность, кг/л",
+        "Толщина, мм", "Ширина, мм", "Длина, мм", "Ячейка X, мм", "Ячейка Y, мм",
+        "Диаметр проволоки, мм", "Срок годности", "Место хранения",
+    ]
+    auxiliary = make_sheet(
+        "Прочие материалы",
+        auxiliary_headers,
+        ["Краска / покрытие", "Эмаль ПФ-115 синяя", "Лакра", "RAL 5005", "л", 20,
+         "4 банки по 5 л", 1.2, "", "", "", "", "", "", "31.12.2027", "Шкаф 1"],
+    )
+    auxiliary.append([
+        "Сетка", "Сетка сварная 50×50", "", "Карта сетки", "м²", 12, "",
+        "", "", 1000, 2000, 50, 50, 3, "", "Стеллаж С-1",
+    ])
+    density = workbook.create_sheet("Справочник плотностей")
+    density.append(["Марка материала", "Группа", "Плотность, кг/м³", "ГОСТ / стандарт"])
+    for grade in MaterialGrade.objects.filter(is_active=True):
+        density.append([grade.name, grade.get_category_display(), float(grade.density_kg_m3), grade.standard])
+    for cell in density[1]:
+        cell.font = openpyxl.styles.Font(bold=True, color="FFFFFF")
+        cell.fill = openpyxl.styles.PatternFill("solid", fgColor="163A66")
+    density.freeze_panes = "A2"
+    for width, letter in zip([28, 24, 22, 28], ["A", "B", "C", "D"]):
+        density.column_dimensions[letter].width = width
+
+    instruction = workbook.create_sheet("Инструкция", 0)
+    instruction.append(["Загрузка склада материалов"])
+    instruction.append(["1. Заполняйте подходящий лист: Лист, Труба, Прокат или Прочие материалы."])
+    instruction.append(["2. Для кусков трубы и проката каждая строка содержит одну длину и количество одинаковых кусков."])
+    instruction.append(["3. Куски разной длины вносите отдельными строками."])
+    instruction.append(["4. Проект и основание прихода выбираются один раз на странице загрузки, а не заполняются в Excel."])
+    instruction.append(["5. Марка должна совпадать со справочником плотностей в этом файле."])
+    instruction.append(["6. Краски, растворители, смазки, резину, сетку и расходные материалы загружайте на листе «Прочие материалы»."])
+    instruction.append(["7. Для квадрата укажите сторону в поле «Ширина», для шестигранника — размер под ключ в этом же поле; масса рассчитается автоматически."])
+    instruction.append(["8. Для уголка, швеллера, двутавра и полособульба укажите сортамент и точную массу 1 м из сертификата или таблицы сортамента."])
+    instruction.column_dimensions["A"].width = 110
+    instruction["A1"].font = openpyxl.styles.Font(bold=True, size=14, color="163A66")
+
+    output = BytesIO()
+    workbook.save(output)
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="material_stock_import_template.xlsx"'
+    return response
+
+
+@material_access_required
+def material_stock_export(request):
+    """Export active balances in the same shape accepted by inventory import."""
+    order_id = request.GET.get("order_id", "").strip()
+    selected_order = None
+    if order_id:
+        selected_order = Order.objects.filter(pk=order_id).first()
+        if not selected_order:
+            messages.error(request, "Выбранный проект не найден.")
+            return redirect("material_stock_import")
+
+    workbook = openpyxl.Workbook()
+    default_sheet = workbook.active
+    workbook.remove(default_sheet)
+
+    def make_sheet(title, headers):
+        sheet = workbook.create_sheet(title)
+        sheet.append(headers)
+        sheet.freeze_panes = "A2"
+        for cell in sheet[1]:
+            cell.font = openpyxl.styles.Font(bold=True, color="FFFFFF")
+            cell.fill = openpyxl.styles.PatternFill("solid", fgColor="163A66")
+            cell.alignment = openpyxl.styles.Alignment(wrap_text=True)
+        return sheet
+
+    sheet_page = make_sheet(
+        "Лист",
+        ["Наименование", "Марка материала", "Толщина, мм", "Ширина, мм", "Длина листа, мм", "Количество", "Место хранения"],
+    )
+    pipe_page = make_sheet(
+        "Труба",
+        ["Наименование", "Вид трубы", "Марка материала", "Сортамент", "Наружный диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина стенки, мм", "Длина куска, мм", "Количество", "Место хранения"],
+    )
+    rolled_page = make_sheet(
+        "Прокат",
+        ["Наименование", "Вид профиля", "Марка материала", "Сортамент", "Диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина, мм", "Длина куска, мм", "Количество", "Масса 1 м, кг", "Место хранения"],
+    )
+    auxiliary_page = make_sheet(
+        "Прочие материалы",
+        ["Категория", "Наименование", "Марка / производитель", "Характеристика", "Единица учета", "Количество", "Тара / упаковка", "Плотность, кг/л", "Толщина, мм", "Ширина, мм", "Длина, мм", "Ячейка X, мм", "Ячейка Y, мм", "Диаметр проволоки, мм", "Срок годности", "Место хранения"],
+    )
+
+    def number(value):
+        return float(value) if value is not None else ""
+
+    metal_lots = MaterialStockLot.objects.select_related("grade").filter(order=selected_order).filter(
+        Q(profile_type="sheet", quantity_remaining__gt=0)
+        | (~Q(profile_type="sheet") & Q(length_remaining_mm__gt=0))
+    )
+    grouped = OrderedDict()
+    for lot in metal_lots:
+        if lot.profile_type == "sheet":
+            row = (
+                lot.name, lot.grade.name, lot.thickness_mm, lot.width_mm,
+                lot.piece_length_mm, lot.storage_location,
+            )
+            key = ("sheet",) + row
+            grouped.setdefault(key, {"row": row, "quantity": ZERO})["quantity"] += lot.quantity_remaining
+            continue
+
+        pieces = lot.quantity_remaining if lot.quantity_remaining > 0 else 1
+        length_each = lot.length_remaining_mm / pieces
+        if lot.profile_type in {"round_pipe", "rect_tube"}:
+            profile_label = "Труба круглая" if lot.profile_type == "round_pipe" else "Труба профильная"
+            row = (
+                lot.name, profile_label, lot.grade.name, lot.profile_name,
+                lot.outer_diameter_mm, lot.width_mm, lot.height_mm, lot.wall_thickness_mm,
+                length_each, lot.storage_location,
+            )
+            key = ("pipe",) + row
+        else:
+            export_labels = {
+                "round_bar": "Круг", "square_bar": "Квадрат", "hex_bar": "Шестигранник",
+                "rect_bar": "Полоса", "angle": "Уголок", "channel": "Швеллер",
+                "beam": "Двутавр", "bulb_flat": "Полособульб", "other": "Другой",
+            }
+            row = (
+                lot.name, export_labels.get(lot.profile_type, lot.get_profile_type_display()),
+                lot.grade.name, lot.profile_name, lot.outer_diameter_mm, lot.width_mm,
+                lot.height_mm, lot.thickness_mm, length_each, lot.kg_per_meter,
+                lot.storage_location,
+            )
+            key = ("rolled",) + row
+        grouped.setdefault(key, {"row": row, "quantity": ZERO})["quantity"] += pieces
+
+    for key, item in grouped.items():
+        kind = key[0]
+        row = item["row"]
+        quantity = item["quantity"]
+        if kind == "sheet":
+            sheet_page.append([row[0], row[1], number(row[2]), number(row[3]), number(row[4]), number(quantity), row[5]])
+        elif kind == "pipe":
+            pipe_page.append([row[0], row[1], row[2], row[3], number(row[4]), number(row[5]), number(row[6]), number(row[7]), number(row[8]), number(quantity), row[9]])
+        else:
+            rolled_page.append([row[0], row[1], row[2], row[3], number(row[4]), number(row[5]), number(row[6]), number(row[7]), number(row[8]), number(quantity), number(row[9]), row[10]])
+
+    auxiliary_lots = AuxiliaryMaterialLot.objects.filter(order=selected_order, quantity_remaining__gt=0)
+    auxiliary_grouped = OrderedDict()
+    for lot in auxiliary_lots:
+        row = (
+            lot.get_category_display(), lot.name, lot.brand, lot.characteristics,
+            lot.get_unit_display(), lot.package_description, lot.density_kg_l,
+            lot.thickness_mm, lot.width_mm, lot.length_mm, lot.mesh_cell_width_mm,
+            lot.mesh_cell_height_mm, lot.wire_diameter_mm, lot.expiry_date,
+            lot.storage_location,
+        )
+        auxiliary_grouped.setdefault(row, ZERO)
+        auxiliary_grouped[row] += lot.quantity_remaining
+    for row, quantity in auxiliary_grouped.items():
+        auxiliary_page.append([
+            row[0], row[1], row[2], row[3], row[4], number(quantity), row[5],
+            number(row[6]), number(row[7]), number(row[8]), number(row[9]),
+            number(row[10]), number(row[11]), number(row[12]), row[13], row[14],
+        ])
+
+    scope_name = selected_order.order_number if selected_order else "Общий склад"
+    instruction = workbook.create_sheet("Инструкция", 0)
+    instruction.append(["Фактический склад материалов"])
+    instruction.append([f"Выгружено: {scope_name}"])
+    instruction.append(["Измените фактические значения, удалите отсутствующие позиции или добавьте новые строки."])
+    instruction.append(["Загрузите файл обратно с типом «Инвентаризация» и выберите тот же склад или проект."])
+    instruction.append(["После подтверждения значения заменят текущие остатки без задвоения. История сохранится как корректировка."])
+    instruction.column_dimensions["A"].width = 110
+    instruction["A1"].font = openpyxl.styles.Font(bold=True, size=14, color="163A66")
+
+    for sheet in workbook.worksheets:
+        if sheet.title == "Инструкция":
+            continue
+        sheet.auto_filter.ref = f"A1:{sheet.cell(1, sheet.max_column).column_letter}{max(1, sheet.max_row)}"
+        for column in sheet.columns:
+            sheet.column_dimensions[column[0].column_letter].width = min(
+                30, max(13, max(len(str(cell.value or "")) for cell in column) + 2)
+            )
+
+    output = BytesIO()
+    workbook.save(output)
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="material_stock_actual.xlsx"'
+    return response
 
 
 @material_access_required

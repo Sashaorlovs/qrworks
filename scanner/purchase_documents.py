@@ -23,7 +23,7 @@ def general_surplus_state(item):
     """Return stock that is not reserved for any assembly in the order."""
     same_items = PurchaseItem.objects.filter(
         order_id=item.order_id,
-        item_name__iexact=item.item_name.strip(),
+        normalized_name=item.normalized_name,
     )
     purchased = same_items.aggregate(value=Max('quantity_purchased'))['value'] or 0
     required = same_items.aggregate(value=Sum('quantity_required'))['value'] or 0
@@ -215,7 +215,7 @@ def issue_general_surplus(item_id, quantity, recipient, basis, user, issuer=None
     list(
         PurchaseItem.objects.select_for_update().filter(
             order_id=item.order_id,
-            item_name__iexact=item.item_name.strip(),
+            normalized_name=item.normalized_name,
         ).order_by('id')
     )
     state = general_surplus_state(item)

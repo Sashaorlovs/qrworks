@@ -9,7 +9,7 @@
       <a href="{% url 'purchase_issue' %}" class="btn btn-outline-primary"><i class="bi bi-check2-circle"></i> Готово к выдаче</a>
       <a href="{% url 'purchase_requests' %}" class="btn btn-outline-primary"><i class="bi bi-file-earmark-text"></i> Заявки</a>
       <a href="{% url 'purchase_issue_log' %}" class="btn btn-outline-primary"><i class="bi bi-journal-check"></i> Накладные</a>
-      <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal"><i class="bi bi-upload"></i> Загрузить Excel</button>
+      <a class="btn btn-primary" href="{% url 'purchase_import' %}"><i class="bi bi-upload"></i> Загрузить Excel</a>
     </div>
   </div>
   <div class="purchase-kpis mb-4">
@@ -23,9 +23,4 @@
     <tbody>{% for order in orders %}<tr><td><strong>{{ order.order_number }}</strong></td><td>{{ order.display_name }}</td><td>{{ order.purchase_count }}</td><td><span class="badge text-bg-{% if order.status_label == 'Выдан полностью' %}success{% elif order.status_label == 'Выдан частично' %}warning{% else %}secondary{% endif %}">{{ order.status_label }}</span></td><td class="text-end"><a href="{% url 'purchase_spec_detail' order.id %}" class="btn btn-sm btn-outline-primary">Открыть</a></td></tr>{% empty %}<tr><td colspan="5" class="text-center text-muted py-5">Нет загруженных спецификаций.</td></tr>{% endfor %}</tbody>
   </table></div></div>
 </div>
-<div class="modal fade" id="importModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
-  <div class="modal-header"><div><h5 class="modal-title">Загрузка спецификации</h5><div class="small text-muted">Данные будут добавлены к выбранному проекту.</div></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-  <div class="modal-body"><div class="alert alert-light border"><strong>Формат:</strong> лист спецификации — наименование, требуемое количество, подсборка; лист закупки — наименование и закупленное количество.</div><form id="import-form" enctype="multipart/form-data">{% csrf_token %}<div class="row g-3"><div class="col-md-7"><label class="form-label">Проект / заказ</label><select name="order_id" class="form-select" required><option value="">Выберите проект</option>{% for o in all_orders %}<option value="{{ o.id }}">{{ o.order_number }} — {{ o.display_name }}</option>{% endfor %}</select></div><div class="col-md-5"><label class="form-label">Файл Excel</label><input type="file" name="file" class="form-control" accept=".xlsx" required></div></div><div id="import-result" class="mt-3"></div><button type="submit" class="btn btn-primary mt-3">Загрузить</button></form></div>
-</div></div></div>
-<script>document.getElementById('import-form').onsubmit=function(e){e.preventDefault();const fd=new FormData(this),res=document.getElementById('import-result');res.innerHTML='<div class="text-muted">Загрузка…</div>';fetch('{% url "purchase_import" %}',{method:'POST',body:fd,headers:{'X-CSRFToken':'{{ csrf_token }}'}}).then(r=>r.json()).then(d=>{let h='';if(d.success)h+='<div class="alert alert-success">Загружено: '+d.created+'</div>';if(d.errors&&d.errors.length)h+='<div class="alert alert-warning">'+d.errors.join('<br>')+'</div>';res.innerHTML=h;if(d.success&&d.created>0)setTimeout(()=>location.reload(),900)}).catch(()=>res.innerHTML='<div class="alert alert-danger">Не удалось загрузить файл.</div>')};</script>
 {% endblock %}

@@ -1,0 +1,52 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Загрузка склада материалов{% endblock %}
+{% block content %}
+<div class="material-page">
+  <div class="page-heading">
+    <div><a class="small text-decoration-none" href="{% url 'material_stock' %}">← Склад материалов</a><h1 class="mt-2">Загрузка склада из Excel</h1><p class="text-muted mb-0">Сначала система проверит файл и рассчитает доступные показатели. Записи появятся на складе только после подтверждения.</p></div>
+    <div class="d-flex gap-2 flex-wrap"><a class="btn btn-outline-primary" id="actualStockDownload" href="{% url 'material_stock_export' %}"><i class="bi bi-box-arrow-down"></i> Скачать фактический склад</a><a class="btn btn-outline-primary" href="{% url 'material_stock_import_template' %}"><i class="bi bi-download"></i> Скачать пустой шаблон</a></div>
+  </div>
+
+  {% if errors %}<div class="alert alert-danger"><h2 class="h6">Файл не загружен</h2><ul class="mb-0">{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+
+  <div class="card material-card card-body mb-3"><form method="post" enctype="multipart/form-data" class="row g-3 align-items-end">{% csrf_token %}
+    <div class="col-md-3"><label class="form-label">Куда принять</label><select class="form-select" name="order_id" id="stockOrderSelect"><option value="">Общий склад</option>{% for order in orders %}<option value="{{ order.id }}" {% if selected_order_id == order.id|stringformat:'s' %}selected{% endif %}>{{ order.order_number }} — {{ order.full_name|default:order.project }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Тип загрузки</label><select class="form-select" name="receipt_type"><option value="receipt" {% if receipt_type == 'receipt' %}selected{% endif %}>Приход по накладной</option><option value="inventory" {% if receipt_type == 'inventory' %}selected{% endif %}>Инвентаризация</option></select></div>
+    <div class="col-md-2"><label class="form-label">Документ</label><input class="form-control" name="basis" value="{{ common_basis }}" placeholder="Накладная № 125"></div>
+    <div class="col-md-3"><label class="form-label">Файл Excel</label><input class="form-control" type="file" name="file" accept=".xlsx" required></div>
+    <div class="col-md-2"><label class="form-label d-none d-md-block">&nbsp;</label><button class="btn btn-primary w-100" name="action" value="preview"><i class="bi bi-search"></i> Проверить файл</button></div>
+    <div class="col-12"><div class="form-text mt-0">Проект, тип загрузки и документ применяются ко всему файлу. Поддерживаются листы «Лист», «Труба», «Прокат» и «Прочие материалы».</div></div>
+  </form></div>
+
+  <div class="alert alert-info mb-3">
+    <div class="fw-semibold mb-1"><i class="bi bi-info-circle"></i> Как работает инвентаризация</div>
+    <ul class="mb-0 ps-3">
+      <li><strong>Приход по накладной</strong> добавляет количество из файла к уже имеющемуся складу.</li>
+      <li><strong>Инвентаризация</strong> заменяет текущие остатки выбранного общего склада или проекта фактическими значениями из файла.</li>
+      <li>Если в файле есть металлопрокат, сверяется весь металлопрокат выбранного склада; если есть лист «Прочие материалы» — сверяются прочие материалы.</li>
+      <li>Позиции соответствующего раздела, которых нет в инвентаризационном файле, получат нулевой остаток. Поэтому загружайте полный фактический список.</li>
+      <li>Другие проекты и разделы, отсутствующие в файле, не изменяются. Старые приходы и выдачи не удаляются — разница сохраняется в истории как корректировка.</li>
+    </ul>
+  </div>
+
+  {% if preview and not errors %}
+  {% if receipt_type == 'inventory' %}<div class="alert alert-warning"><strong>Режим инвентаризации.</strong> После подтверждения текущие остатки выбранного общего склада или проекта будут заменены фактическими значениями из файла. История сохранится как корректировка.</div>{% endif %}
+  <div class="row g-3 mb-3"><div class="col-md-3"><div class="card material-card card-body"><div class="small text-muted">Строк в файле</div><div class="h4 mb-0">{{ preview|length }}</div></div></div><div class="col-md-3"><div class="card material-card card-body"><div class="small text-muted">Будет создано складских позиций/кусков</div><div class="h4 mb-0">{{ lots_count }}</div></div></div><div class="col-md-3"><div class="card material-card card-body"><div class="small text-muted">Общая масса</div><div class="h4 mb-0">{{ total_mass|floatformat:3 }} кг</div></div></div><div class="col-md-3"><div class="card material-card card-body"><div class="small text-muted">Площадь листов</div><div class="h4 mb-0">{{ total_area|floatformat:3 }} м²</div></div></div></div>
+  <div class="card material-card mb-3"><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Источник</th><th>Материал</th><th>Вид / профиль</th><th>Размер / характеристика</th><th>Количество</th><th>Длина / площадь</th><th>Масса</th><th>Проект</th><th>Место</th></tr></thead><tbody>{% for row in preview %}<tr><td>{{ row.sheet }}, {{ row.row }}</td><td><strong>{{ row.name }}</strong><div class="small text-muted">{% if row.record_type == 'auxiliary' %}{{ row.brand|default:'Без марки' }}{% else %}{{ row.grade_name }}{% endif %}</div></td><td>{% if row.record_type == 'auxiliary' %}{{ row.category_label }}<div class="small text-muted">{{ row.unit_label }}</div>{% else %}{{ row.profile_label }}<div class="small text-muted">{{ row.profile_name|default:'—' }}</div>{% endif %}</td><td>{% if row.record_type == 'auxiliary' %}{{ row.characteristics|default:'—' }}{% if row.mesh_cell_width_mm %}<div class="small text-muted">Ячейка {{ row.mesh_cell_width_mm }} × {{ row.mesh_cell_height_mm }} мм</div>{% endif %}{% elif row.profile_type == 'sheet' %}{{ row.thickness_mm }} × {{ row.width_mm }} × {{ row.piece_length_mm }} мм{% else %}{{ row.piece_length_mm }} мм{% endif %}</td><td>{{ row.quantity|floatformat:-3 }}{% if row.record_type == 'auxiliary' %} {{ row.unit_label }}{% endif %}</td><td>{% if row.record_type == 'auxiliary' %}{% if row.area_m2 %}{{ row.area_m2|floatformat:3 }} м²{% else %}—{% endif %}{% elif row.profile_type == 'sheet' %}—{% else %}{{ row.total_length_mm|floatformat:0 }} мм{% endif %}</td><td>{% if row.mass_kg %}{{ row.mass_kg|floatformat:3 }} кг{% else %}—{% endif %}</td><td>{{ row.order_number }}</td><td>{{ row.storage_location|default:'—' }}</td></tr>{% endfor %}</tbody></table></div></div>
+  <form method="post" class="d-flex justify-content-end gap-2">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="token" value="{{ token }}"><a class="btn btn-outline-secondary" href="{% url 'material_stock_import' %}">Отмена</a><button class="btn btn-success"><i class="bi bi-check2-circle"></i> Подтвердить загрузку</button></form>
+  {% endif %}
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const orderSelect = document.getElementById('stockOrderSelect');
+  const downloadLink = document.getElementById('actualStockDownload');
+  if (!orderSelect || !downloadLink) return;
+  const baseUrl = downloadLink.getAttribute('href');
+  function updateDownloadLink() {
+    downloadLink.href = orderSelect.value ? baseUrl + '?order_id=' + encodeURIComponent(orderSelect.value) : baseUrl;
+  }
+  orderSelect.addEventListener('change', updateDownloadLink);
+  updateDownloadLink();
+});
+</script>
+{% endblock %}

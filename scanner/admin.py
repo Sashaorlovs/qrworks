@@ -166,7 +166,7 @@ class RouteCardAdmin(admin.ModelAdmin):
 class RouteOperationAdmin(admin.ModelAdmin):
     list_display = ('route_card_link', 'operation_type', 'order', 'status', 'good_qty', 'bad_qty', 'notes')
     list_filter = ('status',)
-    search_fields = ('route_card__instance__serial')
+    search_fields = ('route_card__instance__serial',)
 
     @admin.display(description='Маршрутная карта')
     def route_card_link(self, obj):
@@ -194,16 +194,11 @@ class WarehouseRecordAdmin(admin.ModelAdmin):
 admin.site.register(OrderItem, OrderItemAdmin)
 
 # Регистрация моделей покупных изделий
-from scanner.purchase_models import (
-    PurchaseItem,
-    PurchaseTransaction,
-    PurchaseRequest,
-    PurchaseRequestLine,
-)
+from scanner.purchase_models import PurchaseItem, PurchaseTransaction
 
 @admin.register(PurchaseItem)
 class PurchaseItemAdmin(admin.ModelAdmin):
-    list_display = ('item_name', 'order', 'assembly_name', 'quantity_required', 'quantity_purchased', 'issued_quantity', 'purchase_status', 'created_at')
+    list_display = ('item_name', 'order', 'assembly_name', 'quantity_required', 'quantity_purchased', 'purchase_status', 'created_at')
     list_filter = ('purchase_status', 'order')
     search_fields = ('item_name', 'designation', 'assembly_name')
     ordering = ('-created_at',)
@@ -213,26 +208,11 @@ class PurchaseTransactionAdmin(admin.ModelAdmin):
     list_display = ('purchase_item', 'transaction_type', 'quantity', 'recipient', 'basis', 'created_at', 'created_by')
     list_filter = ('transaction_type',)
     search_fields = ('purchase_item__item_name', 'recipient')
-
-
-class PurchaseRequestLineInline(admin.TabularInline):
-    model = PurchaseRequestLine
-    extra = 0
-    readonly_fields = ('purchase_item', 'quantity_requested', 'quantity_issued')
-
-
-@admin.register(PurchaseRequest)
-class PurchaseRequestAdmin(admin.ModelAdmin):
-    list_display = ('number', 'order', 'status', 'purpose', 'created_at', 'requested_by')
-    list_filter = ('status', 'created_at')
-    search_fields = ('number', 'order__order_number', 'purpose')
-    readonly_fields = ('number', 'created_at', 'requested_by')
-    inlines = (PurchaseRequestLineInline,)
     ordering = ('-created_at',)
 
 # Склад материалов хранится отдельно от основного склада и покупных изделий.
 from scanner.material_models import (
-    MaterialGrade, MaterialRequirement, MaterialStockLot,
+    MaterialGrade, MaterialRequirement, MaterialStockLot, AuxiliaryMaterialRequirement,
     MaterialRequest, MaterialRequestLine, MaterialTransaction,
 )
 
@@ -247,6 +227,12 @@ class MaterialRequirementAdmin(admin.ModelAdmin):
     list_display = ('item_name', 'order', 'assembly_name', 'grade', 'profile_type', 'quantity_required', 'calculated_mass_kg')
     list_filter = ('profile_type', 'grade', 'order')
     search_fields = ('item_name', 'assembly_name', 'profile_name')
+
+@admin.register(AuxiliaryMaterialRequirement)
+class AuxiliaryMaterialRequirementAdmin(admin.ModelAdmin):
+    list_display = ('name', 'order', 'assembly_name', 'category', 'quantity_required', 'unit')
+    list_filter = ('category', 'unit', 'order')
+    search_fields = ('name', 'assembly_name', 'brand', 'characteristics')
 
 @admin.register(MaterialStockLot)
 class MaterialStockLotAdmin(admin.ModelAdmin):

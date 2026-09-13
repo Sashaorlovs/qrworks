@@ -1,5 +1,5 @@
 from decimal import Decimal, ROUND_HALF_UP
-from math import pi
+from math import pi, sqrt
 
 from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator
@@ -50,13 +50,15 @@ class MaterialGeometry(models.Model):
         ("rect_tube", "Труба профильная"),
         ("round_bar", "Круг"),
         ("square_bar", "Квадрат"),
+        ("hex_bar", "Шестигранник"),
         ("rect_bar", "Полоса / прямоугольник"),
         ("angle", "Уголок"),
         ("channel", "Швеллер"),
-        ("beam", "Балка"),
+        ("beam", "Двутавр / балка"),
+        ("bulb_flat", "Полособульб"),
         ("other", "Другой профиль"),
     ]
-    LINEAR_PROFILES = {"round_pipe", "rect_tube", "round_bar", "square_bar", "rect_bar", "angle", "channel", "beam", "other"}
+    LINEAR_PROFILES = {"round_pipe", "rect_tube", "round_bar", "square_bar", "hex_bar", "rect_bar", "angle", "channel", "beam", "bulb_flat", "other"}
 
     grade = models.ForeignKey(MaterialGrade, on_delete=models.PROTECT, verbose_name="Марка материала")
     profile_type = models.CharField(max_length=20, choices=PROFILE_CHOICES, verbose_name="Профиль")
@@ -114,6 +116,8 @@ class MaterialGeometry(models.Model):
             return Decimal(str(pi)) * d * d / Decimal("4")
         if self.profile_type == "square_bar" and w > 0:
             return w * w
+        if self.profile_type == "hex_bar" and w > 0:
+            return Decimal(str(sqrt(3))) * w * w / Decimal("2")
         if self.profile_type == "rect_bar" and w > 0 and (h > 0 or s > 0):
             return w * (h or s)
         return None
@@ -159,7 +163,11 @@ class MaterialGeometry(models.Model):
             return f"{self.width_mm or '—'} × {self.height_mm or '—'} × {self.wall_thickness_mm or '—'}, L={self.piece_length_mm or '—'} мм"
         if self.profile_type == "round_bar":
             return f"Ø{self.outer_diameter_mm or '—'}, L={self.piece_length_mm or '—'} мм"
-        if self.profile_type in {"square_bar", "rect_bar"}:
+        if self.profile_type == "hex_bar":
+            return f"S{self.width_mm or '—'}, L={self.piece_length_mm or '—'} мм"
+        if self.profile_type == "square_bar":
+            return f"{self.width_mm or '—'} × {self.width_mm or '—'}, L={self.piece_length_mm or '—'} мм"
+        if self.profile_type == "rect_bar":
             return f"{self.width_mm or '—'} × {self.height_mm or self.thickness_mm or '—'}, L={self.piece_length_mm or '—'} мм"
         return f"L={self.piece_length_mm or '—'} мм"
 
@@ -287,6 +295,158 @@ class MaterialTransaction(models.Model):
         ordering = ["-created_at"]
         verbose_name = "Движение материала"
         verbose_name_plural = "Движения материалов"
+
+    def __str__(self):
+        return f"{self.get_transaction_type_display()} — {self.stock_lot.name}"
+
+
+class AuxiliaryMaterialLot(models.Model):
+    CATEGORY_CHOICES = [
+        ("paint", "Краска / покрытие"),
+        ("solvent", "Растворитель"),
+        ("lubricant", "Смазка / масло"),
+        ("rubber", "Резина / прокладочный материал"),
+        ("mesh", "Сетка"),
+        ("bulk", "Сыпучий материал"),
+        ("piece", "Штучный расходный материал"),
+        ("other", "Прочее"),
+    ]
+    UNIT_CHOICES = [
+        ("kg", "кг"),
+        ("g", "г"),
+        ("l", "л"),
+        ("ml", "мл"),
+        ("pcs", "шт."),
+        ("m", "м"),
+        ("m2", "м²"),
+        ("roll", "рулон"),
+        ("pack", "упаковка"),
+    ]
+
+    order = models.ForeignKey(
+        "scanner.Order", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="auxiliary_material_lots", verbose_name="Проект / заказ",
+    )
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, db_index=True, verbose_name="Категория")
+    name = models.CharField(max_length=500, verbose_name="Наименование")
+    brand = models.CharField(max_length=220, blank=True, verbose_name="Марка / производитель")
+    characteristics = models.CharField(max_length=500, blank=True, verbose_name="Характеристика")
+    unit = models.CharField(max_length=10, choices=UNIT_CHOICES, verbose_name="Единица учёта")
+    quantity_initial = models.DecimalField(max_digits=16, decimal_places=3, default=0, verbose_name="Принято")
+    quantity_remaining = models.DecimalField(max_digits=16, decimal_places=3, default=0, verbose_name="Остаток")
+    package_description = models.CharField(max_length=220, blank=True, verbose_name="Тара / упаковка")
+    density_kg_l = models.DecimalField(max_digits=10, decimal_places=5, null=True, blank=True, verbose_name="Плотность, кг/л")
+    thickness_mm = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True, verbose_name="Толщина, мм")
+    width_mm = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True, verbose_name="Ширина, мм")
+    length_mm = models.DecimalField(max_digits=16, decimal_places=3, null=True, blank=True, verbose_name="Длина, мм")
+    mesh_cell_width_mm = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True, verbose_name="Ячейка по ширине, мм")
+    mesh_cell_height_mm = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True, verbose_name="Ячейка по высоте, мм")
+    wire_diameter_mm = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True, verbose_name="Диаметр проволоки, мм")
+    batch_number = models.CharField(max_length=160, blank=True, verbose_name="Партия")
+    expiry_date = models.DateField(null=True, blank=True, verbose_name="Срок годности")
+    storage_location = models.CharField(max_length=180, blank=True, verbose_name="Место хранения")
+    hazardous = models.BooleanField(default=False, verbose_name="Опасный материал / ЛВЖ")
+    minimum_stock = models.DecimalField(max_digits=16, decimal_places=3, default=0, verbose_name="Минимальный остаток")
+    received_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата прихода")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Принял")
+
+    class Meta:
+        ordering = ["category", "name", "brand", "received_at"]
+        verbose_name = "Прочий материал на складе"
+        verbose_name_plural = "Прочие материалы на складе"
+
+    @property
+    def is_low_stock(self):
+        return self.minimum_stock > 0 and self.quantity_remaining <= self.minimum_stock
+
+    @property
+    def estimated_mass_kg(self):
+        if self.unit == "kg":
+            return self.quantity_remaining
+        if self.unit == "g":
+            return (self.quantity_remaining / Decimal("1000")).quantize(Decimal("0.001"))
+        if self.unit == "l" and self.density_kg_l:
+            return (self.quantity_remaining * self.density_kg_l).quantize(Decimal("0.001"))
+        if self.unit == "ml" and self.density_kg_l:
+            return (self.quantity_remaining * self.density_kg_l / Decimal("1000")).quantize(Decimal("0.001"))
+        return None
+
+    @property
+    def dimensions_display(self):
+        values = []
+        if self.thickness_mm:
+            values.append(f"толщина {self.thickness_mm} мм")
+        if self.width_mm and self.length_mm:
+            values.append(f"{self.width_mm} × {self.length_mm} мм")
+        elif self.width_mm:
+            values.append(f"ширина {self.width_mm} мм")
+        if self.mesh_cell_width_mm and self.mesh_cell_height_mm:
+            values.append(f"ячейка {self.mesh_cell_width_mm} × {self.mesh_cell_height_mm} мм")
+        if self.wire_diameter_mm:
+            values.append(f"проволока Ø{self.wire_diameter_mm} мм")
+        return "; ".join(values)
+
+    def __str__(self):
+        return f"{self.name}: {self.quantity_remaining} {self.get_unit_display()}"
+
+
+class AuxiliaryMaterialRequirement(models.Model):
+    order = models.ForeignKey(
+        "scanner.Order", on_delete=models.CASCADE,
+        related_name="auxiliary_material_requirements", verbose_name="Проект / заказ",
+    )
+    assembly_name = models.CharField(max_length=500, blank=True, verbose_name="Узел / подсборка")
+    category = models.CharField(max_length=20, choices=AuxiliaryMaterialLot.CATEGORY_CHOICES, db_index=True, verbose_name="Категория")
+    name = models.CharField(max_length=500, verbose_name="Наименование")
+    brand = models.CharField(max_length=220, blank=True, verbose_name="Марка / производитель")
+    characteristics = models.CharField(max_length=500, blank=True, verbose_name="Характеристика")
+    unit = models.CharField(max_length=10, choices=AuxiliaryMaterialLot.UNIT_CHOICES, verbose_name="Единица учёта")
+    quantity_required = models.DecimalField(max_digits=16, decimal_places=3, default=0, verbose_name="Требуется")
+    package_description = models.CharField(max_length=220, blank=True, verbose_name="Тара / упаковка")
+    density_kg_l = models.DecimalField(max_digits=10, decimal_places=5, null=True, blank=True, verbose_name="Плотность, кг/л")
+    thickness_mm = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True, verbose_name="Толщина, мм")
+    width_mm = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True, verbose_name="Ширина, мм")
+    length_mm = models.DecimalField(max_digits=16, decimal_places=3, null=True, blank=True, verbose_name="Длина, мм")
+    mesh_cell_width_mm = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True, verbose_name="Ячейка по ширине, мм")
+    mesh_cell_height_mm = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True, verbose_name="Ячейка по высоте, мм")
+    wire_diameter_mm = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True, verbose_name="Диаметр проволоки, мм")
+    notes = models.TextField(blank=True, verbose_name="Примечание")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "assembly_name", "category", "name"]
+        verbose_name = "Потребность в прочем материале"
+        verbose_name_plural = "Потребности в прочих материалах"
+
+    @property
+    def dimensions_display(self):
+        probe = AuxiliaryMaterialLot(
+            thickness_mm=self.thickness_mm, width_mm=self.width_mm, length_mm=self.length_mm,
+            mesh_cell_width_mm=self.mesh_cell_width_mm, mesh_cell_height_mm=self.mesh_cell_height_mm,
+            wire_diameter_mm=self.wire_diameter_mm,
+        )
+        return probe.dimensions_display
+
+    def __str__(self):
+        return f"{self.order}: {self.name}"
+
+
+class AuxiliaryMaterialTransaction(models.Model):
+    TRANSACTION_TYPES = [("in", "Приход"), ("out", "Выдача"), ("adjustment", "Корректировка")]
+
+    stock_lot = models.ForeignKey(AuxiliaryMaterialLot, on_delete=models.PROTECT, related_name="transactions", verbose_name="Материал")
+    transaction_type = models.CharField(max_length=12, choices=TRANSACTION_TYPES, verbose_name="Тип")
+    quantity = models.DecimalField(max_digits=16, decimal_places=3, default=0, verbose_name="Количество")
+    recipient = models.ForeignKey("scanner.Employee", on_delete=models.SET_NULL, null=True, blank=True, related_name="auxiliary_material_receipts", verbose_name="Получатель")
+    recipient_name = models.CharField(max_length=255, blank=True, verbose_name="Получатель (на момент выдачи)")
+    basis = models.CharField(max_length=300, blank=True, verbose_name="Основание")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Выдал / принял")
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Движение прочего материала"
+        verbose_name_plural = "Движения прочих материалов"
 
     def __str__(self):
         return f"{self.get_transaction_type_display()} — {self.stock_lot.name}"

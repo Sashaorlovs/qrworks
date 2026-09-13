@@ -33,7 +33,7 @@ def allocation_state(item: PurchaseItem) -> AllocationState:
     """Return stock and demand limits for one exact assembly requirement."""
     same_item_in_order = PurchaseItem.objects.filter(
         order_id=item.order_id,
-        item_name__iexact=item.item_name.strip(),
+        normalized_name=item.normalized_name,
     )
     purchased = same_item_in_order.aggregate(
         value=Max("quantity_purchased")
@@ -105,19 +105,12 @@ def allocate_purchase_items(*, lines, recipient, basis, batch_token, created_by)
     # Lock every row sharing stock with a selected target.  A transaction for
     # another assembly of the same order/item must wait for this allocation.
     stock_groups = sorted(
-        {(item.order_id, item.item_name.strip().casefold()) for item in targets.values()},
+        {(item.order_id, item.normalized_name) for item in targets.values()},
         key=lambda value: ((value[0] or 0), value[1]),
     )
     for order_id, normalized_name in stock_groups:
         candidates = PurchaseItem.objects.select_for_update().filter(order_id=order_id)
-        # The DB lookup remains case-insensitive; casefold is only the stable
-        # ordering key used above.
-        display_name = next(
-            item.item_name.strip()
-            for item in targets.values()
-            if item.order_id == order_id and item.item_name.strip().casefold() == normalized_name
-        )
-        list(candidates.filter(item_name__iexact=display_name).order_by("pk"))
+        list(candidates.filter(normalized_name=normalized_name).order_by("pk"))
 
     created = []
     for item_id in sorted(requested):

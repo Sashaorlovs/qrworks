@@ -12,6 +12,13 @@
       </tbody></table></div>
     </div>
   </form>
+  <div class="card material-card mt-3">
+    <div class="card-header"><h2 class="h5 mb-1">Краска и прочие материалы</h2><div class="small text-muted">Потребность из листа «Прочие материалы» и фактическое наличие на складе.</div></div>
+    <div class="table-responsive"><table class="table align-middle mb-0 material-table"><thead><tr><th>Материал</th><th>Категория</th><th>Узел / подсборка</th><th>Характеристика</th><th>Потребность</th><th>Доступно на складе</th></tr></thead><tbody>
+      {% for item in auxiliary_requirements %}<tr><td><strong>{{ item.name }}</strong>{% if item.brand %}<div class="small text-muted">{{ item.brand }}</div>{% endif %}</td><td>{{ item.get_category_display }}</td><td>{{ item.assembly_name|default:'—' }}</td><td>{{ item.characteristics|default:'—' }}{% if item.dimensions_display %}<div class="small text-muted">{{ item.dimensions_display }}</div>{% endif %}</td><td><strong>{{ item.quantity_required|floatformat:-3 }}</strong> {{ item.get_unit_display }}</td><td><strong>{{ item.available_quantity|floatformat:-3 }}</strong> {{ item.get_unit_display }}</td></tr>
+      {% empty %}<tr><td colspan="6" class="text-center text-muted py-4">Прочие материалы для проекта не загружены.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
 </div>
 <script>document.addEventListener('DOMContentLoaded',()=>{const all=document.getElementById('selectAll'),checks=[...document.querySelectorAll('.requirement-check')],button=document.getElementById('requestButton');function sync(){button.disabled=!checks.some(x=>x.checked)}all?.addEventListener('change',()=>{checks.forEach(x=>x.checked=all.checked);sync()});checks.forEach(x=>x.addEventListener('change',sync));});</script>
 {% endblock %}

@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from scanner.purchase_normalization import normalize_purchase_name
 
 class PurchaseItem(models.Model):
     PURCHASE_STATUS_CHOICES = [
@@ -19,6 +20,7 @@ class PurchaseItem(models.Model):
     assembly_ref = models.ForeignKey('scanner.OrderItem', on_delete=models.SET_NULL, null=True, blank=True, related_name='purchase_refs',
                                      verbose_name='Подсборка (ссылка)')
     item_name = models.CharField(max_length=500, verbose_name='Наименование')
+    normalized_name = models.CharField(max_length=500, blank=True, db_index=True, verbose_name='Нормализованное наименование')
     designation = models.CharField(max_length=300, blank=True, verbose_name='Обозначение')
     assembly_name = models.CharField(max_length=500, blank=True, verbose_name='Подсборка (название)')
     quantity_required = models.PositiveIntegerField(default=0, verbose_name='Требуемое количество')
@@ -36,6 +38,10 @@ class PurchaseItem(models.Model):
 
     def __str__(self):
         return f"{self.item_name} ({self.quantity_purchased} шт.)"
+
+    def save(self, *args, **kwargs):
+        self.normalized_name = normalize_purchase_name(self.item_name)
+        super().save(*args, **kwargs)
 
 
 class PurchaseTransaction(models.Model):

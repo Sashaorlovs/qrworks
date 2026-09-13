@@ -86,121 +86,96 @@ def purchase_list(request):
     })
 
 @login_required
-@require_POST
 def purchase_import(request):
-    file = request.FILES.get('file')
-    if not file:
-        return JsonResponse({'error': 'Файл не выбран'}, status=400)
-    try:
-        wb = openpyxl.load_workbook(file, data_only=True)
-    except Exception as e:
-        return JsonResponse({'error': f'Ошибка чтения: {e}'}, status=400)
+    from scanner.purchase_import import parse_purchase_workbook, save_purchase_preview
 
-    order_id = request.POST.get('order_id', '').strip()
-    order = Order.objects.get(id=order_id) if order_id else None
+    preview, errors, warnings, token = None, [], [], ""
+    selected_order_id = request.POST.get("order_id", "") if request.method == "POST" else ""
+    if request.method == "POST":
+        action = request.POST.get("action", "preview")
+        if action == "confirm":
+            token = request.POST.get("token", "")
+            payload = request.session.get(f"purchase_import:{token}")
+            if not payload:
+                messages.error(request, "Проверка устарела. Загрузите файл ещё раз.")
+                return redirect("purchase_import")
+            order = get_object_or_404(Order, pk=payload["order_id"])
+            saved = save_purchase_preview(order, payload["rows"])
+            request.session.pop(f"purchase_import:{token}", None)
+            messages.success(request, f"Спецификация проверена и загружена. Позиций: {saved}.")
+            return redirect("purchase_spec_detail", spec_id=order.id)
 
-    created = 0
-    errors = []
+        upload = request.FILES.get("file")
+        if not selected_order_id:
+            errors.append("Выберите проект / заказ.")
+        if not upload:
+            errors.append("Выберите файл Excel.")
+        if not errors:
+            order = get_object_or_404(Order, pk=selected_order_id)
+            try:
+                workbook = openpyxl.load_workbook(upload, data_only=True)
+                preview, errors, warnings = parse_purchase_workbook(workbook, order)
+            except Exception as exc:
+                errors.append(f"Не удалось прочитать файл: {exc}")
+            if preview and not errors:
+                token = uuid.uuid4().hex
+                request.session[f"purchase_import:{token}"] = {"order_id": order.id, "rows": preview}
+                request.session.modified = True
 
-    # Определяем лист спецификации и лист закупки по заголовкам
-    spec_ws = None
-    purch_ws = None
-    for sheet_name in wb.sheetnames:
-        ws = wb[sheet_name]
-        headers = [str(c.value).strip().lower() if c.value else '' for c in next(ws.iter_rows(min_row=1, max_row=1))]
-        # Если есть "подсборка" или "требуемое" — это спецификация
-        if any('подсборка' in h or 'сборка' in h for h in headers):
-            spec_ws = ws
-            spec_headers = headers
-        elif any('закуп' in h or 'purchased' in h for h in headers) and not any('подсборка' in h for h in headers):
-            purch_ws = ws
-            purch_headers = headers
-        elif any('требуемое' in h for h in headers):
-            spec_ws = ws
-            spec_headers = headers
+    return render(request, "scanner/purchase_import.html", {
+        "orders": Order.objects.order_by("-id")[:100],
+        "selected_order_id": str(selected_order_id),
+        "preview": preview, "errors": errors, "warnings": warnings, "token": token,
+    })
 
-    # Если не нашли спецификацию, берём активный лист как спецификацию
-    if spec_ws is None:
-        spec_ws = wb.active
-        spec_headers = [str(c.value).strip().lower() if c.value else '' for c in next(spec_ws.iter_rows(min_row=1, max_row=1))]
-    # Если не нашли закупку, но есть второй лист, берём его
-    if purch_ws is None and len(wb.sheetnames) >= 2:
-        purch_ws = wb[wb.sheetnames[1]] if wb.sheetnames[1] != spec_ws.title else wb[wb.sheetnames[0]]
-        purch_headers = [str(c.value).strip().lower() if c.value else '' for c in next(purch_ws.iter_rows(min_row=1, max_row=1))]
 
-    # Анализ листа закупки
-    purchased_dict = {}
-    if purch_ws:
-        idx_name2 = next((i for i, h in enumerate(purch_headers) if 'наименование' in h), None)
-        idx_qty2 = next((i for i, h in enumerate(purch_headers) if 'закуп' in h or 'purchased' in h), None)
-        if idx_name2 is not None and idx_qty2 is not None:
-            for row in purch_ws.iter_rows(min_row=2, values_only=True):
-                if not row or all(c is None for c in row):
-                    continue
-                name = str(row[idx_name2]).strip() if row[idx_name2] else ''
-                qty = int(row[idx_qty2]) if row[idx_qty2] else 0
-                if name:
-                    purchased_dict[name.lower()] = qty
+@login_required
+def purchase_import_template(request):
+    from openpyxl.styles import Alignment, Font, PatternFill
 
-    # Анализ листа спецификации
-    idx_name1 = next((i for i, h in enumerate(spec_headers) if 'наименование' in h), None)
-    idx_req = next((i for i, h in enumerate(spec_headers) if 'требуемое' in h or 'кол-во' in h), None)
-    idx_asm = next((i for i, h in enumerate(spec_headers) if 'подсборка' in h or 'сборка' in h), None)
-    idx_purch1 = next((i for i, h in enumerate(spec_headers) if 'закуп' in h or 'purchased' in h), None)
+    workbook = openpyxl.Workbook()
+    instruction = workbook.active
+    instruction.title = "Инструкция"
+    instructions = [
+        "Загрузка спецификации стандартных и покупных изделий",
+        "1. Проект выбирается на странице загрузки; в Excel его указывать не нужно.",
+        "2. В «Спецификации» каждая строка относится к конкретному узлу или подсборке.",
+        "3. В «Закупке» указывается общее закупленное количество по наименованию для проекта.",
+        "4. Перед записью система покажет все позиции, ошибки и совпавшие варианты наименований.",
+        "5. Лишняя точка, двойной пробел, разные тире, регистр и символы ×/х/x не создают отдельный крепёж.",
+        "6. Повторная загрузка обновляет количество и не задваивает потребность.",
+    ]
+    for text in instructions:
+        instruction.append([text])
+    instruction.column_dimensions["A"].width = 115
+    instruction["A1"].font = Font(bold=True, size=14, color="163A66")
 
-    if idx_name1 is None:
-        errors.append('Не найден столбец "Наименование" в спецификации')
-        return JsonResponse({'success': False, 'errors': errors})
+    def make_sheet(title, headers, rows):
+        sheet = workbook.create_sheet(title)
+        sheet.append(headers)
+        for row in rows:
+            sheet.append(row)
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = f"A1:{sheet.cell(1, len(headers)).column_letter}{sheet.max_row}"
+        for cell in sheet[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="163A66")
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for column in sheet.columns:
+            sheet.column_dimensions[column[0].column_letter].width = min(55, max(16, max(len(str(cell.value or "")) for cell in column) + 2))
 
-    errors.append(f'Спецификация: {spec_headers}, индексы: name={idx_name1}, req={idx_req}, asm={idx_asm}')
-    if purch_ws:
-        errors.append(f'Закупка: {purch_headers}')
-
-    # Чтение спецификации
-    for row_idx, row in enumerate(spec_ws.iter_rows(min_row=2, values_only=True), start=2):
-        if not row or all(c is None for c in row):
-            continue
-        try:
-            name = str(row[idx_name1]).strip() if row[idx_name1] else ''
-            required = int(row[idx_req]) if idx_req is not None and row[idx_req] else 0
-            assembly = str(row[idx_asm]).strip() if idx_asm is not None and row[idx_asm] else ''
-
-            if not name:
-                continue
-
-            new_purchased = purchased_dict.get(name.lower())
-            if new_purchased is None and idx_purch1 is not None:
-                new_purchased = int(row[idx_purch1]) if row[idx_purch1] else 0
-            if new_purchased is None:
-                new_purchased = required
-
-            existing = PurchaseItem.objects.filter(
-                order=order,
-                item_name__iexact=name,
-                assembly_name__iexact=assembly
-            ).first()
-
-            if existing:
-                existing.quantity_required += required
-                if new_purchased:
-                    existing.quantity_purchased = new_purchased
-                existing.save()
-                created += 1
-            else:
-                assembly_ref = None
-                if assembly and order:
-                    assembly_ref = OrderItem.objects.filter(order=order, item__name__icontains=assembly).first()
-                PurchaseItem.objects.create(
-                    order=order, assembly_ref=assembly_ref,
-                    item_name=name, assembly_name=assembly,
-                    quantity_required=required, quantity_purchased=new_purchased,
-                    purchase_status='pending'
-                )
-                created += 1
-        except Exception as e:
-            errors.append(f'Строка {row_idx}: {e}')
-
-    return JsonResponse({'success': True, 'created': created, 'errors': errors})
+    make_sheet("Спецификация", ["Наименование", "Обозначение / артикул", "Требуемое количество", "Узел / подсборка"], [
+        ["Болт М10-6gx25.88.0118 ГОСТ 7798-70", "", 2, "Полумуфта"],
+        ["Маслёнка 1.1.Ц18.хр (М6х1) ГОСТ 19853-74", "", 1, "Полумуфта"],
+    ])
+    make_sheet("Закупка", ["Наименование", "Закуплено"], [
+        ["Болт М10-6gx25.88.0118 ГОСТ 7798-70", 100],
+        ["Маслёнка 1.1.Ц18.хр (М6х1) ГОСТ 19853-74", 50],
+    ])
+    output = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    output["Content-Disposition"] = 'attachment; filename="purchase_import_template.xlsx"'
+    workbook.save(output)
+    return output
 
 def purchase_change_status(request):
     ids = request.POST.getlist('ids[]')
@@ -220,27 +195,30 @@ def purchase_remains(request):
     
     items = PurchaseItem.objects.select_related('order').all()
     transactions = PurchaseTransaction.objects.filter(transaction_type='out', purchase_item__in=items)\
-        .values('purchase_item__item_name').annotate(total=Sum('quantity'))
+        .values('purchase_item__normalized_name').annotate(total=Sum('quantity'))
     
     issued_dict = {}
     for t in transactions:
-        key = t['purchase_item__item_name'].strip().lower()
+        key = t['purchase_item__normalized_name']
         issued_dict[key] = t['total']
     
-    remains = defaultdict(lambda: {'purchased': 0, 'projects': set()})
+    remains = defaultdict(lambda: {'name': '', 'purchased': 0, 'projects': set()})
     for item in items:
-        key = item.item_name.strip().lower()
+        key = item.normalized_name
+        if not remains[key]['name']:
+            remains[key]['name'] = item.item_name
         if item.quantity_purchased > remains[key]['purchased']:
             remains[key]['purchased'] = item.quantity_purchased or 0
         if item.order:
             remains[key]['projects'].add(item.order.full_name or item.order.order_number)
     
     remains_list = []
-    for name, data in remains.items():
-        issued = issued_dict.get(name, 0)
+    for key, data in remains.items():
+        issued = issued_dict.get(key, 0)
         available = data['purchased'] - issued
         remains_list.append({
-            'name': name,
+            'key': key,
+            'name': data['name'],
             'projects': ', '.join(sorted(data['projects'])),
             'purchased': data['purchased'],
             'issued': issued,
@@ -249,27 +227,21 @@ def purchase_remains(request):
     
     # Добавляем детализацию по проектам
     for item in remains_list:
-        key = item['name']
+        key = item['key']
         item['project_details'] = []
         proj_data = defaultdict(lambda: {'purchased': 0, 'issued': 0})
         for pi in items:
-            if pi.item_name.strip().lower() == key:
+            if pi.normalized_name == key:
                 proj_name = pi.order.full_name or pi.order.order_number
                 if pi.quantity_purchased > proj_data[proj_name]['purchased']:
                     proj_data[proj_name]['purchased'] = pi.quantity_purchased or 0
         for proj_name, data in proj_data.items():
-            issued = PurchaseTransaction.objects.filter(
-                purchase_item__item_name__iexact=key,
-                purchase_item__order__full_name=proj_name if 'full_name' in dir(pi.order) else None,
-                transaction_type='out'
-            ).aggregate(s=Sum('quantity'))['s'] or 0
-            # Упростим: issued по проекту не считаем отдельно, оставим общее
             proj_data[proj_name]['issued'] = 0
         # Пересчитаем issued по проектам
         for proj_name in proj_data:
             proj_issued = 0
             for pi in items:
-                if pi.item_name.strip().lower() == key and (pi.order.full_name or pi.order.order_number) == proj_name:
+                if pi.normalized_name == key and (pi.order.full_name or pi.order.order_number) == proj_name:
                     proj_issued += PurchaseTransaction.objects.filter(purchase_item=pi, transaction_type='out').aggregate(s=Sum('quantity'))['s'] or 0
             proj_data[proj_name]['issued'] = proj_issued
             proj_data[proj_name]['available'] = proj_data[proj_name]['purchased'] - proj_issued
@@ -288,7 +260,7 @@ def purchase_remains(request):
         item['available'] = item['purchased'] - item['issued']
         item['destinations'] = []
         for requirement in items:
-            if requirement.item_name.strip().lower() != item['name']:
+            if requirement.normalized_name != item['key']:
                 continue
             if requirement.purchase_status != 'ready_for_issue':
                 continue
@@ -311,7 +283,7 @@ def purchase_remains(request):
         seen_orders = set()
         for requirement in items:
             if (
-                requirement.item_name.strip().lower() != item['name']
+                requirement.normalized_name != item['key']
                 or not requirement.order_id
                 or requirement.purchase_status in ('pending', 'awaiting_payment', 'paid', 'shipped')
             ):
@@ -728,7 +700,7 @@ def purchase_spec_detail(request, spec_id):
             groups[key].append(item)
     else:
         for item in items:
-            key = item.item_name.strip().lower()
+            key = item.normalized_name
             groups[key].append(item)
     
     # Если задан поиск, скрываем группы, не соответствующие запросу
@@ -886,7 +858,7 @@ def purchase_issue_remains(request):
     # Группировка: purchased = max, issued = sum
     grouped = defaultdict(lambda: {'purchased': 0, 'issued': 0, 'projects': defaultdict(lambda: {'purchased': 0, 'issued': 0})})
     for i in items_qs:
-        key = i.item_name.strip().lower()
+        key = i.normalized_name
         # Общий purchased = максимум
         if i.quantity_purchased > grouped[key]['purchased']:
             grouped[key]['purchased'] = i.quantity_purchased or 0
@@ -906,7 +878,8 @@ def purchase_issue_remains(request):
     
     result_items = []
     for name, data in grouped.items():
-        data['name'] = name[0].upper() + name[1:] if name else name
+        first_matching = next((item for item in items_qs if item.normalized_name == name), None)
+        data['name'] = first_matching.item_name if first_matching else name
         data['projects_list'] = ', '.join(data['projects'].keys())
         # Детализация по проектам
         project_details = []
@@ -922,7 +895,7 @@ def purchase_issue_remains(request):
         data['purchased'] = max((pd['purchased'] for pd in project_details), default=0)
         data['issued'] = sum(pd['issued'] for pd in project_details)
         data['remaining'] = data['purchased'] - data['issued']
-        data['ids'] = list(PurchaseItem.objects.filter(item_name__iexact=name).values_list('id', flat=True))
+        data['ids'] = list(PurchaseItem.objects.filter(normalized_name=name).values_list('id', flat=True))
         result_items.append(data)
     
     employees = Employee.objects.all().order_by('last_name', 'first_name')

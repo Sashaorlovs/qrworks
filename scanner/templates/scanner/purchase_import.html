@@ -1,0 +1,34 @@
+{% extends 'scanner/base.html' %}
+{% block title %}Загрузка крепежа из Excel{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+    <div><a class="small text-decoration-none" href="{% url 'purchase_list' %}">← Склад стандартных</a><h1 class="h3 mt-2 mb-1">Загрузка крепежа и покупных изделий</h1><p class="text-muted mb-0">Сначала система проверит файл. В базу данные попадут только после подтверждения.</p></div>
+    <a class="btn btn-outline-primary" href="{% url 'purchase_import_template' %}"><i class="bi bi-download"></i> Скачать шаблон с примерами</a>
+  </div>
+
+  <div class="alert alert-light border">
+    <strong>Проверка одинаковых наименований.</strong> Лишняя точка, двойной пробел, разные тире, регистр и варианты ×/х/x не создадут отдельную позицию. Повторная загрузка обновляет количество, а не прибавляет его второй раз.
+  </div>
+
+  <form method="post" enctype="multipart/form-data" class="card card-body mb-3">{% csrf_token %}
+    <input type="hidden" name="action" value="preview">
+    <div class="row g-3 align-items-end">
+      <div class="col-lg-6"><label class="form-label">Проект / заказ</label><select class="form-select" name="order_id" required><option value="">Выберите проект</option>{% for order in orders %}<option value="{{ order.id }}" {% if selected_order_id == order.id|stringformat:'s' %}selected{% endif %}>{{ order.order_number }} — {{ order.full_name|default:order.project }}</option>{% endfor %}</select></div>
+      <div class="col-lg-4"><label class="form-label">Файл Excel</label><input class="form-control" type="file" name="file" accept=".xlsx" required></div>
+      <div class="col-lg-2"><button class="btn btn-primary w-100">Проверить файл</button></div>
+    </div>
+  </form>
+
+  {% if errors %}<div class="alert alert-danger"><strong>Файл не загружен:</strong><ul class="mb-0 mt-2">{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+  {% if warnings %}<div class="alert alert-warning"><strong>Найдены варианты одного наименования:</strong><ul class="mb-0 mt-2">{% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
+
+  {% if preview and not errors %}
+  <div class="card">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2"><div><h2 class="h5 mb-1">Результат проверки</h2><div class="small text-muted">Позиций после объединения: {{ preview|length }}</div></div><form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="token" value="{{ token }}"><button class="btn btn-success">Подтвердить загрузку</button></form></div>
+    <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Действие</th><th>Наименование</th><th>Узел / подсборка</th><th>Требуется</th><th>Закуплено</th><th>Строки Excel</th></tr></thead><tbody>{% for row in preview %}<tr><td><span class="badge {% if row.existing_id %}bg-info text-dark{% else %}bg-success{% endif %}">{{ row.action }}</span></td><td><strong>{{ row.item_name }}</strong>{% if row.designation %}<div class="small text-muted">{{ row.designation }}</div>{% endif %}</td><td>{{ row.assembly_name|default:'—' }}</td><td>{{ row.quantity_required }}</td><td>{{ row.quantity_purchased }}</td><td>{{ row.source_rows|join:', ' }}</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+

@@ -1,4 +1,4 @@
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_CEILING
 import uuid
 
 from django.core.exceptions import ValidationError
@@ -56,9 +56,11 @@ def validate_material_geometry(item):
         missing.append("диаметр")
     elif item.profile_type == "square_bar" and absent("width_mm"):
         missing.append("сторона квадрата")
+    elif item.profile_type == "hex_bar" and absent("width_mm"):
+        missing.append("размер шестигранника под ключ")
     elif item.profile_type == "rect_bar" and (absent("width_mm") or (absent("height_mm") and absent("thickness_mm"))):
         missing.append("ширина и высота/толщина")
-    elif item.profile_type in {"angle", "channel", "beam", "other"} and absent("kg_per_meter"):
+    elif item.profile_type in {"angle", "channel", "beam", "bulb_flat", "other"} and absent("kg_per_meter"):
         missing.append("масса 1 м")
     if item.is_linear and not (getattr(item, "total_length_required_mm", ZERO) or getattr(item, "length_initial_mm", ZERO) or item.piece_length_mm):
         missing.append("общая длина или длина единицы")
@@ -76,7 +78,7 @@ def stock_matches_requirement(lot, requirement):
             return False
     if requirement.profile_type == "sheet":
         return lot.piece_length_mm == requirement.piece_length_mm
-    if requirement.profile_type in {"angle", "channel", "beam", "other"}:
+    if requirement.profile_type in {"angle", "channel", "beam", "bulb_flat", "other"}:
         return (lot.profile_name or "").strip().casefold() == (requirement.profile_name or "").strip().casefold()
     return True
 
@@ -184,6 +186,12 @@ def issue_request_lines(request_document, line_values, recipient, basis, user):
                     take_quantity = ZERO
                     take_mass = lot.calculate_mass(ZERO, take_length)
                     lot.length_remaining_mm -= take_length
+                    if lot.length_remaining_mm <= 0:
+                        lot.quantity_remaining = ZERO
+                    elif lot.piece_length_mm:
+                        lot.quantity_remaining = (
+                            lot.length_remaining_mm / lot.piece_length_mm
+                        ).to_integral_value(rounding=ROUND_CEILING)
                     lot.mass_remaining_kg = lot.calculate_mass(ZERO, lot.length_remaining_mm)
                     remaining_length -= take_length
                 else:

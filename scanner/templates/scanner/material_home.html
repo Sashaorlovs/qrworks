@@ -3,9 +3,9 @@
 {% block content %}
 <div class="material-page">
   <div class="page-heading material-heading">
-    <div><div class="text-uppercase text-muted small fw-semibold">Отдельный производственный модуль</div><h1>Склад материалов</h1><p class="text-muted mb-0">Потребность проектов, заявки, приход, остатки и выдача металла.</p></div>
+    <div><div class="text-uppercase text-muted small fw-semibold">Отдельный производственный модуль</div><h1>Склад материалов</h1><p class="text-muted mb-0">Потребность проектов, заявки, приход, наличие и выдача материалов.</p></div>
     <div class="d-flex flex-wrap gap-2">
-      <a class="btn btn-outline-primary" href="{% url 'material_stock' %}"><i class="bi bi-box-seam"></i> Остатки</a>
+      <a class="btn btn-outline-primary" href="{% url 'material_stock' %}"><i class="bi bi-box-seam"></i> Склад</a>
       <a class="btn btn-outline-primary" href="{% url 'material_requests' %}"><i class="bi bi-file-earmark-text"></i> Заявки</a>
       <a class="btn btn-outline-primary" href="{% url 'material_issue_log' %}"><i class="bi bi-journal-check"></i> Накладные</a>
       <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal"><i class="bi bi-file-earmark-arrow-up"></i> Загрузить Excel</button>
@@ -32,7 +32,7 @@
 
 <div class="modal fade" id="importModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><form method="post" action="{% url 'material_import' %}" enctype="multipart/form-data">{% csrf_token %}
   <div class="modal-header"><div><h5 class="modal-title">Загрузка материалов к проекту</h5><div class="text-muted small">Файл проверяется целиком. При ошибке данные не записываются.</div></div><button class="btn-close" data-bs-dismiss="modal"></button></div>
-  <div class="modal-body"><div class="row g-3"><div class="col-md-7"><label class="form-label">Проект / заказ</label><select class="form-select" name="order_id" required><option value="">Выберите проект</option>{% for order in orders %}<option value="{{ order.id }}">{{ order.order_number }} — {{ order.full_name|default:order.project }}</option>{% endfor %}</select></div><div class="col-md-5"><label class="form-label">Файл Excel</label><input class="form-control" type="file" name="file" accept=".xlsx" required></div></div><div class="alert alert-light border mt-3 mb-0"><a href="{% url 'material_import_template' %}"><i class="bi bi-download"></i> Скачать шаблон Excel</a><div class="small text-muted mt-1">В шаблоне есть примеры листа и трубы, а также действующий справочник плотностей.</div></div></div>
+  <div class="modal-body"><div class="row g-3"><div class="col-md-7"><label class="form-label">Проект / заказ</label><select class="form-select" name="order_id" required><option value="">Выберите проект</option>{% for order in orders %}<option value="{{ order.id }}">{{ order.order_number }} — {{ order.full_name|default:order.project }}</option>{% endfor %}</select></div><div class="col-md-5"><label class="form-label">Файл Excel</label><input class="form-control" type="file" name="file" accept=".xlsx" required></div></div><div class="alert alert-light border mt-3 mb-0"><a href="{% url 'material_import_template' %}"><i class="bi bi-download"></i> Скачать шаблон Excel</a><div class="small text-muted mt-1">Единый со складом сортамент: лист, труба, прокат и прочие материалы — краска, растворители, смазки, резина, сетка и расходники.</div></div></div>
   <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Отмена</button><button class="btn btn-primary">Проверить и загрузить</button></div>
 </form></div></div></div>
 {% endblock %}
