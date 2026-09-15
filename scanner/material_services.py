@@ -3,7 +3,7 @@ import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Sum
 from django.utils import timezone
 
 from scanner.material_models import (
@@ -85,21 +85,28 @@ def stock_matches_requirement(lot, requirement):
 
 def matching_lots(requirement, lock=False):
     qs = MaterialStockLot.objects.filter(
-        Q(order__isnull=True) | Q(order=requirement.order),
         grade_id=requirement.grade_id,
         profile_type=requirement.profile_type,
     ).select_related("grade", "order")
     if lock:
         qs = qs.select_for_update()
-    return [lot for lot in qs.order_by("received_at", "id") if stock_matches_requirement(lot, requirement)]
+    return [lot for lot in qs.order_by("order_id", "received_at", "id") if stock_matches_requirement(lot, requirement)]
 
 
 def available_for_requirement(requirement):
     lots = matching_lots(requirement)
+    grouped = {}
+    for lot in lots:
+        label = lot.order.order_number if lot.order else "Общий склад"
+        values = grouped.setdefault(label, {"label": label, "quantity": ZERO, "length_mm": ZERO, "mass_kg": ZERO})
+        values["quantity"] += lot.quantity_remaining
+        values["length_mm"] += lot.length_remaining_mm
+        values["mass_kg"] += lot.mass_remaining_kg
     return {
         "quantity": sum((lot.quantity_remaining for lot in lots), ZERO),
         "length_mm": sum((lot.length_remaining_mm for lot in lots), ZERO),
         "mass_kg": sum((lot.mass_remaining_kg for lot in lots), ZERO),
+        "breakdown": list(grouped.values()),
     }
 
 
@@ -109,7 +116,7 @@ def issued_for_requirement(requirement):
     )
 
 
-def create_material_request(order, requirements, user, purpose=""):
+def create_material_request(order, requirements, user, purpose="", destination=""):
     with transaction.atomic():
         date_part = timezone.localdate().strftime("%Y%m%d")
         sequence = MaterialRequest.objects.filter(created_at__date=timezone.localdate()).count() + 1
@@ -117,7 +124,10 @@ def create_material_request(order, requirements, user, purpose=""):
         while MaterialRequest.objects.filter(number=number).exists():
             sequence += 1
             number = f"МЗ-{date_part}-{sequence:03d}"
-        document = MaterialRequest.objects.create(number=number, order=order, purpose=purpose, requested_by=user)
+        document = MaterialRequest.objects.create(
+            number=number, order=order, purpose=purpose,
+            destination=destination if order is None else "", requested_by=user,
+        )
         created = 0
         for requirement in requirements:
             issued = issued_for_requirement(requirement)

@@ -173,8 +173,12 @@ class MaterialGeometry(models.Model):
 
 
 class MaterialRequirement(MaterialGeometry):
-    order = models.ForeignKey("scanner.Order", on_delete=models.CASCADE, related_name="material_requirements", verbose_name="Проект / заказ")
+    order = models.ForeignKey(
+        "scanner.Order", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="material_requirements", verbose_name="Проект / заказ",
+    )
     assembly_ref = models.ForeignKey("scanner.OrderItem", on_delete=models.SET_NULL, null=True, blank=True, related_name="material_requirements", verbose_name="Узел")
+    destination = models.CharField(max_length=300, blank=True, verbose_name="Назначение без проекта")
     assembly_name = models.CharField(max_length=500, blank=True, verbose_name="Узел / подсборка")
     item_name = models.CharField(max_length=500, verbose_name="Материал / назначение")
     quantity_required = models.DecimalField(max_digits=14, decimal_places=3, default=0, verbose_name="Требуется, шт")
@@ -197,7 +201,7 @@ class MaterialRequirement(MaterialGeometry):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.order}: {self.item_name}"
+        return f"{self.order or self.destination or 'Без проекта'}: {self.item_name}"
 
 
 class MaterialStockLot(MaterialGeometry):
@@ -235,8 +239,12 @@ class MaterialRequest(models.Model):
     STATUS_CHOICES = [("open", "Открыта"), ("partial", "Выдано частично"), ("issued", "Выдано"), ("cancelled", "Отменена")]
 
     number = models.CharField(max_length=40, unique=True, verbose_name="Номер заявки")
-    order = models.ForeignKey("scanner.Order", on_delete=models.CASCADE, related_name="material_requests", verbose_name="Проект / заказ")
+    order = models.ForeignKey(
+        "scanner.Order", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="material_requests", verbose_name="Проект / заказ",
+    )
     purpose = models.CharField(max_length=300, blank=True, verbose_name="Основание / назначение")
+    destination = models.CharField(max_length=300, blank=True, verbose_name="Назначение без проекта")
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="open", verbose_name="Статус")
     requested_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Сформировал")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата")
@@ -392,10 +400,11 @@ class AuxiliaryMaterialLot(models.Model):
 
 class AuxiliaryMaterialRequirement(models.Model):
     order = models.ForeignKey(
-        "scanner.Order", on_delete=models.CASCADE,
+        "scanner.Order", on_delete=models.CASCADE, null=True, blank=True,
         related_name="auxiliary_material_requirements", verbose_name="Проект / заказ",
     )
     assembly_name = models.CharField(max_length=500, blank=True, verbose_name="Узел / подсборка")
+    destination = models.CharField(max_length=300, blank=True, verbose_name="Назначение без проекта")
     category = models.CharField(max_length=20, choices=AuxiliaryMaterialLot.CATEGORY_CHOICES, db_index=True, verbose_name="Категория")
     name = models.CharField(max_length=500, verbose_name="Наименование")
     brand = models.CharField(max_length=220, blank=True, verbose_name="Марка / производитель")
@@ -428,7 +437,7 @@ class AuxiliaryMaterialRequirement(models.Model):
         return probe.dimensions_display
 
     def __str__(self):
-        return f"{self.order}: {self.name}"
+        return f"{self.order or self.destination or 'Без проекта'}: {self.name}"
 
 
 class AuxiliaryMaterialTransaction(models.Model):

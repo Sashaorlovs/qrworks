@@ -16,7 +16,7 @@ from scanner.material_models import (
     MaterialStockLot,
     MaterialTransaction,
 )
-from scanner.material_services import create_material_request, issue_request_lines
+from scanner.material_services import available_for_requirement, create_material_request, issue_request_lines
 from scanner.material_stock_import import (
     create_stock_lots_from_preview,
     group_auxiliary_lots,
@@ -60,6 +60,75 @@ class MaterialCalculationTests(TestCase):
         )
         self.assertEqual(square.calculate_mass(0, 1000), Decimal("3.140"))
         self.assertEqual(hexagon.calculate_mass(0, 1000), Decimal("3.916"))
+
+
+class GeneralMaterialRequirementTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser(username="general-material", password="x")
+        self.steel = MaterialGrade.objects.create(name="Сталь общая", category="steel", density_kg_m3=7850)
+
+    def test_import_without_project_creates_general_requirement(self):
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = "Лист"
+        sheet.append(["Наименование", "Марка материала", "Толщина, мм", "Ширина, мм", "Длина листа, мм", "Количество"])
+        sheet.append(["Лист для стеллажа", "Сталь общая", 3, 1000, 2000, 2])
+        content = BytesIO()
+        workbook.save(content)
+        upload = SimpleUploadedFile(
+            "general.xlsx", content.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.client.force_login(self.user)
+        response = self.client.post("/materials/import/", {
+            "scope_mode": "manual", "manual_destination": "Стеллаж для участка №2", "file": upload,
+        })
+        self.assertRedirects(response, "/materials/general/")
+        requirement = MaterialRequirement.objects.get()
+        self.assertIsNone(requirement.order)
+        self.assertEqual(requirement.item_name, "Лист для стеллажа")
+        self.assertEqual(requirement.destination, "Стеллаж для участка №2")
+        detail = self.client.get("/materials/general/?destination=Стеллаж%20для%20участка%20№2")
+        self.assertEqual(detail.status_code, 200)
+        self.assertContains(detail, "Стеллаж для участка №2")
+        home = self.client.get("/materials/")
+        self.assertEqual(home.status_code, 200)
+        self.assertContains(home, "Стеллаж для участка №2")
+
+    def test_general_requirement_can_be_requested(self):
+        requirement = MaterialRequirement.objects.create(
+            order=None, destination="Приспособление для сварки",
+            item_name="Круг для оснастки", grade=self.steel,
+            profile_type="round_bar", outer_diameter_mm=20,
+            piece_length_mm=1000, quantity_required=2, total_length_required_mm=2000,
+        )
+        document = create_material_request(
+            None, [requirement], self.user, "Изготовление оснастки",
+            destination="Приспособление для сварки",
+        )
+        self.assertIsNone(document.order)
+        self.assertEqual(document.destination, "Приспособление для сварки")
+        self.assertEqual(document.lines.count(), 1)
+
+    def test_availability_uses_matching_stock_from_all_projects(self):
+        demand_order = Order.objects.create(order_number="DEMAND", full_name="Новый проект")
+        source_order = Order.objects.create(order_number="SOURCE", full_name="Проект-источник")
+        requirement = MaterialRequirement.objects.create(
+            order=demand_order, item_name="Лист для изделия", grade=self.steel,
+            profile_type="sheet", thickness_mm=3, width_mm=1000,
+            piece_length_mm=2000, quantity_required=3,
+        )
+        for order in (None, source_order):
+            lot = MaterialStockLot(
+                order=order, name="Лист 3 мм", grade=self.steel,
+                profile_type="sheet", thickness_mm=3, width_mm=1000,
+                piece_length_mm=2000, quantity_initial=1, created_by=self.user,
+            )
+            lot.initialize_balances()
+            lot.save()
+        available = available_for_requirement(requirement)
+        self.assertEqual(available["quantity"], Decimal("2"))
+        self.assertEqual({row["label"] for row in available["breakdown"]}, {"Общий склад", "SOURCE"})
 
 
 class MaterialIssueTests(TestCase):
@@ -280,6 +349,25 @@ class MaterialStockImportTests(TestCase):
         rows = self.client.session[session_key]
         self.assertTrue(all(row["order_id"] is None for row in rows))
         self.assertTrue(all(row["basis"] == "Остатки после инвентаризации" for row in rows))
+        self.assertTrue(all(row["inventory_all_scopes"] for row in rows))
+
+    def test_full_inventory_closes_project_bound_stock(self):
+        rows, errors = parse_stock_workbook(self.workbook())
+        self.assertEqual(errors, [])
+        project_row = dict(rows[0])
+        project_row["order_id"] = self.order.id
+        create_stock_lots_from_preview([project_row], self.user)
+        self.assertTrue(MaterialStockLot.objects.filter(order=self.order, length_remaining_mm__gt=0).exists())
+
+        inventory_rows = [dict(row) for row in rows]
+        for row in inventory_rows:
+            row["basis"] = "Полная инвентаризация"
+            row["inventory_all_scopes"] = True
+            row["inventory_sections"] = {"metal": True, "auxiliary": False}
+        reconcile_stock_from_preview(inventory_rows, self.user)
+
+        self.assertFalse(MaterialStockLot.objects.filter(order=self.order, length_remaining_mm__gt=0).exists())
+        self.assertTrue(MaterialStockLot.objects.filter(order__isnull=True, length_remaining_mm__gt=0).exists())
 
     def test_repeated_inventory_replaces_active_balance_without_doubling(self):
         rows, errors = parse_stock_workbook(self.workbook())

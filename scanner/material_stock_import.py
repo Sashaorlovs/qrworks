@@ -457,6 +457,7 @@ def reconcile_stock_from_preview(rows, user):
     if len(order_ids) != 1:
         raise ValidationError("Одна инвентаризация должна относиться к одному складу или проекту.")
     order_id = order_ids.pop()
+    inventory_all_scopes = bool(rows[0].get("inventory_all_scopes"))
     inventory_sections = rows[0].get("inventory_sections") or {}
     has_metal = inventory_sections.get(
         "metal", any(row.get("record_type") != "auxiliary" for row in rows)
@@ -468,7 +469,10 @@ def reconcile_stock_from_preview(rows, user):
     adjusted = 0
 
     if has_metal:
-        for lot in MaterialStockLot.objects.select_for_update().filter(order_id=order_id):
+        metal_lots = MaterialStockLot.objects.select_for_update()
+        if not inventory_all_scopes:
+            metal_lots = metal_lots.filter(order_id=order_id)
+        for lot in metal_lots:
             if lot.quantity_remaining == ZERO and lot.length_remaining_mm == ZERO and lot.mass_remaining_kg == ZERO:
                 continue
             MaterialTransaction.objects.create(
@@ -488,7 +492,10 @@ def reconcile_stock_from_preview(rows, user):
             adjusted += 1
 
     if has_auxiliary:
-        for lot in AuxiliaryMaterialLot.objects.select_for_update().filter(order_id=order_id):
+        auxiliary_lots = AuxiliaryMaterialLot.objects.select_for_update()
+        if not inventory_all_scopes:
+            auxiliary_lots = auxiliary_lots.filter(order_id=order_id)
+        for lot in auxiliary_lots:
             if lot.quantity_remaining == ZERO:
                 continue
             AuxiliaryMaterialTransaction.objects.create(

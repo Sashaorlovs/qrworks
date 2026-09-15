@@ -78,8 +78,22 @@ def material_home(request):
             "mass": requirements.aggregate(total=Sum("calculated_mass_kg"))["total"] or ZERO,
             "requests": order.material_requests.count(),
         })
+    destinations = set(MaterialRequirement.objects.filter(order__isnull=True).values_list("destination", flat=True))
+    destinations.update(AuxiliaryMaterialRequirement.objects.filter(order__isnull=True).values_list("destination", flat=True))
+    general_rows = []
+    for destination in sorted(destinations, key=lambda value: (value or "").casefold()):
+        requirements = MaterialRequirement.objects.filter(order__isnull=True, destination=destination)
+        auxiliary_requirements = AuxiliaryMaterialRequirement.objects.filter(order__isnull=True, destination=destination)
+        general_rows.append({
+            "destination": destination,
+            "label": destination or "Без указанного назначения",
+            "positions": requirements.count() + auxiliary_requirements.count(),
+            "mass": requirements.aggregate(total=Sum("calculated_mass_kg"))["total"] or ZERO,
+            "requests": MaterialRequest.objects.filter(order__isnull=True, destination=destination).count(),
+        })
     return render(request, "scanner/material_home.html", {
         "rows": rows,
+        "general_rows": general_rows,
         "orders": Order.objects.order_by("-id")[:100],
         "q": q,
         "stock_mass": MaterialStockLot.objects.aggregate(total=Sum("mass_remaining_kg"))["total"] or ZERO,
@@ -90,7 +104,23 @@ def material_home(request):
 @material_access_required
 @require_POST
 def material_import(request):
-    order = get_object_or_404(Order, pk=request.POST.get("order_id"))
+    scope_mode = request.POST.get("scope_mode", "order").strip()
+    scope = request.POST.get("order_id", "").strip()
+    destination = ""
+    if scope == "general":
+        scope_mode = "manual"
+        destination = "Общепроизводственные нужды"
+    if scope_mode == "manual":
+        destination = request.POST.get("manual_destination", "").strip() or destination
+        if not destination:
+            messages.error(request, "Укажите назначение материала: например, стеллаж, приспособление или заявка на ремонт.")
+            return redirect("material_home")
+        order = None
+    else:
+        if not scope:
+            messages.error(request, "Выберите проект / заказ.")
+            return redirect("material_home")
+        order = get_object_or_404(Order, pk=scope)
     upload = request.FILES.get("file")
     if not upload:
         messages.error(request, "Выберите файл Excel.")
@@ -110,6 +140,7 @@ def material_import(request):
                     if row["record_type"] == "auxiliary":
                         lookup = {
                             "order": order,
+                            "destination": destination,
                             "assembly_name": assembly_name,
                             "category": row["category"],
                             "name": row["name"],
@@ -136,6 +167,7 @@ def material_import(request):
                     grade = MaterialGrade.objects.get(pk=row["grade_id"])
                     lookup = {
                         "order": order,
+                        "destination": destination,
                         "item_name": row["name"],
                         "assembly_name": assembly_name,
                         "grade": grade,
@@ -143,7 +175,7 @@ def material_import(request):
                         "profile_name": row.get("profile_name", ""),
                     }
                     assembly_ref = None
-                    if assembly_name:
+                    if assembly_name and order:
                         assembly_ref = OrderItem.objects.filter(order=order, item__name__icontains=assembly_name).first()
                     MaterialRequirement.objects.update_or_create(
                         **lookup,
@@ -166,7 +198,9 @@ def material_import(request):
                 request,
                 f"Загружено позиций: {metal_count + auxiliary_count} (металл — {metal_count}, прочие материалы — {auxiliary_count}).",
             )
-            return redirect("material_order_detail", order_id=order.id)
+            if order:
+                return redirect("material_order_detail", order_id=order.id)
+            return redirect("material_general_detail")
         sheet = workbook["Материалы"] if "Материалы" in workbook.sheetnames else workbook.active
         headers = [str(cell.value or "").strip().casefold() for cell in sheet[1]]
     except Exception as exc:
@@ -197,6 +231,7 @@ def material_import(request):
                 raise ValidationError("укажите количество или общую длину")
             data = {
                 "order": order,
+                "destination": destination,
                 "item_name": name,
                 "assembly_name": str(_row_value(row, headers, ["подсборка", "узел"], "") or "").strip(),
                 "grade": grade,
@@ -214,7 +249,7 @@ def material_import(request):
                 "unit_mass_kg": decimal_value(_row_value(row, headers, ["масса единицы", "кг/шт"], None), None),
                 "notes": str(_row_value(row, headers, ["примечание"], "") or "").strip(),
             }
-            if data["assembly_name"]:
+            if data["assembly_name"] and order:
                 data["assembly_ref"] = OrderItem.objects.filter(order=order, item__name__icontains=data["assembly_name"]).first()
             probe = MaterialRequirement(**data)
             validate_material_geometry(probe)
@@ -230,6 +265,7 @@ def material_import(request):
         for data in prepared:
             lookup = {
                 "order": order,
+                "destination": destination,
                 "item_name": data["item_name"],
                 "assembly_name": data["assembly_name"],
                 "grade": data["grade"],
@@ -239,7 +275,9 @@ def material_import(request):
             defaults = {key: value for key, value in data.items() if key not in lookup and key != "order"}
             MaterialRequirement.objects.update_or_create(**lookup, defaults=defaults)
     messages.success(request, f"Загружено позиций: {len(prepared)}. Площадь и масса рассчитаны автоматически.")
-    return redirect("material_order_detail", order_id=order.id)
+    if order:
+        return redirect("material_order_detail", order_id=order.id)
+    return redirect("material_general_detail")
 
 
 @material_access_required
@@ -307,20 +345,95 @@ def material_order_detail(request, order_id):
         item.issued_length_mm = issued["length"] or ZERO
         item.issued_mass_kg = issued["mass"] or ZERO
         item.available = available_for_requirement(item)
+        if item.is_linear:
+            item.shortage_length_mm = max(
+                ZERO, item.total_length_required_mm - item.issued_length_mm - item.available["length_mm"]
+            )
+            item.shortage_quantity = ZERO
+            item.shortage_mass_kg = item.calculate_mass(ZERO, item.shortage_length_mm)
+        else:
+            item.shortage_quantity = max(
+                ZERO, item.quantity_required - item.issued_quantity - item.available["quantity"]
+            )
+            item.shortage_length_mm = ZERO
+            item.shortage_mass_kg = item.calculate_mass(item.shortage_quantity, ZERO)
     auxiliary_requirements = list(order.auxiliary_material_requirements.all())
     if q:
         auxiliary_requirements = [item for item in auxiliary_requirements if q.casefold() in f"{item.name} {item.assembly_name} {item.brand} {item.characteristics}".casefold()]
     for item in auxiliary_requirements:
         lots = AuxiliaryMaterialLot.objects.filter(
-            Q(order__isnull=True) | Q(order=order), category=item.category,
-            unit=item.unit, name__iexact=item.name, quantity_remaining__gt=0,
-        )
+            category=item.category, unit=item.unit,
+            name__iexact=item.name, quantity_remaining__gt=0,
+        ).select_related("order")
         def same(left, right):
             return (left or "").strip().casefold() == (right or "").strip().casefold()
-        item.available_quantity = sum((lot.quantity_remaining for lot in lots if same(lot.brand, item.brand) and same(lot.characteristics, item.characteristics)), ZERO)
+        matching = [lot for lot in lots if same(lot.brand, item.brand) and same(lot.characteristics, item.characteristics)]
+        item.available_quantity = sum((lot.quantity_remaining for lot in matching), ZERO)
+        grouped = defaultdict(lambda: ZERO)
+        for lot in matching:
+            grouped[lot.order.order_number if lot.order else "Общий склад"] += lot.quantity_remaining
+        item.available_breakdown = [{"label": label, "quantity": quantity} for label, quantity in grouped.items()]
     return render(request, "scanner/material_order_detail.html", {
         "order": order, "requirements": requirements,
         "auxiliary_requirements": auxiliary_requirements, "q": q,
+        "is_general": False,
+    })
+
+
+@material_access_required
+def material_general_detail(request):
+    destination = request.GET.get("destination", "").strip()
+    requirement_qs = MaterialRequirement.objects.filter(order__isnull=True)
+    auxiliary_qs = AuxiliaryMaterialRequirement.objects.filter(order__isnull=True)
+    if destination:
+        requirement_qs = requirement_qs.filter(destination=destination)
+        auxiliary_qs = auxiliary_qs.filter(destination=destination)
+    requirements = list(requirement_qs.select_related("grade", "assembly_ref__item"))
+    q = request.GET.get("q", "").strip()
+    if q:
+        requirements = [item for item in requirements if q.casefold() in f"{item.item_name} {item.assembly_name} {item.grade.name} {item.profile_name}".casefold()]
+    for item in requirements:
+        issued = MaterialTransaction.objects.filter(request_line__requirement=item, transaction_type="out").aggregate(
+            quantity=Sum("quantity"), length=Sum("length_mm"), mass=Sum("mass_kg")
+        )
+        item.issued_quantity = issued["quantity"] or ZERO
+        item.issued_length_mm = issued["length"] or ZERO
+        item.issued_mass_kg = issued["mass"] or ZERO
+        item.available = available_for_requirement(item)
+        if item.is_linear:
+            item.shortage_length_mm = max(
+                ZERO, item.total_length_required_mm - item.issued_length_mm - item.available["length_mm"]
+            )
+            item.shortage_quantity = ZERO
+            item.shortage_mass_kg = item.calculate_mass(ZERO, item.shortage_length_mm)
+        else:
+            item.shortage_quantity = max(
+                ZERO, item.quantity_required - item.issued_quantity - item.available["quantity"]
+            )
+            item.shortage_length_mm = ZERO
+            item.shortage_mass_kg = item.calculate_mass(item.shortage_quantity, ZERO)
+    auxiliary_requirements = list(auxiliary_qs)
+    if q:
+        auxiliary_requirements = [item for item in auxiliary_requirements if q.casefold() in f"{item.name} {item.assembly_name} {item.brand} {item.characteristics}".casefold()]
+    for item in auxiliary_requirements:
+        lots = AuxiliaryMaterialLot.objects.filter(
+            category=item.category, unit=item.unit,
+            name__iexact=item.name, quantity_remaining__gt=0,
+        ).select_related("order")
+        def same(left, right):
+            return (left or "").strip().casefold() == (right or "").strip().casefold()
+        matching = [lot for lot in lots if same(lot.brand, item.brand) and same(lot.characteristics, item.characteristics)]
+        item.available_quantity = sum((lot.quantity_remaining for lot in matching), ZERO)
+        grouped = defaultdict(lambda: ZERO)
+        for lot in matching:
+            grouped[lot.order.order_number if lot.order else "Общий склад"] += lot.quantity_remaining
+        item.available_breakdown = [{"label": label, "quantity": quantity} for label, quantity in grouped.items()]
+    return render(request, "scanner/material_order_detail.html", {
+        "order": None, "requirements": requirements,
+        "auxiliary_requirements": auxiliary_requirements, "q": q,
+        "is_general": True,
+        "destination": destination,
+        "scope_title": destination or "Внутренние работы без проекта",
     })
 
 
@@ -337,6 +450,28 @@ def material_order_create_request(request, order_id):
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
         return redirect("material_order_detail", order_id=order.id)
+    messages.success(request, f"Заявка {document.number} сформирована.")
+    return redirect("material_request_detail", request_id=document.id)
+
+
+@material_access_required
+@require_POST
+def material_general_create_request(request):
+    destination = request.POST.get("destination", "").strip()
+    requirements = list(MaterialRequirement.objects.filter(
+        order__isnull=True, destination=destination,
+        id__in=request.POST.getlist("requirement_ids")
+    ).select_related("grade"))
+    if not requirements:
+        messages.error(request, "Выберите хотя бы одну позицию.")
+        return redirect("material_general_detail")
+    try:
+        document = create_material_request(
+            None, requirements, request.user, request.POST.get("purpose", ""), destination=destination,
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+        return redirect("material_general_detail")
     messages.success(request, f"Заявка {document.number} сформирована.")
     return redirect("material_request_detail", request_id=document.id)
 
@@ -546,7 +681,9 @@ def material_stock_import(request):
                 errors.append(f"Не удалось прочитать файл: {exc}")
             if preview and not errors:
                 selected_order = None
-                if selected_order_id:
+                if receipt_type == "inventory":
+                    selected_order_id = ""
+                elif selected_order_id:
                     selected_order = Order.objects.filter(pk=selected_order_id).first()
                     if not selected_order:
                         errors.append("Выбранный проект не найден.")
@@ -556,9 +693,12 @@ def material_stock_import(request):
                     default_basis = "Остатки после инвентаризации" if receipt_type == "inventory" else "Приход материала"
                     for row in preview:
                         row["order_id"] = selected_order.id if selected_order else None
-                        row["order_number"] = selected_order.order_number if selected_order else "Общий склад"
+                        row["order_number"] = selected_order.order_number if selected_order else (
+                            "Весь физический склад" if receipt_type == "inventory" else "Общий склад"
+                        )
                         row["basis"] = common_basis or default_basis
                         row["inventory_reconciliation"] = receipt_type == "inventory"
+                        row["inventory_all_scopes"] = receipt_type == "inventory"
                         row["inventory_sections"] = inventory_sections
                 lots_count = sum(row["lots_to_create"] for row in preview)
                 if not errors and lots_count > 5000:
@@ -716,10 +856,12 @@ def material_stock_export(request):
     def number(value):
         return float(value) if value is not None else ""
 
-    metal_lots = MaterialStockLot.objects.select_related("grade").filter(order=selected_order).filter(
+    metal_lots = MaterialStockLot.objects.select_related("grade").filter(
         Q(profile_type="sheet", quantity_remaining__gt=0)
         | (~Q(profile_type="sheet") & Q(length_remaining_mm__gt=0))
     )
+    if selected_order:
+        metal_lots = metal_lots.filter(order=selected_order)
     grouped = OrderedDict()
     for lot in metal_lots:
         if lot.profile_type == "sheet":
@@ -767,7 +909,9 @@ def material_stock_export(request):
         else:
             rolled_page.append([row[0], row[1], row[2], row[3], number(row[4]), number(row[5]), number(row[6]), number(row[7]), number(row[8]), number(quantity), number(row[9]), row[10]])
 
-    auxiliary_lots = AuxiliaryMaterialLot.objects.filter(order=selected_order, quantity_remaining__gt=0)
+    auxiliary_lots = AuxiliaryMaterialLot.objects.filter(quantity_remaining__gt=0)
+    if selected_order:
+        auxiliary_lots = auxiliary_lots.filter(order=selected_order)
     auxiliary_grouped = OrderedDict()
     for lot in auxiliary_lots:
         row = (
@@ -786,7 +930,7 @@ def material_stock_export(request):
             number(row[10]), number(row[11]), number(row[12]), row[13], row[14],
         ])
 
-    scope_name = selected_order.order_number if selected_order else "Общий склад"
+    scope_name = selected_order.order_number if selected_order else "Весь физический склад"
     instruction = workbook.create_sheet("Инструкция", 0)
     instruction.append(["Фактический склад материалов"])
     instruction.append([f"Выгружено: {scope_name}"])
@@ -863,6 +1007,10 @@ def material_issue_log(request):
     groups = [{
         "token": token, "date": items[0].created_at, "recipient": items[0].recipient_name,
         "basis": items[0].basis, "order": items[0].order, "created_by": items[0].created_by,
+        "destination": (
+            items[0].request_line.request.destination
+            if items[0].request_line_id and items[0].request_line.request_id else ""
+        ),
         "items": items, "mass": sum((item.mass_kg for item in items), ZERO),
     } for token, items in by_token.items()]
     return render(request, "scanner/material_issue_log.html", {"groups": groups})
