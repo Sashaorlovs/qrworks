@@ -8,3 +8,5 @@ gunicorn.sock
 staticfiles/
 media/
 backups/
+db_*.sqlite3
+*.bak_*
