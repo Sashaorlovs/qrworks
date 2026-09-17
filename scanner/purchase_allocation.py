@@ -7,6 +7,7 @@ quantities are tracked on each exact PurchaseItem (assembly requirement).
 """
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.db.models import Max, Sum
@@ -16,13 +17,13 @@ from scanner.purchase_models import PurchaseItem, PurchaseTransaction
 
 @dataclass(frozen=True)
 class AllocationState:
-    purchased_for_order: int
-    issued_for_order: int
-    stock_available: int
-    required_for_assembly: int
-    issued_for_assembly: int
-    demand_available: int
-    allocatable: int
+    purchased_for_order: Decimal
+    issued_for_order: Decimal
+    stock_available: Decimal
+    required_for_assembly: Decimal
+    issued_for_assembly: Decimal
+    demand_available: Decimal
+    allocatable: Decimal
 
 
 class PurchaseAllocationError(ValueError):
@@ -82,12 +83,12 @@ def allocate_purchase_items(*, lines, recipient, basis, batch_token, created_by)
     for line in lines:
         try:
             item_id = int(line.get("purchase_item_id", line.get("id")))
-            quantity = int(line.get("quantity", 0))
-        except (TypeError, ValueError):
+            quantity = Decimal(str(line.get("quantity", 0)).replace(",", "."))
+        except (InvalidOperation, TypeError, ValueError):
             raise PurchaseAllocationError("Некорректная позиция или количество")
         if quantity <= 0:
             raise PurchaseAllocationError("Количество к выдаче должно быть больше нуля")
-        requested[item_id] = requested.get(item_id, 0) + quantity
+        requested[item_id] = requested.get(item_id, Decimal("0")) + quantity
 
     if not requested:
         raise PurchaseAllocationError("Не выбраны позиции для выдачи")

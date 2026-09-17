@@ -7,7 +7,7 @@
         <div class="d-flex gap-2 flex-wrap"><a href="{% url 'purchase_requests' %}" class="btn btn-outline-primary">Все заявки</a><button class="btn btn-primary" id="create-request-btn" disabled><i class="bi bi-file-earmark-plus"></i> Сформировать заявку</button><button class="btn btn-outline-warning" id="change-status-btn" disabled>Сменить статус</button></div>
     </div>
     
-    <form method="get" class="row g-2 mb-3">
+    <form method="get" class="row g-2 mb-3" id="livePurchaseFilter">
         <div class="col-md-4">
             <div class="input-group">
                 <input type="text" name="q" class="form-control" placeholder="Поиск по наименованию или подсборке..." value="{{ q }}">
@@ -68,7 +68,7 @@
                                 {% for sub in item.sub_items %}
                                 <tr>
                                     <td>{{ sub.assembly_name }}</td>
-                                    <td>{{ sub.quantity_required }}</td>
+                                    <td>{{ sub.quantity_required|floatformat:-3 }}</td>
                                     <td>{% if sub.status_raw == 'pending' %}Ожидает закупки
 {% elif sub.status_raw == 'awaiting_payment' %}Ожидает оплаты
 {% elif sub.status_raw == 'paid' %}Оплачен
@@ -86,13 +86,13 @@
                         </table>
                     </details>
                 </td>
-                <td class="text-center">{{ item.quantity_required }}</td>
+                <td class="text-center">{{ item.quantity_required|floatformat:-3 }}</td>
                 {% if view_mode != "assembly" %}
-                <td class="text-center">{{ item.quantity_purchased }}</td>
+                <td class="text-center">{{ item.quantity_purchased|floatformat:-3 }}</td>
                 {% endif %}
-                <td class="text-center">{{ item.issued_qty }}</td>
+                <td class="text-center">{{ item.issued_qty|floatformat:-3 }}</td>
                 {% if view_mode != "assembly" %}
-                <td class="text-center">{{ item.remaining }}</td>
+                <td class="text-center">{{ item.remaining|floatformat:-3 }}</td>
                 {% endif %}
                 <td>
                     {% if item.purchase_status == 'pending' %}<span class="badge bg-secondary">Ожидает закупки</span>
@@ -128,6 +128,7 @@
 </div>
 
 <script>
+const liveForm=document.getElementById('livePurchaseFilter'),liveInput=liveForm.querySelector('[name="q"]');let liveTimer;liveInput.addEventListener('input',()=>{clearTimeout(liveTimer);liveTimer=setTimeout(()=>liveForm.requestSubmit(),350)});
 document.getElementById('select-all').onchange = function(){
     document.querySelectorAll('.item-checkbox').forEach(cb => cb.checked = this.checked);
     updateStatusBtn();

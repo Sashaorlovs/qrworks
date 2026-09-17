@@ -90,7 +90,18 @@ def matching_lots(requirement, lock=False):
     ).select_related("grade", "order")
     if lock:
         qs = qs.select_for_update()
-    return [lot for lot in qs.order_by("order_id", "received_at", "id") if stock_matches_requirement(lot, requirement)]
+    lots = [lot for lot in qs.order_by("received_at", "id") if stock_matches_requirement(lot, requirement)]
+
+    def source_priority(lot):
+        if requirement.order_id:
+            if lot.order_id == requirement.order_id:
+                return 0
+            if lot.order_id is None:
+                return 1
+            return 2
+        return 0 if lot.order_id is None else 1
+
+    return sorted(lots, key=lambda lot: (source_priority(lot), lot.received_at, lot.id))
 
 
 def available_for_requirement(requirement):
@@ -105,8 +116,12 @@ def available_for_requirement(requirement):
     return {
         "quantity": sum((lot.quantity_remaining for lot in lots), ZERO),
         "length_mm": sum((lot.length_remaining_mm for lot in lots), ZERO),
+        "length_m": sum((lot.length_remaining_mm for lot in lots), ZERO) / Decimal("1000"),
         "mass_kg": sum((lot.mass_remaining_kg for lot in lots), ZERO),
-        "breakdown": list(grouped.values()),
+        "breakdown": [
+            {**values, "length_m": values["length_mm"] / Decimal("1000")}
+            for values in grouped.values()
+        ],
     }
 
 
@@ -161,7 +176,7 @@ def create_material_request(order, requirements, user, purpose="", destination="
         return document
 
 
-def issue_request_lines(request_document, line_values, recipient, basis, user):
+def issue_request_lines(request_document, line_values, recipient, basis, user, issuer_name=""):
     batch_token = uuid.uuid4().hex
     created_transactions = []
     with transaction.atomic():
@@ -224,6 +239,7 @@ def issue_request_lines(request_document, line_values, recipient, basis, user):
                     mass_kg=take_mass,
                     recipient=recipient,
                     recipient_name=str(recipient),
+                    issuer_name=issuer_name,
                     basis=basis or document.purpose or document.number,
                     batch_token=batch_token,
                     created_by=user,

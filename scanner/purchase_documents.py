@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -143,9 +144,9 @@ def issue_purchase_request(document, quantities, recipient, basis, user, issuer=
     line_by_item = {}
     for line in selected_lines:
         try:
-            quantity = int(quantities.get(line.id, 0))
-        except (TypeError, ValueError):
-            raise ValidationError('Количество должно быть целым числом.')
+            quantity = Decimal(str(quantities.get(line.id, 0)).replace(',', '.'))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValidationError('Количество должно быть числом.')
         if quantity <= 0:
             raise ValidationError('Количество к выдаче должно быть больше нуля.')
         if quantity > line.quantity_remaining:
@@ -201,9 +202,9 @@ def issue_purchase_request(document, quantities, recipient, basis, user, issuer=
 @transaction.atomic
 def issue_general_surplus(item_id, quantity, recipient, basis, user, issuer=None):
     try:
-        quantity = int(quantity)
-    except (TypeError, ValueError):
-        raise ValidationError('Количество должно быть целым числом.')
+        quantity = Decimal(str(quantity).replace(',', '.'))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValidationError('Количество должно быть числом.')
     if quantity <= 0:
         raise ValidationError('Количество к выдаче должно быть больше нуля.')
 

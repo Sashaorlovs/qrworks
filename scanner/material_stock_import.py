@@ -71,6 +71,8 @@ FIELD_ALIASES = {
     "quantity": ["количество", "кол-во", "шт"],
     "piece_length_mm": ["длина куска", "длина листа", "длина единицы", "длина, мм", "длина"],
     "total_length_mm": ["общая длина", "всего длина"],
+    "piece_length_m": ["длина куска, м", "длина листа, м", "длина единицы, м", "длина, м"],
+    "total_length_m": ["общая длина, м", "всего длина, м"],
     "thickness_mm": ["толщина листа", "толщина, мм", "толщина"],
     "width_mm": ["ширина, мм", "ширина"],
     "height_mm": ["высота, мм", "высота"],
@@ -142,6 +144,13 @@ def _serial_decimal(value):
     return str(value) if value is not None else None
 
 
+def _length_mm(row, headers, meter_field="piece_length_m", millimeter_field="piece_length_mm", default=None):
+    meters = decimal_value(_row_value(row, headers, meter_field, None), None)
+    if meters is not None:
+        return meters * Decimal("1000")
+    return decimal_value(_row_value(row, headers, millimeter_field, default), default)
+
+
 def _date_value(value):
     if value in (None, ""):
         return None
@@ -189,7 +198,7 @@ def _parse_auxiliary_row(sheet, row_number, row, headers):
         raise ValidationError("количество должно быть больше нуля")
     density = decimal_value(_row_value(row, headers, "density_kg_l", None), None)
     width = decimal_value(_row_value(row, headers, "width_mm", None), None)
-    length = decimal_value(_row_value(row, headers, "piece_length_mm", None), None)
+    length = _length_mm(row, headers)
     estimated_mass = ZERO
     if unit == "kg":
         estimated_mass = quantity
@@ -221,6 +230,7 @@ def _parse_auxiliary_row(sheet, row_number, row, headers):
         "thickness_mm": _serial_decimal(decimal_value(_row_value(row, headers, "thickness_mm", None), None)),
         "width_mm": _serial_decimal(width),
         "length_mm": _serial_decimal(length),
+        "length_m": _serial_decimal(length / Decimal("1000") if length is not None else None),
         "mesh_cell_width_mm": _serial_decimal(decimal_value(_row_value(row, headers, "mesh_cell_width_mm", None), None)),
         "mesh_cell_height_mm": _serial_decimal(decimal_value(_row_value(row, headers, "mesh_cell_height_mm", None), None)),
         "wire_diameter_mm": _serial_decimal(decimal_value(_row_value(row, headers, "wire_diameter_mm", None), None)),
@@ -281,8 +291,11 @@ def parse_stock_workbook(workbook):
                     raise ValidationError(f"марка «{grade_name}» отсутствует в справочнике плотностей")
 
                 quantity = decimal_value(_row_value(row, headers, "quantity", 0))
-                piece_length = decimal_value(_row_value(row, headers, "piece_length_mm", None), None)
-                total_length = decimal_value(_row_value(row, headers, "total_length_mm", 0))
+                piece_length = _length_mm(row, headers)
+                total_length = _length_mm(
+                    row, headers, meter_field="total_length_m",
+                    millimeter_field="total_length_mm", default=ZERO,
+                )
                 if quantity <= 0:
                     raise ValidationError("количество должно быть больше нуля")
                 if quantity != quantity.to_integral_value():
@@ -293,7 +306,7 @@ def parse_stock_workbook(workbook):
                 if profile_type != "sheet":
                     if total_length > 0 and abs(total_length - calculated_length) > Decimal("0.001"):
                         raise ValidationError(
-                            f"общая длина {total_length} мм не равна длине куска × количеству ({calculated_length} мм)"
+                            f"общая длина {total_length / Decimal('1000')} м не равна длине куска × количеству ({calculated_length / Decimal('1000')} м)"
                         )
                     total_length = calculated_length
 
@@ -336,7 +349,9 @@ def parse_stock_workbook(workbook):
                     "profile_name": values["profile_name"],
                     "quantity": _serial_decimal(quantity),
                     "piece_length_mm": _serial_decimal(piece_length),
+                    "piece_length_m": _serial_decimal(piece_length / Decimal("1000") if piece_length is not None else None),
                     "total_length_mm": _serial_decimal(total_length),
+                    "total_length_m": _serial_decimal(total_length / Decimal("1000")),
                     "thickness_mm": _serial_decimal(values["thickness_mm"]),
                     "width_mm": _serial_decimal(values["width_mm"]),
                     "height_mm": _serial_decimal(values["height_mm"]),
@@ -583,7 +598,8 @@ def stock_group_key(lot):
 
 def stock_group_dimensions(lot):
     if lot.profile_type == "sheet":
-        return f"{lot.thickness_mm or '—'} × {lot.width_mm or '—'} × {lot.piece_length_mm or '—'} мм"
+        length_m = lot.piece_length_mm / Decimal("1000") if lot.piece_length_mm else "—"
+        return f"{lot.thickness_mm or '—'} мм × {lot.width_mm or '—'} мм × {length_m} м"
     if lot.profile_type == "round_pipe":
         return f"Ø{lot.outer_diameter_mm or '—'} × {lot.wall_thickness_mm or '—'} мм"
     if lot.profile_type == "rect_tube":

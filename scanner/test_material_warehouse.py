@@ -13,10 +13,12 @@ from scanner.material_models import (
     AuxiliaryMaterialTransaction,
     MaterialGrade,
     MaterialRequirement,
+    MaterialRequest,
     MaterialStockLot,
     MaterialTransaction,
+    WarehouseIssuer,
 )
-from scanner.material_services import available_for_requirement, create_material_request, issue_request_lines
+from scanner.material_services import available_for_requirement, create_material_request, issue_request_lines, matching_lots
 from scanner.material_stock_import import (
     create_stock_lots_from_preview,
     group_auxiliary_lots,
@@ -65,6 +67,12 @@ class MaterialCalculationTests(TestCase):
 class GeneralMaterialRequirementTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_superuser(username="general-material", password="x")
+        Employee.objects.bulk_create([
+            Employee(
+                user=self.user, last_name="Сидоров", first_name="Сергей",
+                middle_name="Петрович", is_active=True,
+            )
+        ])
         self.steel = MaterialGrade.objects.create(name="Сталь общая", category="steel", density_kg_m3=7850)
 
     def test_import_without_project_creates_general_requirement(self):
@@ -108,7 +116,37 @@ class GeneralMaterialRequirementTests(TestCase):
         )
         self.assertIsNone(document.order)
         self.assertEqual(document.destination, "Приспособление для сварки")
+        self.assertEqual(document.requested_by_name, "Сидоров Сергей Петрович")
         self.assertEqual(document.lines.count(), 1)
+
+    def test_open_request_can_be_rejected_with_reason(self):
+        requirement = MaterialRequirement.objects.create(
+            order=None, destination="Заявка на ремонт №15",
+            item_name="Лист для ремонта", grade=self.steel,
+            profile_type="sheet", thickness_mm=3, width_mm=1000,
+            piece_length_mm=2000, quantity_required=1,
+        )
+        document = create_material_request(
+            None, [requirement], self.user, destination="Заявка на ремонт №15",
+        )
+        self.client.force_login(self.user)
+        response = self.client.post(
+            f"/materials/request/{document.id}/reject/",
+            {"rejection_reason": "Потребность создана ошибочно"},
+        )
+        self.assertRedirects(response, f"/materials/request/{document.id}/")
+        document.refresh_from_db()
+        self.assertEqual(document.status, "cancelled")
+        self.assertEqual(document.rejection_reason, "Потребность создана ошибочно")
+        self.assertEqual(document.rejected_by, self.user)
+        self.assertIsNotNone(document.rejected_at)
+
+    def test_reject_requires_reason(self):
+        document = MaterialRequest.objects.create(number="МЗ-TEST-001", requested_by=self.user)
+        self.client.force_login(self.user)
+        self.client.post(f"/materials/request/{document.id}/reject/", {"rejection_reason": ""})
+        document.refresh_from_db()
+        self.assertEqual(document.status, "open")
 
     def test_availability_uses_matching_stock_from_all_projects(self):
         demand_order = Order.objects.create(order_number="DEMAND", full_name="Новый проект")
@@ -129,6 +167,33 @@ class GeneralMaterialRequirementTests(TestCase):
         available = available_for_requirement(requirement)
         self.assertEqual(available["quantity"], Decimal("2"))
         self.assertEqual({row["label"] for row in available["breakdown"]}, {"Общий склад", "SOURCE"})
+
+    def test_project_issue_priority_is_own_then_common_then_other_project(self):
+        demand_order = Order.objects.create(order_number="TARGET", full_name="Целевой проект")
+        source_order = Order.objects.create(order_number="OTHER", full_name="Другой проект")
+        requirement = MaterialRequirement.objects.create(
+            order=demand_order, item_name="Лист для изделия", grade=self.steel,
+            profile_type="sheet", thickness_mm=3, width_mm=1000,
+            piece_length_mm=2000, quantity_required=3,
+        )
+        for order in (source_order, None, demand_order):
+            lot = MaterialStockLot(
+                order=order, name="Лист 3 мм", grade=self.steel,
+                profile_type="sheet", thickness_mm=3, width_mm=1000,
+                piece_length_mm=2000, quantity_initial=1, created_by=self.user,
+            )
+            lot.initialize_balances()
+            lot.save()
+        self.assertEqual(
+            [lot.order.order_number if lot.order else "Общий склад" for lot in matching_lots(requirement)],
+            ["TARGET", "Общий склад", "OTHER"],
+        )
+
+        requirement.order = None
+        self.assertEqual(
+            [lot.order.order_number if lot.order else "Общий склад" for lot in matching_lots(requirement)],
+            ["Общий склад", "OTHER", "TARGET"],
+        )
 
 
 class MaterialIssueTests(TestCase):
@@ -173,6 +238,7 @@ class MaterialIssueTests(TestCase):
             self.employee,
             "На раму",
             self.user,
+            "Макарова Оксана Михайловна",
         )
         self.assertTrue(token)
         self.assertEqual(len(rows), 1)
@@ -183,6 +249,7 @@ class MaterialIssueTests(TestCase):
         self.assertEqual(line.length_issued_mm, Decimal("3000"))
         self.assertEqual(document.status, "partial")
         self.assertEqual(MaterialTransaction.objects.filter(transaction_type="out").count(), 1)
+        self.assertEqual(MaterialTransaction.objects.get(transaction_type="out").issuer_name, "Макарова Оксана Михайловна")
 
     def test_overissue_rolls_back_stock(self):
         document = create_material_request(self.order, [self.requirement], self.user)
@@ -268,6 +335,21 @@ class MaterialStockImportTests(TestCase):
             [row["profile_type"] for row in rows],
             ["hex_bar", "channel", "beam", "bulb_flat"],
         )
+
+    def test_meter_headers_are_converted_to_internal_millimeters(self):
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = "Труба"
+        sheet.append([
+            "Наименование", "Вид трубы", "Марка материала", "Сортамент",
+            "Наружный диаметр, мм", "Толщина стенки, мм", "Длина куска, м", "Количество",
+        ])
+        sheet.append(["Труба 57×3,5", "Труба круглая", self.steel.name, "57×3,5", 57, 3.5, "6,25", 2])
+        rows, errors = parse_stock_workbook(workbook)
+        self.assertEqual(errors, [])
+        self.assertEqual(rows[0]["piece_length_mm"], "6250.00")
+        self.assertEqual(rows[0]["total_length_mm"], "12500.00")
+        self.assertEqual(rows[0]["piece_length_m"], "6.25")
 
     def test_stock_pages_and_template_open(self):
         self.client.force_login(self.user)
@@ -431,6 +513,7 @@ class AuxiliaryMaterialTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_superuser(username="auxiliary-stock", password="x")
         self.employee = Employee.objects.create(last_name="Петров", first_name="Пётр", is_active=True)
+        self.issuer = WarehouseIssuer.objects.create(name="Тестовый сотрудник склада")
 
     def workbook(self):
         workbook = openpyxl.Workbook()
@@ -480,17 +563,18 @@ class AuxiliaryMaterialTests(TestCase):
         self.client.force_login(self.user)
         response = self.client.post(
             f"/materials/stock/auxiliary/{lot.id}/issue/",
-            {"quantity": "3.5", "recipient_id": self.employee.id, "basis": "ТО оборудования"},
+            {"quantity": "3.5", "recipient_id": self.employee.id, "issuer_id": self.issuer.id, "basis": "ТО оборудования"},
         )
         self.assertRedirects(response, "/materials/stock/")
         lot.refresh_from_db()
         self.assertEqual(lot.quantity_remaining, Decimal("6.500"))
         movement = AuxiliaryMaterialTransaction.objects.get(transaction_type="out")
         self.assertEqual(movement.recipient_name, "Петров Пётр")
+        self.assertEqual(movement.issuer_name, "Тестовый сотрудник склада")
 
         response = self.client.post(
             f"/materials/stock/auxiliary/{lot.id}/issue/",
-            {"quantity": "7", "recipient_id": self.employee.id},
+            {"quantity": "7", "recipient_id": self.employee.id, "issuer_id": self.issuer.id},
         )
         self.assertRedirects(response, "/materials/stock/")
         lot.refresh_from_db()

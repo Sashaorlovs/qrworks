@@ -1,9 +1,12 @@
 from django.urls import path
-from scanner.purchase_views import purchase_remains_issue, purchase_general_issue, purchase_issue_log, purchase_spec_list, purchase_spec_detail, purchase_import, purchase_import_template, purchase_change_status, purchase_remains, purchase_issue, purchase_issue_remains, purchase_bulk_issue, purchase_reprint_nakladnaya, purchase_export_request, purchase_requests, purchase_create_request, purchase_request_detail, purchase_request_print, purchase_invoice_print
+from scanner.purchase_views import purchase_remains_issue, purchase_general_issue, purchase_issue_log, purchase_spec_list, purchase_spec_detail, purchase_preparation_detail, purchase_import, purchase_import_template, purchase_change_status, purchase_remains, purchase_issue, purchase_issue_remains, purchase_bulk_issue, purchase_reprint_nakladnaya, purchase_export_request, purchase_requests, purchase_create_request, purchase_request_detail, purchase_request_cancel, purchase_request_print, purchase_invoice_print, purchase_statement_manage, purchase_statement_delete
 
 urlpatterns = [
     path('', purchase_spec_list, name='purchase_list'),
+    path('manage/', purchase_statement_manage, name='purchase_statement_manage'),
+    path('manage/<str:statement_type>/<int:object_id>/delete/', purchase_statement_delete, name='purchase_statement_delete'),
     path('<int:spec_id>/', purchase_spec_detail, name='purchase_spec_detail'),
+    path('preparation/<int:preparation_id>/', purchase_preparation_detail, name='purchase_preparation_detail'),
     path('import/', purchase_import, name='purchase_import'),
     path('import/template/', purchase_import_template, name='purchase_import_template'),
     path('change-status/', purchase_change_status, name='purchase_change_status'),
@@ -18,6 +21,7 @@ urlpatterns = [
     path('export-request/', purchase_export_request, name='purchase_export_request'),
     path('requests/', purchase_requests, name='purchase_requests'),
     path('request/<int:request_id>/', purchase_request_detail, name='purchase_request_detail'),
+    path('request/<int:request_id>/cancel/', purchase_request_cancel, name='purchase_request_cancel'),
     path('request/<int:request_id>/print/', purchase_request_print, name='purchase_request_print'),
     path('order/<int:order_id>/request/', purchase_create_request, name='purchase_create_request'),
     path('invoice/<str:batch_token>/print/', purchase_invoice_print, name='purchase_invoice_print'),

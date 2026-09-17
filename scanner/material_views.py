@@ -1,4 +1,5 @@
 from collections import defaultdict, OrderedDict
+from decimal import Decimal
 from io import BytesIO
 import uuid
 
@@ -10,6 +11,7 @@ from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
@@ -22,6 +24,7 @@ from scanner.material_models import (
     MaterialRequest,
     MaterialStockLot,
     MaterialTransaction,
+    WarehouseIssuer,
     ZERO,
 )
 from scanner.material_services import (
@@ -50,6 +53,18 @@ def _can_use_material_warehouse(user):
 
 
 material_access_required = user_passes_test(_can_use_material_warehouse)
+
+
+MM_PER_METER = Decimal("1000")
+
+
+def _millimeters_from_meters(value, default=ZERO):
+    meters = decimal_value(value, None)
+    return default if meters is None else meters * MM_PER_METER
+
+
+def _meters(value):
+    return (value or ZERO) / MM_PER_METER
 
 
 def _row_value(row, headers, aliases, default=None):
@@ -299,16 +314,16 @@ def material_import_template(request):
         for column in sheet.columns:
             sheet.column_dimensions[column[0].column_letter].width = min(30, max(13, max(len(str(c.value or "")) for c in column) + 2))
 
-    make_sheet("Лист", ["Наименование", "Узел / подсборка", "Марка материала", "Толщина, мм", "Ширина, мм", "Длина листа, мм", "Количество"], [["Лист 8 мм", "Корпус", "Ст3", 8, 1500, 6000, 2]])
-    make_sheet("Труба", ["Наименование", "Узел / подсборка", "Вид трубы", "Марка материала", "Сортамент", "Наружный диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина стенки, мм", "Длина куска, мм", "Количество"], [["Труба 57×3,5", "Рама", "Труба круглая", "Сталь", "57×3,5", 57, "", "", 3.5, 6000, 4]])
-    make_sheet("Прокат", ["Наименование", "Узел / подсборка", "Вид профиля", "Марка материала", "Сортамент", "Диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина, мм", "Длина куска, мм", "Количество", "Масса 1 м, кг"], [
-        ["Круг 40", "Вал", "Круг", "Сталь", "Круг 40", 40, "", "", "", 3000, 2, ""],
-        ["Квадрат 20", "Рама", "Квадрат", "Сталь", "20×20", "", 20, "", "", 6000, 2, ""],
-        ["Шестигранник 24", "Крепление", "Шестигранник", "Сталь", "S24", "", 24, "", "", 3000, 2, ""],
+    make_sheet("Лист", ["Наименование", "Узел / подсборка", "Марка материала", "Толщина, мм", "Ширина, мм", "Длина листа, м", "Количество"], [["Лист 8 мм", "Корпус", "Ст3", 8, 1500, 6, 2]])
+    make_sheet("Труба", ["Наименование", "Узел / подсборка", "Вид трубы", "Марка материала", "Сортамент", "Наружный диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина стенки, мм", "Длина куска, м", "Количество"], [["Труба 57×3,5", "Рама", "Труба круглая", "Сталь", "57×3,5", 57, "", "", 3.5, 6, 4]])
+    make_sheet("Прокат", ["Наименование", "Узел / подсборка", "Вид профиля", "Марка материала", "Сортамент", "Диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина, мм", "Длина куска, м", "Количество", "Масса 1 м, кг"], [
+        ["Круг 40", "Вал", "Круг", "Сталь", "Круг 40", 40, "", "", "", 3, 2, ""],
+        ["Квадрат 20", "Рама", "Квадрат", "Сталь", "20×20", "", 20, "", "", 6, 2, ""],
+        ["Шестигранник 24", "Крепление", "Шестигранник", "Сталь", "S24", "", 24, "", "", 3, 2, ""],
     ])
-    make_sheet("Прочие материалы", ["Категория", "Наименование", "Узел / подсборка", "Марка / производитель", "Характеристика", "Единица учета", "Количество", "Тара / упаковка", "Плотность, кг/л", "Толщина, мм", "Ширина, мм", "Длина, мм", "Ячейка X, мм", "Ячейка Y, мм", "Диаметр проволоки, мм"], [
+    make_sheet("Прочие материалы", ["Категория", "Наименование", "Узел / подсборка", "Марка / производитель", "Характеристика", "Единица учета", "Количество", "Тара / упаковка", "Плотность, кг/л", "Толщина, мм", "Ширина, мм", "Длина, м", "Ячейка X, мм", "Ячейка Y, мм", "Диаметр проволоки, мм"], [
         ["Краска / покрытие", "Эмаль ПФ-115 синяя", "Корпус", "Лакра", "RAL 5005", "л", 20, "4 банки по 5 л", 1.2, "", "", "", "", "", ""],
-        ["Сетка", "Сетка сварная 50×50", "Ограждение", "", "Карта сетки", "м²", 12, "", "", "", 1000, 2000, 50, 50, 3],
+        ["Сетка", "Сетка сварная 50×50", "Ограждение", "", "Карта сетки", "м²", 12, "", "", "", 1000, 2, 50, 50, 3],
     ])
     density = workbook.create_sheet("Справочник плотностей")
     density.append(["Марка материала", "Группа", "Плотность, кг/м³"])
@@ -345,12 +360,15 @@ def material_order_detail(request, order_id):
         item.issued_length_mm = issued["length"] or ZERO
         item.issued_mass_kg = issued["mass"] or ZERO
         item.available = available_for_requirement(item)
+        item.total_length_required_m = _meters(item.total_length_required_mm)
+        item.issued_length_m = _meters(item.issued_length_mm)
         if item.is_linear:
             item.shortage_length_mm = max(
                 ZERO, item.total_length_required_mm - item.issued_length_mm - item.available["length_mm"]
             )
             item.shortage_quantity = ZERO
             item.shortage_mass_kg = item.calculate_mass(ZERO, item.shortage_length_mm)
+            item.shortage_length_m = _meters(item.shortage_length_mm)
         else:
             item.shortage_quantity = max(
                 ZERO, item.quantity_required - item.issued_quantity - item.available["quantity"]
@@ -400,12 +418,15 @@ def material_general_detail(request):
         item.issued_length_mm = issued["length"] or ZERO
         item.issued_mass_kg = issued["mass"] or ZERO
         item.available = available_for_requirement(item)
+        item.total_length_required_m = _meters(item.total_length_required_mm)
+        item.issued_length_m = _meters(item.issued_length_mm)
         if item.is_linear:
             item.shortage_length_mm = max(
                 ZERO, item.total_length_required_mm - item.issued_length_mm - item.available["length_mm"]
             )
             item.shortage_quantity = ZERO
             item.shortage_mass_kg = item.calculate_mass(ZERO, item.shortage_length_mm)
+            item.shortage_length_m = _meters(item.shortage_length_mm)
         else:
             item.shortage_quantity = max(
                 ZERO, item.quantity_required - item.issued_quantity - item.available["quantity"]
@@ -490,13 +511,13 @@ def material_stock(request):
                 batch_number=request.POST.get("batch_number", "").strip(),
                 storage_location=request.POST.get("storage_location", "").strip(),
                 quantity_initial=decimal_value(request.POST.get("quantity")),
-                length_initial_mm=decimal_value(request.POST.get("length_mm")),
+                length_initial_mm=_millimeters_from_meters(request.POST.get("length_m")),
                 thickness_mm=decimal_value(request.POST.get("thickness_mm"), None),
                 width_mm=decimal_value(request.POST.get("width_mm"), None),
                 height_mm=decimal_value(request.POST.get("height_mm"), None),
                 outer_diameter_mm=decimal_value(request.POST.get("outer_diameter_mm"), None),
                 wall_thickness_mm=decimal_value(request.POST.get("wall_thickness_mm"), None),
-                piece_length_mm=decimal_value(request.POST.get("piece_length_mm"), None),
+                piece_length_mm=_millimeters_from_meters(request.POST.get("piece_length_m"), None),
                 kg_per_meter=decimal_value(request.POST.get("kg_per_meter"), None),
                 unit_mass_kg=decimal_value(request.POST.get("unit_mass_kg"), None),
                 created_by=request.user,
@@ -538,6 +559,7 @@ def material_stock(request):
         "q": q, "grades": MaterialGrade.objects.filter(is_active=True),
         "orders": Order.objects.order_by("-id")[:100], "profiles": MaterialRequirement.PROFILE_CHOICES,
         "employees": Employee.objects.filter(is_active=True).order_by("last_name", "first_name", "middle_name"),
+        "warehouse_issuers": WarehouseIssuer.objects.filter(is_active=True),
         "auxiliary_categories": AuxiliaryMaterialLot.CATEGORY_CHOICES,
         "auxiliary_units": AuxiliaryMaterialLot.UNIT_CHOICES,
     })
@@ -577,7 +599,7 @@ def material_auxiliary_receipt(request):
                 density_kg_l=decimal_value(request.POST.get("density_kg_l"), None),
                 thickness_mm=decimal_value(request.POST.get("thickness_mm"), None),
                 width_mm=decimal_value(request.POST.get("width_mm"), None),
-                length_mm=decimal_value(request.POST.get("length_mm"), None),
+                length_mm=_millimeters_from_meters(request.POST.get("length_m"), None),
                 mesh_cell_width_mm=decimal_value(request.POST.get("mesh_cell_width_mm"), None),
                 mesh_cell_height_mm=decimal_value(request.POST.get("mesh_cell_height_mm"), None),
                 wire_diameter_mm=decimal_value(request.POST.get("wire_diameter_mm"), None),
@@ -608,6 +630,7 @@ def material_auxiliary_issue(request, lot_id):
         if quantity <= 0:
             raise ValidationError("Количество выдачи должно быть больше нуля.")
         recipient = get_object_or_404(Employee, pk=request.POST.get("recipient_id"), is_active=True)
+        issuer = get_object_or_404(WarehouseIssuer, pk=request.POST.get("issuer_id"), is_active=True)
         with transaction.atomic():
             lot = get_object_or_404(AuxiliaryMaterialLot.objects.select_for_update(), pk=lot_id)
             if quantity > lot.quantity_remaining:
@@ -622,6 +645,7 @@ def material_auxiliary_issue(request, lot_id):
                 quantity=quantity,
                 recipient=recipient,
                 recipient_name=str(recipient).strip(),
+                issuer_name=issuer.name,
                 basis=request.POST.get("basis", "").strip() or "Общепроизводственные нужды",
                 created_by=request.user,
             )
@@ -746,25 +770,25 @@ def material_stock_import_template(request):
 
     make_sheet(
         "Лист",
-        ["Наименование", "Марка материала", "Толщина, мм", "Ширина, мм", "Длина листа, мм", "Количество", "Место хранения"],
-        ["Лист 8 мм", "Ст3", 8, 1500, 6000, 3, "Стеллаж Л-1"],
+        ["Наименование", "Марка материала", "Толщина, мм", "Ширина, мм", "Длина листа, м", "Количество", "Место хранения"],
+        ["Лист 8 мм", "Ст3", 8, 1500, 6, 3, "Стеллаж Л-1"],
     )
     make_sheet(
         "Труба",
-        ["Наименование", "Вид трубы", "Марка материала", "Сортамент", "Наружный диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина стенки, мм", "Длина куска, мм", "Количество", "Место хранения"],
-        ["Труба 57×3,5", "Труба круглая", "Сталь", "57×3,5", 57, "", "", 3.5, 6000, 5, "Стеллаж Т-2"],
+        ["Наименование", "Вид трубы", "Марка материала", "Сортамент", "Наружный диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина стенки, мм", "Длина куска, м", "Количество", "Место хранения"],
+        ["Труба 57×3,5", "Труба круглая", "Сталь", "57×3,5", 57, "", "", 3.5, 6, 5, "Стеллаж Т-2"],
     )
     rolled = make_sheet(
         "Прокат",
-        ["Наименование", "Вид профиля", "Марка материала", "Сортамент", "Диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина, мм", "Длина куска, мм", "Количество", "Масса 1 м, кг", "Место хранения"],
-        ["Круг 40", "Круг", "Сталь", "Круг 40", 40, "", "", "", 3000, 2, "", "Стеллаж П-1"],
+        ["Наименование", "Вид профиля", "Марка материала", "Сортамент", "Диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина, мм", "Длина куска, м", "Количество", "Масса 1 м, кг", "Место хранения"],
+        ["Круг 40", "Круг", "Сталь", "Круг 40", 40, "", "", "", 3, 2, "", "Стеллаж П-1"],
     )
-    rolled.append(["Квадрат 20", "Квадрат", "Сталь", "20×20", "", 20, "", "", 6000, 2, "", "Стеллаж П-1"])
-    rolled.append(["Шестигранник 24", "Шестигранник", "Сталь", "S24", "", 24, "", "", 3000, 2, "", "Стеллаж П-1"])
+    rolled.append(["Квадрат 20", "Квадрат", "Сталь", "20×20", "", 20, "", "", 6, 2, "", "Стеллаж П-1"])
+    rolled.append(["Шестигранник 24", "Шестигранник", "Сталь", "S24", "", 24, "", "", 3, 2, "", "Стеллаж П-1"])
     auxiliary_headers = [
         "Категория", "Наименование", "Марка / производитель", "Характеристика",
         "Единица учета", "Количество", "Тара / упаковка", "Плотность, кг/л",
-        "Толщина, мм", "Ширина, мм", "Длина, мм", "Ячейка X, мм", "Ячейка Y, мм",
+        "Толщина, мм", "Ширина, мм", "Длина, м", "Ячейка X, мм", "Ячейка Y, мм",
         "Диаметр проволоки, мм", "Срок годности", "Место хранения",
     ]
     auxiliary = make_sheet(
@@ -775,7 +799,7 @@ def material_stock_import_template(request):
     )
     auxiliary.append([
         "Сетка", "Сетка сварная 50×50", "", "Карта сетки", "м²", 12, "",
-        "", "", 1000, 2000, 50, 50, 3, "", "Стеллаж С-1",
+        "", "", 1000, 2, 50, 50, 3, "", "Стеллаж С-1",
     ])
     density = workbook.create_sheet("Справочник плотностей")
     density.append(["Марка материала", "Группа", "Плотность, кг/м³", "ГОСТ / стандарт"])
@@ -791,7 +815,7 @@ def material_stock_import_template(request):
     instruction = workbook.create_sheet("Инструкция", 0)
     instruction.append(["Загрузка склада материалов"])
     instruction.append(["1. Заполняйте подходящий лист: Лист, Труба, Прокат или Прочие материалы."])
-    instruction.append(["2. Для кусков трубы и проката каждая строка содержит одну длину и количество одинаковых кусков."])
+    instruction.append(["2. Длину листа, трубы и проката указывайте в метрах. Толщину, ширину, высоту и диаметр — в миллиметрах."])
     instruction.append(["3. Куски разной длины вносите отдельными строками."])
     instruction.append(["4. Проект и основание прихода выбираются один раз на странице загрузки, а не заполняются в Excel."])
     instruction.append(["5. Марка должна совпадать со справочником плотностей в этом файле."])
@@ -838,19 +862,19 @@ def material_stock_export(request):
 
     sheet_page = make_sheet(
         "Лист",
-        ["Наименование", "Марка материала", "Толщина, мм", "Ширина, мм", "Длина листа, мм", "Количество", "Место хранения"],
+        ["Наименование", "Марка материала", "Толщина, мм", "Ширина, мм", "Длина листа, м", "Количество", "Место хранения"],
     )
     pipe_page = make_sheet(
         "Труба",
-        ["Наименование", "Вид трубы", "Марка материала", "Сортамент", "Наружный диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина стенки, мм", "Длина куска, мм", "Количество", "Место хранения"],
+        ["Наименование", "Вид трубы", "Марка материала", "Сортамент", "Наружный диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина стенки, мм", "Длина куска, м", "Количество", "Место хранения"],
     )
     rolled_page = make_sheet(
         "Прокат",
-        ["Наименование", "Вид профиля", "Марка материала", "Сортамент", "Диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина, мм", "Длина куска, мм", "Количество", "Масса 1 м, кг", "Место хранения"],
+        ["Наименование", "Вид профиля", "Марка материала", "Сортамент", "Диаметр, мм", "Ширина, мм", "Высота, мм", "Толщина, мм", "Длина куска, м", "Количество", "Масса 1 м, кг", "Место хранения"],
     )
     auxiliary_page = make_sheet(
         "Прочие материалы",
-        ["Категория", "Наименование", "Марка / производитель", "Характеристика", "Единица учета", "Количество", "Тара / упаковка", "Плотность, кг/л", "Толщина, мм", "Ширина, мм", "Длина, мм", "Ячейка X, мм", "Ячейка Y, мм", "Диаметр проволоки, мм", "Срок годности", "Место хранения"],
+        ["Категория", "Наименование", "Марка / производитель", "Характеристика", "Единица учета", "Количество", "Тара / упаковка", "Плотность, кг/л", "Толщина, мм", "Ширина, мм", "Длина, м", "Ячейка X, мм", "Ячейка Y, мм", "Диаметр проволоки, мм", "Срок годности", "Место хранения"],
     )
 
     def number(value):
@@ -867,14 +891,14 @@ def material_stock_export(request):
         if lot.profile_type == "sheet":
             row = (
                 lot.name, lot.grade.name, lot.thickness_mm, lot.width_mm,
-                lot.piece_length_mm, lot.storage_location,
+                lot.piece_length_mm / MM_PER_METER if lot.piece_length_mm is not None else None, lot.storage_location,
             )
             key = ("sheet",) + row
             grouped.setdefault(key, {"row": row, "quantity": ZERO})["quantity"] += lot.quantity_remaining
             continue
 
         pieces = lot.quantity_remaining if lot.quantity_remaining > 0 else 1
-        length_each = lot.length_remaining_mm / pieces
+        length_each = lot.length_remaining_mm / pieces / MM_PER_METER
         if lot.profile_type in {"round_pipe", "rect_tube"}:
             profile_label = "Труба круглая" if lot.profile_type == "round_pipe" else "Труба профильная"
             row = (
@@ -917,7 +941,9 @@ def material_stock_export(request):
         row = (
             lot.get_category_display(), lot.name, lot.brand, lot.characteristics,
             lot.get_unit_display(), lot.package_description, lot.density_kg_l,
-            lot.thickness_mm, lot.width_mm, lot.length_mm, lot.mesh_cell_width_mm,
+            lot.thickness_mm, lot.width_mm,
+            lot.length_mm / MM_PER_METER if lot.length_mm is not None else None,
+            lot.mesh_cell_width_mm,
             lot.mesh_cell_height_mm, lot.wire_diameter_mm, lot.expiry_date,
             lot.storage_location,
         )
@@ -934,7 +960,7 @@ def material_stock_export(request):
     instruction = workbook.create_sheet("Инструкция", 0)
     instruction.append(["Фактический склад материалов"])
     instruction.append([f"Выгружено: {scope_name}"])
-    instruction.append(["Измените фактические значения, удалите отсутствующие позиции или добавьте новые строки."])
+    instruction.append(["Измените фактические значения, удалите отсутствующие позиции или добавьте новые строки. Линейные длины указаны в метрах."])
     instruction.append(["Загрузите файл обратно с типом «Инвентаризация» и выберите тот же склад или проект."])
     instruction.append(["После подтверждения значения заменят текущие остатки без задвоения. История сохранится как корректировка."])
     instruction.column_dimensions["A"].width = 110
@@ -973,10 +999,19 @@ def material_request_detail(request, request_id):
     document = get_object_or_404(MaterialRequest.objects.select_related("order", "requested_by"), pk=request_id)
     if request.method == "POST":
         recipient = get_object_or_404(Employee, pk=request.POST.get("recipient_id"), is_active=True)
+        issuer = get_object_or_404(WarehouseIssuer, pk=request.POST.get("issuer_id"), is_active=True)
         selected = request.POST.getlist("line_ids")
-        values = {line.id: {"quantity": request.POST.get(f"quantity_{line.id}"), "length_mm": request.POST.get(f"length_{line.id}")} for line in document.lines.all() if str(line.id) in selected}
+        values = {
+            line.id: {
+                "quantity": request.POST.get(f"quantity_{line.id}"),
+                "length_mm": _millimeters_from_meters(request.POST.get(f"length_{line.id}")),
+            }
+            for line in document.lines.all() if str(line.id) in selected
+        }
         try:
-            batch_token, _ = issue_request_lines(document, values, recipient, request.POST.get("basis", ""), request.user)
+            batch_token, _ = issue_request_lines(
+                document, values, recipient, request.POST.get("basis", ""), request.user, issuer.name
+            )
             messages.success(request, "Материал выдан. Накладная сформирована.")
             return redirect("material_issue_print", batch_token=batch_token)
         except ValidationError as exc:
@@ -984,16 +1019,44 @@ def material_request_detail(request, request_id):
     lines = list(document.lines.select_related("requirement__grade", "requirement__assembly_ref__item"))
     for line in lines:
         line.available = available_for_requirement(line.requirement)
+        line.length_requested_m = _meters(line.length_requested_mm)
+        line.length_issued_m = _meters(line.length_issued_mm)
+        line.length_remaining_m = _meters(line.length_remaining_mm)
     return render(request, "scanner/material_request_detail.html", {
         "document": document, "lines": lines,
         "employees": Employee.objects.filter(is_active=True).order_by("last_name", "first_name"),
+        "warehouse_issuers": WarehouseIssuer.objects.filter(is_active=True),
     })
+
+
+@material_access_required
+@require_POST
+def material_request_reject(request, request_id):
+    reason = request.POST.get("rejection_reason", "").strip()
+    if not reason:
+        messages.error(request, "Укажите причину отклонения заявки.")
+        return redirect("material_request_detail", request_id=request_id)
+    with transaction.atomic():
+        document = get_object_or_404(MaterialRequest.objects.select_for_update(), pk=request_id)
+        if document.status != "open":
+            messages.error(request, "Отклонить можно только открытую заявку без проведённой выдачи.")
+            return redirect("material_request_detail", request_id=request_id)
+        document.status = "cancelled"
+        document.rejection_reason = reason
+        document.rejected_by = request.user
+        document.rejected_at = timezone.now()
+        document.save(update_fields=["status", "rejection_reason", "rejected_by", "rejected_at"])
+    messages.success(request, f"Заявка {document.number} отклонена.")
+    return redirect("material_request_detail", request_id=document.id)
 
 
 @material_access_required
 def material_request_print(request, request_id):
     document = get_object_or_404(MaterialRequest.objects.select_related("order", "requested_by"), pk=request_id)
-    return render(request, "scanner/material_request_print.html", {"document": document})
+    lines = list(document.lines.select_related("requirement__grade", "requirement__assembly_ref__item"))
+    for line in lines:
+        line.length_requested_m = _meters(line.length_requested_mm)
+    return render(request, "scanner/material_request_print.html", {"document": document, "lines": lines})
 
 
 @material_access_required
@@ -1003,9 +1066,11 @@ def material_issue_log(request):
     ).order_by("-created_at")
     by_token = defaultdict(list)
     for item in transactions:
+        item.length_m = _meters(item.length_mm)
         by_token[item.batch_token].append(item)
     groups = [{
         "token": token, "date": items[0].created_at, "recipient": items[0].recipient_name,
+        "issuer_name": items[0].issuer_name,
         "basis": items[0].basis, "order": items[0].order, "created_by": items[0].created_by,
         "destination": (
             items[0].request_line.request.destination
@@ -1023,7 +1088,10 @@ def material_issue_print(request, batch_token):
     ))
     if not items:
         return redirect("material_issue_log")
+    for item in items:
+        item.length_m = _meters(item.length_mm)
     return render(request, "scanner/material_issue_print.html", {
         "items": items, "head": items[0], "total_mass": sum((item.mass_kg for item in items), ZERO),
         "number": f"МН-{items[0].created_at:%Y%m%d}-{items[0].id}",
+        "issuer_name": items[0].issuer_name or str(items[0].created_by or ""),
     })

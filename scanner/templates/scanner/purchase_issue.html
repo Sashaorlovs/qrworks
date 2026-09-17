@@ -1,5 +1,17 @@
 {% extends 'scanner/base.html' %}
 {% block title %}Готово к выдаче{% endblock %}
-{% block content %}<div class="purchase-page"><div class="page-heading"><div><a href="{% url 'purchase_list' %}" class="small text-decoration-none">← Склад стандартных изделий</a><h1 class="mt-2">Готово к выдаче</h1><p class="text-muted mb-0">Только эти позиции доступны для фактической выдачи по онлайн-заявке.</p></div><a href="{% url 'purchase_requests' %}" class="btn btn-primary">Открыть заявки</a></div>
-<form method="get" class="card material-card card-body"><div class="row g-2"><div class="col-md-8"><input type="search" name="q" class="form-control" placeholder="Поиск по наименованию или подсборке" value="{{ q }}"></div><div class="col-md-4 d-flex gap-2"><button class="btn btn-primary flex-grow-1">Найти</button><a class="btn btn-outline-secondary" href="{% url 'purchase_issue' %}">Сбросить</a></div></div></form>
-<div class="card material-card"><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Наименование</th><th>Подсборка</th><th>Доступно</th><th>Проект</th><th>Статус</th><th></th></tr></thead><tbody>{% for item in items %}<tr><td><strong>{{ item.item_name }}</strong></td><td>{{ item.assembly_name|default:'—' }}</td><td><strong>{{ item.remaining }}</strong></td><td>{{ item.order.order_number }}<div class="small text-muted">{{ item.order.full_name|default:item.order.project }}</div></td><td><span class="badge text-bg-success">Готов к выдаче</span></td><td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'purchase_spec_detail' item.order_id %}">К спецификации</a></td></tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-5">Сейчас нет позиций в статусе «Готов к выдаче».</td></tr>{% endfor %}</tbody></table></div></div></div>{% endblock %}
+{% block content %}
+<div class="purchase-page">
+  <div class="page-heading">
+    <div><a href="{% url 'purchase_list' %}" class="small text-decoration-none">← Склад стандартных изделий</a><h1 class="mt-2">Готово к выдаче</h1><p class="text-muted mb-0">Только эти позиции доступны для фактической выдачи по онлайн-заявке.</p></div>
+    <a href="{% url 'purchase_requests' %}" class="btn btn-primary">Открыть заявки</a>
+  </div>
+  <form method="get" class="card material-card card-body" id="livePurchaseFilter">
+    <div class="row g-2"><div class="col-md-8"><input type="search" name="q" class="form-control" placeholder="Начните вводить наименование или подсборку" value="{{ q }}" autocomplete="off"></div><div class="col-md-4 d-flex gap-2"><button class="btn btn-primary flex-grow-1">Найти</button><a class="btn btn-outline-secondary" href="{% url 'purchase_issue' %}">Сбросить</a></div></div>
+  </form>
+  <div class="card material-card"><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Наименование</th><th>Подсборка</th><th>Доступно</th><th>Проект</th><th>Статус</th><th></th></tr></thead><tbody>
+    {% for item in items %}<tr><td><strong>{{ item.item_name }}</strong></td><td>{{ item.assembly_name|default:'—' }}</td><td><strong>{{ item.remaining|floatformat:-3 }}</strong></td><td>{{ item.order.order_number }}<div class="small text-muted">{{ item.order.full_name|default:item.order.project }}</div></td><td><span class="badge text-bg-success">Готов к выдаче</span></td><td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'purchase_spec_detail' item.order_id %}">К спецификации</a></td></tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-5">Сейчас нет позиций в статусе «Готов к выдаче».</td></tr>{% endfor %}
+  </tbody></table></div></div>
+</div>
+<script>const liveForm=document.getElementById('livePurchaseFilter'),liveInput=liveForm.querySelector('[name="q"]');let liveTimer;liveInput.addEventListener('input',()=>{clearTimeout(liveTimer);liveTimer=setTimeout(()=>liveForm.requestSubmit(),350)});</script>
+{% endblock %}

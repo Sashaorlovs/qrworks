@@ -9,14 +9,17 @@
 
   <div class="alert alert-light border">
     <strong>Проверка одинаковых наименований.</strong> Лишняя точка, двойной пробел, разные тире, регистр и варианты ×/х/x не создадут отдельную позицию. Повторная загрузка обновляет количество, а не прибавляет его второй раз.
+    <div class="mt-2"><strong>Заказ ещё не создан?</strong> Укажите название новой предварительной ведомости. Когда заказ появится в базе, её можно будет целиком привязать к нему без потери закупленного количества и статусов.</div>
   </div>
 
   <form method="post" enctype="multipart/form-data" class="card card-body mb-3">{% csrf_token %}
     <input type="hidden" name="action" value="preview">
     <div class="row g-3 align-items-end">
-      <div class="col-lg-6"><label class="form-label">Проект / заказ</label><select class="form-select" name="order_id" required><option value="">Выберите проект</option>{% for order in orders %}<option value="{{ order.id }}" {% if selected_order_id == order.id|stringformat:'s' %}selected{% endif %}>{{ order.order_number }} — {{ order.full_name|default:order.project }}</option>{% endfor %}</select></div>
-      <div class="col-lg-4"><label class="form-label">Файл Excel</label><input class="form-control" type="file" name="file" accept=".xlsx" required></div>
-      <div class="col-lg-2"><button class="btn btn-primary w-100">Проверить файл</button></div>
+      <div class="col-lg-4"><label class="form-label">Готовый проект / заказ</label><select class="form-select target-selector" name="order_id"><option value="">Не выбран</option>{% for order in orders %}<option value="{{ order.id }}" {% if selected_order_id == order.id|stringformat:'s' %}selected{% endif %}>{{ order.order_number }} — {{ order.full_name|default:order.project }}</option>{% endfor %}</select></div>
+      <div class="col-lg-4"><label class="form-label">Существующая предварительная ведомость</label><select class="form-select target-selector" name="preparation_id"><option value="">Не выбрана</option>{% for preparation in preparations %}<option value="{{ preparation.id }}" {% if selected_preparation_id == preparation.id|stringformat:'s' %}selected{% endif %}>{{ preparation.name }}</option>{% endfor %}</select></div>
+      <div class="col-lg-4"><label class="form-label">Или новая предварительная ведомость</label><input class="form-control target-selector" name="preparation_name" value="{{ new_preparation_name }}" placeholder="Например: Станция гидравлическая плуга"></div>
+      <div class="col-lg-9"><label class="form-label">Файл Excel</label><input class="form-control" type="file" name="file" accept=".xlsx" required></div>
+      <div class="col-lg-3"><button class="btn btn-primary w-100">Проверить файл</button></div>
     </div>
   </form>
 
@@ -25,10 +28,40 @@
 
   {% if preview and not errors %}
   <div class="card">
-    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2"><div><h2 class="h5 mb-1">Результат проверки</h2><div class="small text-muted">Позиций после объединения: {{ preview|length }}</div></div><form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="token" value="{{ token }}"><button class="btn btn-success">Подтвердить загрузку</button></form></div>
-    <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Действие</th><th>Наименование</th><th>Узел / подсборка</th><th>Требуется</th><th>Закуплено</th><th>Строки Excel</th></tr></thead><tbody>{% for row in preview %}<tr><td><span class="badge {% if row.existing_id %}bg-info text-dark{% else %}bg-success{% endif %}">{{ row.action }}</span></td><td><strong>{{ row.item_name }}</strong>{% if row.designation %}<div class="small text-muted">{{ row.designation }}</div>{% endif %}</td><td>{{ row.assembly_name|default:'—' }}</td><td>{{ row.quantity_required }}</td><td>{{ row.quantity_purchased }}</td><td>{{ row.source_rows|join:', ' }}</td></tr>{% endfor %}</tbody></table></div>
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-3">
+      <div><h2 class="h5 mb-1">Итоговый предпросмотр</h2><div class="small text-muted">Именно такой результат будет записан после подтверждения.</div></div>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="token" value="{{ token }}"><button class="btn btn-success">Подтвердить загрузку</button></form>
+    </div>
+    <div class="card-body border-bottom">
+      <div class="row g-2">
+        <div class="col-6 col-md"><div class="p-2 rounded bg-light"><div class="small text-muted">Всего строк</div><strong>{{ preview|length }}</strong></div></div>
+        <div class="col-6 col-md"><div class="p-2 rounded bg-success-subtle"><div class="small text-muted">Новых</div><strong>{{ preview_summary.add }}</strong></div></div>
+        <div class="col-6 col-md"><div class="p-2 rounded bg-warning-subtle"><div class="small text-muted">С корректировкой</div><strong>{{ preview_summary.update }}</strong></div></div>
+        <div class="col-6 col-md"><div class="p-2 rounded bg-light"><div class="small text-muted">Без изменений</div><strong>{{ preview_summary.same }}</strong></div></div>
+        <div class="col-12 col-md"><div class="p-2 rounded {% if preview_summary.deficit_groups %}bg-danger-subtle{% else %}bg-success-subtle{% endif %}"><div class="small text-muted">Позиций с дефицитом</div><strong>{{ preview_summary.deficit_groups }}</strong>{% if preview_summary.deficit_groups %}<span class="small"> · {{ preview_summary.deficit_total|floatformat:-3 }} шт.</span>{% endif %}</div></div>
+      </div>
+      <div class="small text-muted mt-3">Доступно — остаток после уже выполненных выдач. Резерв — незакрытая потребность проекта. Свободно — остаток сверх потребности. Дефицит рассчитывается по итоговым данным файла.</div>
+    </div>
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead><tr><th>Результат</th><th>Наименование</th><th>Узел / подсборка</th><th>Требуется</th><th>Закуплено</th><th>Доступно</th><th>Резерв</th><th>Свободно</th><th>Дефицит</th></tr></thead>
+        <tbody>{% for row in preview %}
+          <tr class="{% if row.has_deficit %}table-danger{% elif row.action_code == 'update' %}table-warning{% elif row.action_code == 'add' %}table-success{% endif %}">
+            <td><span class="badge {% if row.action_code == 'add' %}text-bg-success{% elif row.action_code == 'update' %}text-bg-warning{% else %}text-bg-secondary{% endif %}">{{ row.action }}</span>{% if row.changes %}<div class="small text-muted mt-1">{{ row.changes|join:', ' }}</div>{% endif %}</td>
+            <td><strong>{{ row.item_name }}</strong>{% if row.designation %}<div class="small text-muted">{{ row.designation }}</div>{% endif %}<div class="small text-muted">Строки Excel: {{ row.source_rows|join:', ' }}</div></td>
+            <td>{{ row.assembly_name|default:'—' }}</td>
+            <td>{% if row.existing_id and row.current_required != row.quantity_required %}<span class="text-muted text-decoration-line-through">{{ row.current_required|floatformat:-3 }}</span> → {% endif %}<strong>{{ row.quantity_required|floatformat:-3 }}</strong><div class="small text-muted">всего: {{ row.required_after_total|floatformat:-3 }}</div></td>
+            <td>{% if row.purchased_before != row.purchased_after %}<span class="text-muted text-decoration-line-through">{{ row.purchased_before|floatformat:-3 }}</span> → {% endif %}<strong>{{ row.purchased_after|floatformat:-3 }}</strong></td>
+            <td>{{ row.available_after|floatformat:-3 }}</td>
+            <td>{{ row.reserved_after|floatformat:-3 }}</td>
+            <td class="text-success fw-semibold">{{ row.free_after|floatformat:-3 }}</td>
+            <td class="{% if row.has_deficit %}text-danger fw-bold{% else %}text-muted{% endif %}">{{ row.deficit_after|floatformat:-3 }}</td>
+          </tr>
+        {% endfor %}</tbody>
+      </table>
+    </div>
   </div>
   {% endif %}
 </div>
+<script>document.querySelectorAll('.target-selector').forEach(control=>control.addEventListener('change',()=>{if(!control.value)return;document.querySelectorAll('.target-selector').forEach(other=>{if(other!==control)other.value=''})}));</script>
 {% endblock %}
-

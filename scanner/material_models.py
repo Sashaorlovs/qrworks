@@ -10,6 +10,19 @@ ZERO = Decimal("0")
 MM3_IN_M3 = Decimal("1000000000")
 
 
+class WarehouseIssuer(models.Model):
+    name = models.CharField(max_length=255, unique=True, verbose_name="ФИО сотрудника склада")
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name="Доступен для выбора")
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "Сотрудник, отпускающий материал"
+        verbose_name_plural = "Сотрудники, отпускающие материал"
+
+    def __str__(self):
+        return self.name
+
+
 class MaterialGrade(models.Model):
     CATEGORY_CHOICES = [
         ("steel", "Сталь"),
@@ -153,23 +166,27 @@ class MaterialGeometry(models.Model):
         return (width * length * quantity / Decimal("1000000")).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
 
     def dimensions_display(self):
+        length_m = (
+            (self.piece_length_mm / Decimal("1000")).normalize()
+            if self.piece_length_mm is not None else "—"
+        )
         if self.profile_name:
             return self.profile_name
         if self.profile_type == "sheet":
-            return f"{self.thickness_mm or '—'} × {self.width_mm or '—'} × {self.piece_length_mm or '—'} мм"
+            return f"{self.thickness_mm or '—'} мм × {self.width_mm or '—'} мм × {length_m} м"
         if self.profile_type == "round_pipe":
-            return f"Ø{self.outer_diameter_mm or '—'} × {self.wall_thickness_mm or '—'}, L={self.piece_length_mm or '—'} мм"
+            return f"Ø{self.outer_diameter_mm or '—'} × {self.wall_thickness_mm or '—'} мм, L={length_m} м"
         if self.profile_type == "rect_tube":
-            return f"{self.width_mm or '—'} × {self.height_mm or '—'} × {self.wall_thickness_mm or '—'}, L={self.piece_length_mm or '—'} мм"
+            return f"{self.width_mm or '—'} × {self.height_mm or '—'} × {self.wall_thickness_mm or '—'} мм, L={length_m} м"
         if self.profile_type == "round_bar":
-            return f"Ø{self.outer_diameter_mm or '—'}, L={self.piece_length_mm or '—'} мм"
+            return f"Ø{self.outer_diameter_mm or '—'} мм, L={length_m} м"
         if self.profile_type == "hex_bar":
-            return f"S{self.width_mm or '—'}, L={self.piece_length_mm or '—'} мм"
+            return f"S{self.width_mm or '—'} мм, L={length_m} м"
         if self.profile_type == "square_bar":
-            return f"{self.width_mm or '—'} × {self.width_mm or '—'}, L={self.piece_length_mm or '—'} мм"
+            return f"{self.width_mm or '—'} × {self.width_mm or '—'} мм, L={length_m} м"
         if self.profile_type == "rect_bar":
-            return f"{self.width_mm or '—'} × {self.height_mm or self.thickness_mm or '—'}, L={self.piece_length_mm or '—'} мм"
-        return f"L={self.piece_length_mm or '—'} мм"
+            return f"{self.width_mm or '—'} × {self.height_mm or self.thickness_mm or '—'} мм, L={length_m} м"
+        return f"L={length_m} м"
 
 
 class MaterialRequirement(MaterialGeometry):
@@ -236,7 +253,7 @@ class MaterialStockLot(MaterialGeometry):
 
 
 class MaterialRequest(models.Model):
-    STATUS_CHOICES = [("open", "Открыта"), ("partial", "Выдано частично"), ("issued", "Выдано"), ("cancelled", "Отменена")]
+    STATUS_CHOICES = [("open", "Открыта"), ("partial", "Выдано частично"), ("issued", "Выдано"), ("cancelled", "Отклонена")]
 
     number = models.CharField(max_length=40, unique=True, verbose_name="Номер заявки")
     order = models.ForeignKey(
@@ -247,6 +264,12 @@ class MaterialRequest(models.Model):
     destination = models.CharField(max_length=300, blank=True, verbose_name="Назначение без проекта")
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="open", verbose_name="Статус")
     requested_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Сформировал")
+    rejected_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="rejected_material_requests", verbose_name="Отклонил",
+    )
+    rejection_reason = models.TextField(blank=True, verbose_name="Причина отклонения")
+    rejected_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата отклонения")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата")
 
     class Meta:
@@ -256,6 +279,28 @@ class MaterialRequest(models.Model):
 
     def __str__(self):
         return self.number
+
+    @property
+    def requested_by_name(self):
+        if not self.requested_by:
+            return "—"
+        employee = getattr(self.requested_by, "employee", None)
+        if employee:
+            full_name = str(employee).strip()
+            if full_name:
+                return full_name
+        return self.requested_by.get_full_name().strip() or self.requested_by.username
+
+    @property
+    def rejected_by_name(self):
+        if not self.rejected_by:
+            return "—"
+        employee = getattr(self.rejected_by, "employee", None)
+        if employee:
+            full_name = str(employee).strip()
+            if full_name:
+                return full_name
+        return self.rejected_by.get_full_name().strip() or self.rejected_by.username
 
 
 class MaterialRequestLine(models.Model):
@@ -294,6 +339,7 @@ class MaterialTransaction(models.Model):
     mass_kg = models.DecimalField(max_digits=16, decimal_places=3, default=0, verbose_name="Масса, кг")
     recipient = models.ForeignKey("scanner.Employee", on_delete=models.SET_NULL, null=True, blank=True, related_name="material_receipts", verbose_name="Получатель")
     recipient_name = models.CharField(max_length=255, blank=True, verbose_name="Получатель (на момент выдачи)")
+    issuer_name = models.CharField(max_length=255, blank=True, verbose_name="Кто отпустил (ФИО)")
     basis = models.CharField(max_length=300, blank=True, verbose_name="Основание")
     batch_token = models.CharField(max_length=64, blank=True, db_index=True, verbose_name="Группа накладной")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата")
@@ -385,7 +431,7 @@ class AuxiliaryMaterialLot(models.Model):
         if self.thickness_mm:
             values.append(f"толщина {self.thickness_mm} мм")
         if self.width_mm and self.length_mm:
-            values.append(f"{self.width_mm} × {self.length_mm} мм")
+            values.append(f"ширина {self.width_mm} мм × длина {(self.length_mm / Decimal('1000')).normalize()} м")
         elif self.width_mm:
             values.append(f"ширина {self.width_mm} мм")
         if self.mesh_cell_width_mm and self.mesh_cell_height_mm:
@@ -448,6 +494,7 @@ class AuxiliaryMaterialTransaction(models.Model):
     quantity = models.DecimalField(max_digits=16, decimal_places=3, default=0, verbose_name="Количество")
     recipient = models.ForeignKey("scanner.Employee", on_delete=models.SET_NULL, null=True, blank=True, related_name="auxiliary_material_receipts", verbose_name="Получатель")
     recipient_name = models.CharField(max_length=255, blank=True, verbose_name="Получатель (на момент выдачи)")
+    issuer_name = models.CharField(max_length=255, blank=True, verbose_name="Кто отпустил (ФИО)")
     basis = models.CharField(max_length=300, blank=True, verbose_name="Основание")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата")
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Выдал / принял")

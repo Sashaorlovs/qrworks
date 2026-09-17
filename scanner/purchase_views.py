@@ -1,23 +1,27 @@
 import json
 import openpyxl
 from datetime import datetime
+from decimal import Decimal
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, HttpResponseForbidden
 from django.urls import reverse
 import uuid
 from django.db.models import Max
 import uuid
 import pytz
+from django.db import transaction
 from django.db.models import Q, Sum, Count
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from scanner.purchase_models import (
     PurchaseItem,
     PurchaseTransaction,
     PurchaseRequest,
     PurchaseRequestLine,
+    PurchasePreparation,
 )
 from scanner.purchase_documents import (
     assign_invoice_number,
@@ -32,6 +36,8 @@ from scanner.purchase_allocation import (
     allocation_state,
 )
 from scanner.models import Order, OrderItem, Employee
+from scanner.material_models import WarehouseIssuer
+from scanner.purchase_normalization import normalize_purchase_name
 
 
 def _user_display_name(user):
@@ -42,6 +48,21 @@ def _user_display_name(user):
         return str(employee).strip()
     return user.get_full_name().strip() or user.username
 
+
+def _purchase_search_matches(query, *values):
+    terms = normalize_purchase_name(query).split()
+    haystack = normalize_purchase_name(' '.join(str(value or '') for value in values))
+    return all(term in haystack for term in terms)
+
+
+def _is_purchase_administrator(user):
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser or user.is_staff:
+        return True
+    employee = getattr(user, 'employee', None)
+    return bool(employee and employee.role == 'admin')
+
 @login_required
 def purchase_list(request):
     items = PurchaseItem.objects.select_related('order', 'assembly_ref').all()
@@ -50,7 +71,12 @@ def purchase_list(request):
     order_filter = request.GET.get('order', '').strip()
     
     if q:
-        items = items.filter(Q(item_name__icontains=q) | Q(designation__icontains=q) | Q(order__order_number__icontains=q) | Q(assembly_name__icontains=q) | Q(order__items__item__name__icontains=q))
+        for term in normalize_purchase_name(q).split():
+            items = items.filter(
+                Q(normalized_name__icontains=term) | Q(designation__icontains=term)
+                | Q(order__order_number__icontains=term) | Q(assembly_name__icontains=term)
+                | Q(order__items__item__name__icontains=term)
+            )
     if status:
         items = items.filter(purchase_status=status)
     if order_filter:
@@ -87,10 +113,12 @@ def purchase_list(request):
 
 @login_required
 def purchase_import(request):
-    from scanner.purchase_import import parse_purchase_workbook, save_purchase_preview
+    from scanner.purchase_import import enrich_purchase_preview, parse_purchase_workbook, save_purchase_preview
 
     preview, errors, warnings, token = None, [], [], ""
     selected_order_id = request.POST.get("order_id", "") if request.method == "POST" else ""
+    selected_preparation_id = request.POST.get("preparation_id", "") if request.method == "POST" else ""
+    new_preparation_name = request.POST.get("preparation_name", "").strip() if request.method == "POST" else ""
     if request.method == "POST":
         action = request.POST.get("action", "preview")
         if action == "confirm":
@@ -99,33 +127,75 @@ def purchase_import(request):
             if not payload:
                 messages.error(request, "Проверка устарела. Загрузите файл ещё раз.")
                 return redirect("purchase_import")
-            order = get_object_or_404(Order, pk=payload["order_id"])
-            saved = save_purchase_preview(order, payload["rows"])
+            order = Order.objects.filter(pk=payload.get("order_id")).first() if payload.get("order_id") else None
+            preparation = None
+            if payload.get("preparation_id"):
+                preparation = get_object_or_404(PurchasePreparation, pk=payload["preparation_id"])
+            elif payload.get("preparation_name"):
+                preparation, _ = PurchasePreparation.objects.get_or_create(
+                    name=payload["preparation_name"], defaults={"created_by": request.user}
+                )
+            saved = save_purchase_preview(order, payload["rows"], preparation)
             request.session.pop(f"purchase_import:{token}", None)
             messages.success(request, f"Спецификация проверена и загружена. Позиций: {saved}.")
-            return redirect("purchase_spec_detail", spec_id=order.id)
+            if order:
+                return redirect("purchase_spec_detail", spec_id=order.id)
+            return redirect("purchase_preparation_detail", preparation_id=preparation.id)
 
         upload = request.FILES.get("file")
-        if not selected_order_id:
-            errors.append("Выберите проект / заказ.")
+        targets = bool(selected_order_id) + bool(selected_preparation_id) + bool(new_preparation_name)
+        if targets != 1:
+            errors.append("Выберите один вариант: проект, существующую предварительную ведомость или название новой ведомости.")
         if not upload:
             errors.append("Выберите файл Excel.")
         if not errors:
-            order = get_object_or_404(Order, pk=selected_order_id)
+            order = get_object_or_404(Order, pk=selected_order_id) if selected_order_id else None
+            preparation = get_object_or_404(PurchasePreparation, pk=selected_preparation_id) if selected_preparation_id else None
             try:
                 workbook = openpyxl.load_workbook(upload, data_only=True)
-                preview, errors, warnings = parse_purchase_workbook(workbook, order)
+                preview, errors, warnings = parse_purchase_workbook(workbook, order, preparation)
+                if preview and not errors:
+                    preview = enrich_purchase_preview(preview, order, preparation)
             except Exception as exc:
                 errors.append(f"Не удалось прочитать файл: {exc}")
             if preview and not errors:
                 token = uuid.uuid4().hex
-                request.session[f"purchase_import:{token}"] = {"order_id": order.id, "rows": preview}
+                session_rows = []
+                for row in preview:
+                    session_row = {
+                        key: format(value, "f") if isinstance(value, Decimal) else value
+                        for key, value in row.items()
+                    }
+                    session_rows.append(session_row)
+                request.session[f"purchase_import:{token}"] = {
+                    "order_id": order.id if order else None,
+                    "preparation_id": preparation.id if preparation else None,
+                    "preparation_name": new_preparation_name,
+                    "rows": session_rows,
+                }
                 request.session.modified = True
+
+    preview_summary = None
+    if preview and not errors:
+        unique_groups = {}
+        for row in preview:
+            unique_groups[row["normalized_name"]] = row
+        preview_summary = {
+            "add": sum(row["action_code"] == "add" for row in preview),
+            "update": sum(row["action_code"] == "update" for row in preview),
+            "same": sum(row["action_code"] == "same" for row in preview),
+            "deficit_groups": sum(row["deficit_after"] > 0 for row in unique_groups.values()),
+            "deficit_total": sum((row["deficit_after"] for row in unique_groups.values()), Decimal("0")),
+        }
 
     return render(request, "scanner/purchase_import.html", {
         "orders": Order.objects.order_by("-id")[:100],
+        "preparations": PurchasePreparation.objects.filter(assigned_order__isnull=True),
         "selected_order_id": str(selected_order_id),
-        "preview": preview, "errors": errors, "warnings": warnings, "token": token,
+        "selected_preparation_id": str(selected_preparation_id),
+        "new_preparation_name": new_preparation_name,
+        "preview": preview, "preview_summary": preview_summary,
+        "errors": errors, "warnings": warnings, "token": token,
     })
 
 
@@ -193,7 +263,7 @@ def purchase_remains(request):
     from django.db.models import Sum
     from collections import defaultdict
     
-    items = PurchaseItem.objects.select_related('order').all()
+    items = PurchaseItem.objects.select_related('order').filter(order__isnull=False)
     transactions = PurchaseTransaction.objects.filter(transaction_type='out', purchase_item__in=items)\
         .values('purchase_item__normalized_name').annotate(total=Sum('quantity'))
     
@@ -315,7 +385,7 @@ def purchase_remains(request):
     groups = sorted(all_groups)
     
     if q:
-        remains_list = [r for r in remains_list if q.lower() in r['name'].lower()]
+        remains_list = [r for r in remains_list if _purchase_search_matches(q, r['name'])]
     if group:
         remains_list = [r for r in remains_list if r['name'].strip().lower().startswith(group.lower())]
     
@@ -327,7 +397,7 @@ def purchase_remains(request):
         'group': group,
         'groups': groups,
         'employees': employees,
-        'current_employee_id': getattr(getattr(request.user, 'employee', None), 'id', None),
+        'warehouse_issuers': WarehouseIssuer.objects.filter(is_active=True),
     })
 
 
@@ -344,9 +414,7 @@ def purchase_general_issue(request):
     recipient = get_object_or_404(
         Employee, pk=data.get('recipient_id'), is_active=True
     )
-    issuer = get_object_or_404(
-        Employee, pk=data.get('issuer_id'), is_active=True
-    )
+    issuer = get_object_or_404(WarehouseIssuer, pk=data.get('issuer_id'), is_active=True)
     try:
         batch_token, number, _ = issue_general_surplus(
             data.get('item_id'),
@@ -369,19 +437,14 @@ def purchase_general_issue(request):
 def purchase_issue(request):
     """Страница выдачи с выбором получателя из списка сотрудников"""
     items = list(
-        PurchaseItem.objects.filter(purchase_status='ready_for_issue')
+        PurchaseItem.objects.filter(purchase_status='ready_for_issue', order__isnull=False)
         .select_related('order', 'assembly_ref')
         .order_by('order_id', 'item_name', 'assembly_name')
     )
     
     q = request.GET.get('q', '').strip()
     if q:
-        q_lower = q.lower()
-        items = [
-            i for i in items
-            if q_lower in (i.assembly_name or '').lower()
-            or q_lower in (i.item_name or '').lower()
-        ]
+        items = [i for i in items if _purchase_search_matches(q, i.item_name, i.assembly_name)]
 
     available_items = []
     for item in items:
@@ -622,6 +685,18 @@ def check_purchase_access(view_func):
 @check_purchase_access
 def purchase_spec_list(request):
     """Список спецификаций (заказов) с покупными изделиями"""
+    if request.method == 'POST':
+        preparation_name = request.POST.get('preparation_name', '').strip()
+        if not preparation_name:
+            messages.error(request, 'Укажите название предварительной ведомости.')
+        elif PurchasePreparation.objects.filter(name__iexact=preparation_name).exists():
+            messages.error(request, 'Предварительная ведомость с таким названием уже существует.')
+        else:
+            preparation = PurchasePreparation.objects.create(name=preparation_name, created_by=request.user)
+            messages.success(request, 'Предварительная ведомость создана. Теперь добавьте позиции вручную или загрузите Excel.')
+            return redirect('purchase_preparation_detail', preparation_id=preparation.id)
+        return redirect('purchase_list')
+
     order_ids = list(set(PurchaseItem.objects.filter(order__isnull=False).values_list('order_id', flat=True)))
     orders = Order.objects.filter(id__in=order_ids).order_by('-id')[:50]
     
@@ -647,10 +722,195 @@ def purchase_spec_list(request):
     return render(request, 'scanner/purchase_list.html', {
         'orders': orders,
         'all_orders': all_orders,
-        'positions_total': PurchaseItem.objects.count(),
-        'ready_total': PurchaseItem.objects.filter(purchase_status='ready_for_issue').count(),
+        'positions_total': PurchaseItem.objects.filter(order__isnull=False).count(),
+        'ready_total': PurchaseItem.objects.filter(purchase_status='ready_for_issue', order__isnull=False).count(),
         'open_requests': PurchaseRequest.objects.filter(status__in=['open', 'partial']).count(),
         'invoice_total': PurchaseTransaction.objects.filter(transaction_type='out').exclude(batch_token='').values('batch_token').distinct().count(),
+        'preparations': PurchasePreparation.objects.filter(assigned_order__isnull=True).annotate(item_count=Count('items')),
+        'can_manage_purchase_statements': _is_purchase_administrator(request.user),
+    })
+
+
+@login_required
+def purchase_statement_manage(request):
+    """Administrator-only cleanup screen outside the Django admin."""
+    if not _is_purchase_administrator(request.user):
+        return HttpResponseForbidden('Управление ведомостями доступно только администратору.')
+
+    preparations = PurchasePreparation.objects.filter(assigned_order__isnull=True).annotate(
+        item_count=Count('items'),
+    )
+    order_ids = PurchaseItem.objects.filter(order__isnull=False).values_list('order_id', flat=True).distinct()
+    orders = list(Order.objects.filter(id__in=order_ids).order_by('-id'))
+    for order in orders:
+        order.purchase_item_count = PurchaseItem.objects.filter(order=order).count()
+        order.purchase_request_count = PurchaseRequest.objects.filter(order=order).count()
+        order.purchase_movement_count = PurchaseTransaction.objects.filter(purchase_item__order=order).count()
+        order.purchase_delete_blocked = order.purchase_movement_count > 0
+    return render(request, 'scanner/purchase_statement_manage.html', {
+        'preparations': preparations,
+        'orders': orders,
+    })
+
+
+@login_required
+@require_POST
+@transaction.atomic
+def purchase_statement_delete(request, statement_type, object_id):
+    if not _is_purchase_administrator(request.user):
+        return HttpResponseForbidden('Удаление ведомостей доступно только администратору.')
+    if request.POST.get('confirm') != 'yes':
+        messages.error(request, 'Удаление не подтверждено.')
+        return redirect('purchase_statement_manage')
+
+    if statement_type == 'preparation':
+        preparation = get_object_or_404(
+            PurchasePreparation.objects.select_for_update(),
+            pk=object_id,
+            assigned_order__isnull=True,
+        )
+        items = preparation.items.select_for_update().filter(order__isnull=True)
+        if PurchaseTransaction.objects.filter(purchase_item__in=items).exists() or PurchaseRequestLine.objects.filter(purchase_item__in=items).exists():
+            messages.error(request, 'Ведомость связана с заявками или движениями и не может быть удалена.')
+            return redirect('purchase_statement_manage')
+        item_count = items.count()
+        name = preparation.name
+        items.delete()
+        preparation.delete()
+        messages.success(request, f'Предварительная ведомость «{name}» удалена. Позиций: {item_count}.')
+        return redirect('purchase_statement_manage')
+
+    if statement_type == 'order':
+        order = get_object_or_404(Order.objects.select_for_update(), pk=object_id)
+        items = PurchaseItem.objects.select_for_update().filter(order=order)
+        if PurchaseTransaction.objects.filter(purchase_item__in=items).exists():
+            messages.error(request, 'Удаление запрещено: по ведомости уже есть складские движения или накладные.')
+            return redirect('purchase_statement_manage')
+        item_count = items.count()
+        request_count = PurchaseRequest.objects.filter(order=order).count()
+        PurchaseRequest.objects.filter(order=order).delete()
+        items.delete()
+        PurchasePreparation.objects.filter(assigned_order=order).delete()
+        messages.success(
+            request,
+            f'Ведомость заказа {order.order_number} удалена. Позиций: {item_count}, заявок: {request_count}. Сам заказ сохранён.',
+        )
+        return redirect('purchase_statement_manage')
+
+    return HttpResponse('Неизвестный тип ведомости.', status=400)
+
+
+@login_required
+@check_purchase_access
+@transaction.atomic
+def purchase_preparation_detail(request, preparation_id):
+    from scanner.purchase_import import _quantity, enrich_purchase_preview
+
+    preparation = get_object_or_404(PurchasePreparation, pk=preparation_id)
+    binding_order = None
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action in {'add', 'save'}:
+            item = None
+            if action == 'save':
+                item = get_object_or_404(PurchaseItem, pk=request.POST.get('item_id'), preparation=preparation)
+            try:
+                item_name = request.POST.get('item_name', '').strip()
+                if not item_name:
+                    raise ValidationError('Укажите наименование.')
+                required = _quantity(request.POST.get('quantity_required'), 'Требуется')
+                purchased = _quantity(request.POST.get('quantity_purchased'), 'Закуплено')
+            except ValidationError as exc:
+                messages.error(request, ' '.join(exc.messages))
+            else:
+                if item is None:
+                    item = PurchaseItem(preparation=preparation, purchase_status='pending')
+                item.item_name = item_name
+                item.designation = request.POST.get('designation', '').strip()
+                item.assembly_name = request.POST.get('assembly_name', '').strip()
+                item.quantity_required = required
+                item.quantity_purchased = purchased
+                status = request.POST.get('purchase_status', item.purchase_status)
+                if status in dict(PurchaseItem.PURCHASE_STATUS_CHOICES):
+                    item.purchase_status = status
+                item.save()
+                messages.success(request, 'Позиция сохранена.')
+            return redirect('purchase_preparation_detail', preparation_id=preparation.id)
+
+        if action == 'preview_bind':
+            binding_order = get_object_or_404(Order, pk=request.POST.get('order_id'))
+
+        if action == 'bind':
+            order = get_object_or_404(Order, pk=request.POST.get('order_id'))
+            items = list(preparation.items.select_for_update().filter(order__isnull=True))
+            conflicts = []
+            for item in items:
+                if PurchaseItem.objects.filter(
+                    order=order, normalized_name=item.normalized_name,
+                    assembly_name__iexact=item.assembly_name,
+                ).exclude(pk=item.pk).exists():
+                    conflicts.append(item.item_name)
+            if conflicts:
+                messages.error(request, 'Привязка остановлена: в заказе уже есть совпадающие позиции: ' + ', '.join(conflicts[:10]))
+            else:
+                for item in items:
+                    item.order = order
+                    item.assembly_ref = (
+                        OrderItem.objects.filter(order=order, item__name__icontains=item.assembly_name).first()
+                        if item.assembly_name else None
+                    )
+                    item.save(update_fields=['order', 'assembly_ref'])
+                preparation.assigned_order = order
+                preparation.assigned_at = timezone.now()
+                preparation.save(update_fields=['assigned_order', 'assigned_at'])
+                messages.success(request, f'Ведомость привязана к заказу {order.order_number}.')
+                return redirect('purchase_spec_detail', spec_id=order.id)
+
+    items = list(preparation.items.order_by('item_name', 'assembly_name', 'id'))
+    draft_rows = [{
+        'item_name': item.item_name,
+        'normalized_name': item.normalized_name,
+        'designation': item.designation,
+        'assembly_name': item.assembly_name,
+        'quantity_required': item.quantity_required,
+        'quantity_purchased': item.quantity_purchased,
+        'source_rows': [],
+    } for item in items]
+    draft_preview = enrich_purchase_preview(draft_rows, preparation=preparation) if draft_rows else []
+    preview_by_id = {row['existing_id']: row for row in draft_preview}
+    for item in items:
+        item.preview_state = preview_by_id.get(item.id)
+    unique_groups = {}
+    for row in draft_preview:
+        unique_groups[row['normalized_name']] = row
+    preparation_summary = {
+        'groups': len(unique_groups),
+        'deficit_groups': sum(row['deficit_after'] > 0 for row in unique_groups.values()),
+        'deficit_total': sum((row['deficit_after'] for row in unique_groups.values()), Decimal('0')),
+    }
+    binding_preview = []
+    binding_conflicts = []
+    binding_summary = None
+    if binding_order and draft_rows:
+        binding_preview = enrich_purchase_preview(draft_rows, order=binding_order)
+        binding_conflicts = [row for row in binding_preview if row['existing_id']]
+        binding_groups = {}
+        for row in binding_preview:
+            binding_groups[row['normalized_name']] = row
+        binding_summary = {
+            'deficit_groups': sum(row['deficit_after'] > 0 for row in binding_groups.values()),
+            'deficit_total': sum((row['deficit_after'] for row in binding_groups.values()), Decimal('0')),
+        }
+    return render(request, 'scanner/purchase_preparation_detail.html', {
+        'preparation': preparation,
+        'items': items,
+        'orders': Order.objects.order_by('-id')[:100],
+        'statuses': PurchaseItem.PURCHASE_STATUS_CHOICES,
+        'preparation_summary': preparation_summary,
+        'binding_order': binding_order,
+        'binding_preview': binding_preview,
+        'binding_conflicts': binding_conflicts,
+        'binding_summary': binding_summary,
     })
 
 
@@ -705,11 +965,10 @@ def purchase_spec_detail(request, spec_id):
     
     # Если задан поиск, скрываем группы, не соответствующие запросу
     if q:
-        filtered_groups = {}
-        for key, group_items in groups.items():
-            if any(q.lower() in (it.assembly_name or '').lower() or q.lower() in (it.item_name or '').lower() for it in group_items):
-                filtered_groups[key] = group_items
-        groups = filtered_groups
+        groups = {
+            key: group_items for key, group_items in groups.items()
+            if any(_purchase_search_matches(q, it.item_name, it.assembly_name) for it in group_items)
+        }
     
     # Формируем grouped_items
     grouped_items = []
@@ -768,11 +1027,15 @@ def purchase_spec_detail(request, spec_id):
 def purchase_export_request(request):
     """Экспорт заявки по текущему фильтру в Excel"""
     from openpyxl.styles import Font, Alignment, Border, Side
-    items = PurchaseItem.objects.select_related('order', 'assembly_ref').all()
+    items = PurchaseItem.objects.select_related('order', 'assembly_ref').filter(order__isnull=False)
     q = request.GET.get('q', '').strip()
     order_filter = request.GET.get('order', '').strip()
     if q:
-        items = items.filter(Q(item_name__icontains=q) | Q(assembly_name__icontains=q) | Q(order__order_number__icontains=q))
+        for term in normalize_purchase_name(q).split():
+            items = items.filter(
+                Q(normalized_name__icontains=term) | Q(assembly_name__icontains=term)
+                | Q(order__order_number__icontains=term)
+            )
     if order_filter:
         items = items.filter(order_id=order_filter)
     items = items.order_by('assembly_name', 'item_name')
@@ -852,7 +1115,7 @@ def purchase_issue_remains(request):
     from django.db.models import Sum
     from collections import defaultdict
     
-    items_qs = PurchaseItem.objects.select_related('order', 'assembly_ref')\
+    items_qs = PurchaseItem.objects.filter(order__isnull=False).select_related('order', 'assembly_ref')\
         .annotate(issued_qty=Sum('transactions__quantity', filter=Q(transactions__transaction_type='out')))
     
     # Группировка: purchased = max, issued = sum
@@ -873,8 +1136,7 @@ def purchase_issue_remains(request):
     
     q = request.GET.get('q', '').strip()
     if q:
-        q_lower = q.lower()
-        grouped = {k: v for k, v in grouped.items() if q_lower in k}
+        grouped = {k: v for k, v in grouped.items() if _purchase_search_matches(q, k)}
     
     result_items = []
     for name, data in grouped.items():
@@ -895,7 +1157,7 @@ def purchase_issue_remains(request):
         data['purchased'] = max((pd['purchased'] for pd in project_details), default=0)
         data['issued'] = sum(pd['issued'] for pd in project_details)
         data['remaining'] = data['purchased'] - data['issued']
-        data['ids'] = list(PurchaseItem.objects.filter(normalized_name=name).values_list('id', flat=True))
+        data['ids'] = list(PurchaseItem.objects.filter(normalized_name=name, order__isnull=False).values_list('id', flat=True))
         result_items.append(data)
     
     employees = Employee.objects.all().order_by('last_name', 'first_name')
@@ -1095,15 +1357,13 @@ def purchase_create_request(request, order_id):
 @check_purchase_access
 def purchase_request_detail(request, request_id):
     document = get_object_or_404(
-        PurchaseRequest.objects.select_related('order', 'requested_by'), pk=request_id
+        PurchaseRequest.objects.select_related('order', 'requested_by', 'cancelled_by', 'cancelled_by__employee'), pk=request_id
     )
     if request.method == 'POST':
         recipient = get_object_or_404(
             Employee, pk=request.POST.get('recipient_id'), is_active=True
         )
-        issuer = get_object_or_404(
-            Employee, pk=request.POST.get('issuer_id'), is_active=True
-        )
+        issuer = get_object_or_404(WarehouseIssuer, pk=request.POST.get('issuer_id'), is_active=True)
         quantities = {
             int(line_id): request.POST.get(f'quantity_{line_id}', '0')
             for line_id in request.POST.getlist('line_ids')
@@ -1133,12 +1393,34 @@ def purchase_request_detail(request, request_id):
             else 0
         )
     employees = Employee.objects.filter(is_active=True).order_by('last_name', 'first_name')
+    document.cancelled_by_name = _user_display_name(document.cancelled_by) if document.cancelled_by else ''
     return render(request, 'scanner/purchase_request_detail.html', {
         'document': document,
         'lines': lines,
         'employees': employees,
-        'current_employee_id': getattr(getattr(request.user, 'employee', None), 'id', None),
+        'warehouse_issuers': WarehouseIssuer.objects.filter(is_active=True),
     })
+
+
+@login_required
+@check_purchase_access
+@require_POST
+def purchase_request_cancel(request, request_id):
+    document = get_object_or_404(PurchaseRequest, pk=request_id)
+    if document.status not in {'open', 'partial'}:
+        messages.error(request, 'Отменить можно только открытую или частично выданную заявку.')
+        return redirect('purchase_request_detail', request_id=document.id)
+    reason = request.POST.get('cancellation_reason', '').strip()
+    if not reason:
+        messages.error(request, 'Укажите причину отмены заявки.')
+        return redirect('purchase_request_detail', request_id=document.id)
+    document.status = 'cancelled'
+    document.cancellation_reason = reason
+    document.cancelled_by = request.user
+    document.cancelled_at = timezone.now()
+    document.save(update_fields=['status', 'cancellation_reason', 'cancelled_by', 'cancelled_at'])
+    messages.success(request, f'Заявка {document.number} отменена.')
+    return redirect('purchase_request_detail', request_id=document.id)
 
 
 @login_required
