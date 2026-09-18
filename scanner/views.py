@@ -1885,10 +1885,11 @@ def statistics_bad_operations(request):
 
 @login_required
 def worker_operations(request, username):
-    """Список операций конкретного сотрудника (только для администратора)"""
-    if not request.user.is_superuser and (not hasattr(request.user, 'employee') or request.user.employee.role != 'admin'):
-        messages.error(request, 'Доступ запрещён.')
-        return redirect('home')
+    """Список операций конкретного сотрудника (для администратора и руководителя)"""
+    if not request.user.is_superuser:
+        if not hasattr(request.user, 'employee') or request.user.employee.role not in ('admin', 'supervisor'):
+            messages.error(request, 'Доступ запрещён.')
+            return redirect('home')
     
     from django.contrib.auth.models import User
     from datetime import datetime, timedelta
@@ -1930,10 +1931,11 @@ def worker_operations(request, username):
 
 @login_required
 def worker_stats(request):
-    """Статистика по сотрудникам (только для администратора)"""
-    if not request.user.is_superuser and (not hasattr(request.user, 'employee') or request.user.employee.role != 'admin'):
-        messages.error(request, 'Доступ запрещён.')
-        return redirect('home')
+    """Статистика по сотрудникам (для администратора и руководителя)"""
+    if not request.user.is_superuser:
+        if not hasattr(request.user, 'employee') or request.user.employee.role not in ('admin', 'supervisor'):
+            messages.error(request, 'Доступ запрещён.')
+            return redirect('home')
     
     from django.db.models import Count, Sum, Q
     from datetime import timedelta
@@ -2540,8 +2542,10 @@ from openpyxl.styles import Font, Border, Side
 @login_required
 def order_tree_export(request, order_id):
     if not request.user.is_staff:
-        messages.error(request, 'Недостаточно прав.')
-        return redirect('order_tree', order_id=order_id)
+        role = getattr(getattr(request.user, 'employee', None), 'role', None)
+        if role not in ('supervisor', 'technologist'):
+            messages.error(request, 'Недостаточно прав.')
+            return redirect('order_tree', order_id=order_id)
     
     order = get_object_or_404(Order, pk=order_id)
     

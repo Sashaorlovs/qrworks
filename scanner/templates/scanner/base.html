@@ -53,7 +53,7 @@
                             <li class="nav-item"><a class="nav-link" href="{% url 'stats' %}"><i class="bi bi-bar-chart-line"></i>Статистика</a></li>
                         {% endif %}
                         
-                            {% if request.user.is_superuser or request.user.employee.role == 'admin' %}<li class="nav-item"><a class="nav-link" href="{% url 'worker_stats' %}"><i class="bi bi-people"></i>Сотрудники</a></li>{% endif %}
+                            {% if request.user.is_superuser or request.user.employee.role == 'admin' or request.user.employee.role == 'supervisor' %}<li class="nav-item"><a class="nav-link" href="{% url 'worker_stats' %}"><i class="bi bi-people"></i>Сотрудники</a></li>{% endif %}
                             <li class="nav-item"><a class="nav-link" href="{% url 'warehouse' %}"><i class="bi bi-box-seam"></i>Склад</a></li>
                             {% if user.is_staff or role == 'admin' or role == 'dispatcher' or role == 'storekeeper' or role == 'supervisor' or role == 'technologist' %}
                             <li class="nav-item"><a class="nav-link" href="{% url 'material_home' %}"><i class="bi bi-layers"></i>Склад материалов</a></li>
